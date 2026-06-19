@@ -1,6 +1,5 @@
-<?php
+﻿<?php
 
-use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -17,43 +16,58 @@ Route::post('/login', function (Request $request) {
         'password' => ['required', 'string'],
     ]);
 
-    $user = User::where('correo', $credentials['correo'])->first();
+    $user = DB::table('usuario as u')
+        ->join('empleado as e', 'e.id_empleado', '=', 'u.id_empleado')
+        ->where('e.correo_institucional', $credentials['correo'])
+        ->select('u.id_usuario', 'u.contrasena_hash', 'u.rol', 'u.id_empleado', 'e.correo_institucional')
+        ->first();
 
-    if (! $user || ! Hash::check($credentials['password'], $user->contrasena_hash)) {
+    if (! $user) {
+        return back()
+            ->withErrors(['login' => 'Correo institucional o contraseña incorrectos.'])
+            ->onlyInput('correo');
+    }
+
+    $storedPassword = (string) $user->contrasena_hash;
+    $passwordValid = str_starts_with($storedPassword, '$2y$') || str_starts_with($storedPassword, '$argon2')
+        ? Hash::check($credentials['password'], $storedPassword)
+        : hash_equals($storedPassword, $credentials['password']);
+
+    if (! $passwordValid) {
         return back()
             ->withErrors(['login' => 'Correo institucional o contraseña incorrectos.'])
             ->onlyInput('correo');
     }
 
     $request->session()->regenerate();
-    $roles = [];
 
-    $info = DB::table('usuario as u')
-        ->join('empleado as e', 'e.id_empleado', '=', 'u.id_empleado')
-        ->join('dependencia_jerarquica as d', 'd.id_dependencia', '=', 'e.id_dependencia')
-        ->join('cargo as c', 'c.id_cargo', '=', 'd.id_cargo')
-        ->join('naturaleza_cargo as n', 'n.id_naturaleza', '=', 'c.id_naturaleza')
-        ->where('u.id_usuario', $user->id_usuario)
-        ->select('e.id_empleado', 'e.correo_institucional', 'c.nombre_cargo', 'n.abreviatura', 'n.descripcion')
-        ->first();
+    $roles = ['evaluado'];
 
-    $roles[] = 'evaluado';
+    $esEvaluador = DB::table('evaluacion')
+        ->where('id_empleado_evaluador', $user->id_empleado)
+        ->exists();
 
-    if ($info) {
-        if (in_array($info->abreviatura, ['LNR', 'PF'], true)) {
-            $roles[] = 'evaluador';
-        }
+    $esEvaluado = DB::table('evaluacion')
+        ->where('id_empleado_evaluado', $user->id_empleado)
+        ->exists();
 
-        if ((int) $user->id_usuario === 1 || str_contains(strtolower((string) $info->nombre_cargo), 'admin')) {
-            $roles[] = 'admin';
-        }
+    if ($esEvaluador) {
+        $roles[] = 'evaluador';
+    }
+
+    if (($user->rol ?? 'USUARIO') === 'ADMIN') {
+        $roles[] = 'admin';
     }
 
     $roles = array_values(array_unique($roles));
 
+    if (! $esEvaluado && ! $esEvaluador && ($user->rol ?? 'USUARIO') !== 'ADMIN') {
+        $roles = ['evaluado'];
+    }
+
     $request->session()->put('usuario_autenticado', [
         'id_usuario' => $user->id_usuario,
-        'correo' => $user->correo,
+        'correo' => $user->correo_institucional,
         'id_empleado' => $user->id_empleado,
         'roles' => $roles,
         'rol_activo' => null,

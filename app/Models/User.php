@@ -17,8 +17,8 @@ class User extends Authenticatable
     public $timestamps = false;
 
     protected $fillable = [
-        'correo',
         'contrasena_hash',
+        'rol',
         'id_empleado',
     ];
 
@@ -34,7 +34,7 @@ class User extends Authenticatable
     protected function casts(): array
     {
         return [
-            'contrasena_hash' => 'hashed',
+            'rol' => 'string',
         ];
     }
 
