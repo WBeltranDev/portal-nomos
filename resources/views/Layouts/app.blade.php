@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html class="light h-screen overflow-hidden" lang="es">
+<html class="light" lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,7 +10,7 @@
 
     @vite('resources/css/app.css')
 </head>
-<body class="bg-surface-container-lowest h-screen w-screen flex flex-col font-sans text-on-surface antialiased overflow-hidden m-0 p-0">
+<body class="bg-surface-container-lowest min-h-screen w-full flex flex-col font-sans text-on-surface antialiased overflow-x-hidden m-0 p-0">
 
     @yield('content')
 

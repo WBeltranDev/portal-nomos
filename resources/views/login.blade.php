@@ -6,6 +6,7 @@
         overflow-y: auto !important;
         height: auto !important;
         min-height: 100vh;
+        margin: 0;
         background:
             radial-gradient(circle at top left, rgba(181, 161, 96, 0.14), transparent 30%),
             radial-gradient(circle at bottom right, rgba(0, 64, 55, 0.12), transparent 28%),
@@ -24,7 +25,7 @@
     }
 </style>
 
-<header class="flex justify-between items-center px-4 sm:px-margin-desktop h-16 w-full fixed top-0 bg-surface-container-lowest z-50 border-b border-slate-100">
+<header class="flex justify-between items-center px-4 sm:px-margin-desktop h-16 w-full fixed top-0 left-0 right-0 bg-surface-container-lowest z-50 border-b border-slate-100 m-0">
     <div class="flex items-center gap-2">
         <span class="material-symbols-outlined text-primary text-xl" style="font-variation-settings: 'FILL' 1;">eco</span>
         <span class="text-base sm:text-lg font-bold text-primary">Unitrópico</span>
