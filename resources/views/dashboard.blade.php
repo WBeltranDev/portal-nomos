@@ -8,25 +8,29 @@
         margin: 0;
         background: linear-gradient(180deg, #f4f7f5 0%, #eef3f0 100%);
         padding-top: 0;
+        border: 0;
     }
 
     .panel-shell {
         display: grid;
-        grid-template-rows: 4.25rem 1fr;
+        grid-template-rows: 1fr;
         height: 100vh;
         width: 100%;
         margin: 0;
+        padding: 0;
+        padding-top: 4.25rem;
     }
 
     .app-header {
-        position: relative;
+        position: fixed;
+        inset: 0 0 auto 0;
         z-index: 40;
         background: linear-gradient(135deg, #00352e 0%, #004037 45%, #00594e 100%);
         color: white;
         box-shadow: 0 10px 30px rgba(0, 64, 55, 0.22);
         border: 0;
         margin: 0;
-        top: 0;
+        padding-top: 0;
     }
 
     .profile-menu {
@@ -57,6 +61,7 @@
         border: 1px solid rgba(15,23,42,0.08);
         box-shadow: 0 12px 40px rgba(15,23,42,0.08);
     }
+
 </style>
 
 <div class="panel-shell">
