@@ -1,0 +1,57 @@
+@import 'tailwindcss';
+
+@source '../views/**/*.blade.php';
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+
+@theme {
+    /* Tipografías */
+    --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+    /* Paleta de Colores Institucionales de Unitrópico */
+    --color-primary: #00594E;
+    --color-on-primary: #ffffff;
+    --color-primary-container: #004037;
+    --color-on-primary-container: #87cdbf;
+
+    --color-secondary: #B5A160;
+    --color-on-secondary: #ffffff;
+    --color-secondary-container: #f5de97;
+    --color-on-secondary-container: #726127;
+
+    --color-background: #f7faf8;
+    --color-on-background: #191c1b;
+
+    --color-surface: #f7faf8;
+    --color-on-surface: #191c1b;
+    --color-on-surface-variant: #3f4946;
+
+    --color-surface-container-lowest: #ffffff;
+    --color-surface-container-low: #f2f4f2;
+    --color-surface-container: #eceeec;
+    --color-surface-container-high: #e6e9e6;
+    --color-surface-container-highest: #e0e3e1;
+
+    --color-outline: #6f7976;
+    --color-outline-variant: #bec9c5;
+
+    --color-error: #ba1a1a;
+    --color-error-container: #ffdad6;
+    --color-on-error-container: #93000a;
+
+    /* Espaciados y Márgenes personalizados */
+    --spacing-margin-desktop: 48px;
+    --spacing-margin-mobile: 16px;
+    --spacing-gutter: 24px;
+}
+
+/* Estilos de fuentes e interacciones específicas */
+.material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    vertical-align: middle;
+}
+
+.segmented-control input:checked+label {
+    background-color: #004037;
+    color: #ffffff;
+}
