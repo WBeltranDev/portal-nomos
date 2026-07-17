@@ -1,10 +1,11 @@
-﻿<?php
+<?php
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
+use Exception; // <-- Corrección: Importación de la clase global Exception para evitar errores 500
 
 function defaultPonderacionesConfig() {
     return [
@@ -468,11 +469,11 @@ Route::get('/dashboard', function () {
             ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
             ->leftJoin('firma as f_ev', function($join) {
                 $join->on('f_ev.id_evaluacion', '=', 'ev.id_evaluacion')
-                     ->where('f_ev.tipo_firma', '=', 'CONCERTACION_EVALUADO');
+                    ->where('f_ev.tipo_firma', '=', 'CONCERTACION_EVALUADO');
             })
             ->leftJoin('firma as f_er', function($join) {
                 $join->on('f_er.id_evaluacion', '=', 'ev.id_evaluacion')
-                     ->where('f_er.tipo_firma', '=', 'CONCERTACION_EVALUADOR');
+                    ->where('f_er.tipo_firma', '=', 'CONCERTACION_EVALUADOR');
             })
             ->select('ev.id_evaluacion', 'ev.estado', 'p.fecha_inicio', 'p.fecha_fin', 'ev.tipo_evaluacion as tipo_nombre', 'fa.nombres as evaluador_nombres', 'fa.apellidos as evaluador_apellidos', 'p.sistema', 've.cargo as evaluado_cargo', 've.area as evaluado_area', 'ev.concertacion_firmada', 'ev.fase_actual', 've.aplica_eje_misional', DB::raw('IF(f_ev.id_firma IS NOT NULL, 1, 0) as evaluado_firmado'), DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado'))
             ->orderByDesc('ev.id_evaluacion')
@@ -594,7 +595,7 @@ Route::post('/evaluador/asignaciones', function (Request $request) {
         ->exists();
 
     if ($exists) {
-        return back()->withErrors(['asignaciones' => 'Ya existe una evaluacion para este funcionario en este per�odo y ciclo.']);
+        return back()->withErrors(['asignaciones' => 'Ya existe una evaluacion para este funcionario en este perodo y ciclo.']);
     }
 
     $evaluacionId = DB::table('evaluacion')->insertGetId([
@@ -623,11 +624,11 @@ Route::post('/evaluador/asignaciones', function (Request $request) {
         file_put_contents($jsonPath, json_encode($ejesData, JSON_PRETTY_PRINT));
     }
 
-    return back()->with('success_asignacion', 'evaluacion creada para iniciar la concertaci�n.');
+    return back()->with('success_asignacion', 'evaluacion creada para iniciar la concertacin.');
 })->name('evaluador.asignaciones.store');
 
 
-// --- ADMINISTRACI�N DE PERIODOS ---
+// --- ADMINISTRACIN DE PERIODOS ---
 Route::post('/admin/periodos', function (Request $request) {
     abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
 
@@ -646,7 +647,7 @@ Route::post('/admin/periodos', function (Request $request) {
         ->exists();
 
     if ($exists) {
-        return back()->withErrors(['periodo' => 'Este per�odo ya existe registrado.']);
+        return back()->withErrors(['periodo' => 'Este perodo ya existe registrado.']);
     }
 
     DB::table('periodo')->insert([
@@ -659,7 +660,7 @@ Route::post('/admin/periodos', function (Request $request) {
         'estado' => 'ABIERTO',
     ]);
 
-    return back()->with('success_periodo', 'Per�odo creado exitosamente.');
+    return back()->with('success_periodo', 'Perodo creado exitosamente.');
 })->name('admin.periodos.store');
 
 Route::post('/admin/periodos/{id}/toggle', function (int $id) {
@@ -674,7 +675,7 @@ Route::post('/admin/periodos/{id}/toggle', function (int $id) {
         ->where('id_periodo', $id)
         ->update(['estado' => $nuevoEstado]);
 
-    return back()->with('success_periodo', 'Estado de per�odo actualizado.');
+    return back()->with('success_periodo', 'Estado de perodo actualizado.');
 })->name('admin.periodos.toggle');
 
 
@@ -725,7 +726,7 @@ Route::post('/admin/ponderaciones', function (Request $request) {
 })->name('admin.ponderaciones.update');
 
 
-// --- ASIGNACI�N DE evaluacionES ---
+// --- ASIGNACIN DE evaluacionES ---
 Route::post('/admin/asignaciones', function (Request $request) {
     abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
 
@@ -753,7 +754,7 @@ Route::post('/admin/asignaciones', function (Request $request) {
 })->name('admin.asignaciones.store');
 
 
-// --- IMPORTACI�N MASIVA DE USUARIOS (EXCEL/CSV) ---
+// --- IMPORTACIN MASIVA DE USUARIOS (EXCEL/CSV) ---
 Route::post('/admin/importar-usuarios', function (Request $request) {
     abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
 
