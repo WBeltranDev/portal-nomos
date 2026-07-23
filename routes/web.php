@@ -5,7 +5,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
-use Exception; // <-- Corrección: Importación de la clase global Exception para evitar errores 500
+
 
 function defaultPonderacionesConfig() {
     return [
@@ -1233,3 +1233,528 @@ Route::post('/evaluaciones/{id}/firmar', function (Request $request, int $id) {
 
     return back()->with('success_firma', 'Firma registrada con éxito.');
 })->name('evaluaciones.firmar');
+
+
+
+/**
+ * Calcula la nota final de una evaluación según los documentos oficiales de Unitrópico.
+ *
+ * RENDIMIENTO_LABORAL (RL):
+ *   - Compromisos:              70 %  (suma ponderada en escala 0-100)
+ *   - Competencias comunes:     15 %  (promedio en escala 0-100)
+ *   - Competencias nivel jer:   15 %  (promedio en escala 0-100)
+ *   Total:                     100 %
+ *
+ * ACUERDO_GESTION (AG) sin ejes misionales:
+ *   - Compromisos:              85 %
+ *   - Competencias comunes:      7.5 %
+ *   - Competencias nivel jer:    7.5 %
+ *   Total:                     100 %
+ *
+ * ACUERDO_GESTION (AG) con ejes misionales (solo líderes de programa/departamento/escuela):
+ *   Cada eje activo (Docencia, Investigación, Proyección Social) toma 10% del peso de compromisos.
+ *   - Con 1 eje activo:   compromisos=75%, eje=10%, comun=7.5%, nivel=7.5%  → 100%
+ *   - Con 2 ejes activos: compromisos=65%, ejes=10%+10%, comun=7.5%, nivel=7.5% → 100%
+ *   - Con 3 ejes activos: compromisos=55%, ejes=10%+10%+10%, comun=7.5%, nivel=7.5% → 100%
+ *
+ * Escala individual (0-100):
+ *    0-50: Deficiente | 51-70: Bajo | 71-80: Aceptable | 81-90: Alto | 91-100: Muy alto
+ *
+ * Categorías finales (0-100):
+ *   ≥ 91:           SOBRESALIENTE
+ *   81 a 90:        BUENO
+ *   71 a 80:        APROBADO_MEJORA  (Susceptible de mejora)
+ *    0 a 70:        NO_SATISFACTORIO
+ *
+ * Plan de mejoramiento (1er semestre):
+ *   RL: aplica si calificación ∈ [71, 80]  (Aprobado/Susceptible de mejora)
+ *   AG: aplica si calificación ∈ [0, 70]   (No satisfactorio)
+ *
+ * Prorrateo RF3:
+ *   nota_final_prorrateo = nota_final × (dias_laborados / dias_totales_periodo)
+ *   Solo aplica si dias_laborados < dias_totales_periodo (evaluaciones eventuales/parciales).
+ *
+ * Fuente: requerimientos tl (2).pdf | Pesos y ejes misionales (1).pdf | Formatos AG y RL XLSX
+ */
+function calcularNotaEvaluacion(int $idEvaluacion): array {
+    $evaluacion = DB::table('evaluacion as ev')
+        ->join('vinculacion as ve', 've.id_vinculacion', '=', 'ev.id_vinc_evaluado')
+        ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
+        ->where('ev.id_evaluacion', $idEvaluacion)
+        ->select('ev.*', 'p.sistema', 'p.fecha_inicio', 'p.fecha_fin', 've.aplica_eje_misional')
+        ->first();
+
+    if (!$evaluacion) {
+        return ['error' => 'Evaluación no encontrada.'];
+    }
+
+    $sistema = strtoupper(trim((string) $evaluacion->sistema));
+
+    // -------------------------------------------------------
+    // EJES MISIONALES ACTIVOS (solo AG con aplica_eje_misional)
+    // -------------------------------------------------------
+    $ejesActivos   = [];
+    $notasPorEje   = [];
+    $numEjesActivos = 0;
+
+    if ($sistema === 'ACUERDO_GESTION' && $evaluacion->aplica_eje_misional) {
+        // Leer qué ejes están habilitados desde el JSON (investigacion / proyeccion_social)
+        $jsonPath = storage_path('app/evaluacion_ejes.json');
+        $ejesJson = [];
+        if (file_exists($jsonPath)) {
+            $ejesJson = json_decode(file_get_contents($jsonPath), true) ?? [];
+        }
+        $ejesConfig = $ejesJson[$idEvaluacion] ?? [];
+
+        // Docencia SIEMPRE activa si aplica_eje_misional = 1
+        $ejesActivos['DOCENCIA'] = true;
+
+        if (!empty($ejesConfig['investigacion'])) {
+            $ejesActivos['INVESTIGACION'] = true;
+        }
+        if (!empty($ejesConfig['proyeccion_social'])) {
+            $ejesActivos['PROYECCION_SOCIAL'] = true;
+        }
+
+        $numEjesActivos = count($ejesActivos);
+
+        // Obtener calificaciones de cada eje desde la tabla eje_misional_calificacion
+        $ejeCals = DB::table('eje_misional_calificacion')
+            ->where('id_evaluacion', $idEvaluacion)
+            ->whereNotNull('calificacion')
+            ->pluck('calificacion', 'tipo_eje')
+            ->toArray();
+
+        foreach ($ejesActivos as $tipoEje => $activo) {
+            $notasPorEje[$tipoEje] = isset($ejeCals[$tipoEje]) ? (float)$ejeCals[$tipoEje] : 0.0;
+        }
+    }
+
+    // -------------------------------------------------------
+    // PESOS SEGÚN SISTEMA Y EJES ACTIVOS
+    // -------------------------------------------------------
+    if ($sistema === 'RENDIMIENTO_LABORAL') {
+        $pesoCompromisos    = 70.0;
+        $pesoCompComun      = 15.0;
+        $pesoCompNivel      = 15.0;
+        $pesoEjes           = [];
+    } else {
+        // AG base: 85% compromisos, 7.5% comun, 7.5% nivel
+        // Cada eje activo descuenta 10% de compromisos
+        $pesoCompromisos    = 85.0 - ($numEjesActivos * 10.0);
+        $pesoCompComun      = 7.5;
+        $pesoCompNivel      = 7.5;
+        $pesoEjes           = array_fill_keys(array_keys($ejesActivos), 10.0);
+        // Validar que el peso de compromisos no sea negativo (máximo 3 ejes)
+        $pesoCompromisos    = max($pesoCompromisos, 55.0);
+    }
+
+    // -------------------------------------------------------
+    // 1. NOTA COMPROMISOS — suma ponderada (0-100 cada uno)
+    // -------------------------------------------------------
+    $compromisos = DB::table('compromiso')
+        ->where('id_evaluacion', $idEvaluacion)
+        ->whereNotNull('calificacion_definitiva')
+        ->get(['porcentaje_peso', 'calificacion_definitiva']);
+
+    $totalPesoCompromisos = DB::table('compromiso')
+        ->where('id_evaluacion', $idEvaluacion)
+        ->sum('porcentaje_peso');
+
+    $notaCompromisos = 0.0;
+    if ($totalPesoCompromisos > 0 && $compromisos->isNotEmpty()) {
+        foreach ($compromisos as $c) {
+            $notaCompromisos += ((float)$c->calificacion_definitiva * (float)$c->porcentaje_peso);
+        }
+        $notaCompromisos = $notaCompromisos / (float)$totalPesoCompromisos;
+    }
+
+    // -------------------------------------------------------
+    // 2. NOTA COMPETENCIAS COMUNES (promedio escala 0-100)
+    // -------------------------------------------------------
+    $compComun = DB::table('competencia_evaluada')
+        ->where('id_evaluacion', $idEvaluacion)
+        ->where('tipo', 'COMUN')
+        ->whereNotNull('calificacion_definitiva')
+        ->avg('calificacion_definitiva');
+    $notaCompComun = $compComun ? (float)$compComun : 0.0;
+
+    // -------------------------------------------------------
+    // 3. NOTA COMPETENCIAS NIVEL JERÁRQUICO (promedio 0-100)
+    // -------------------------------------------------------
+    $compNivel = DB::table('competencia_evaluada')
+        ->where('id_evaluacion', $idEvaluacion)
+        ->where('tipo', 'NIVEL_JERARQUICO')
+        ->whereNotNull('calificacion_definitiva')
+        ->avg('calificacion_definitiva');
+    $notaCompNivel = $compNivel ? (float)$compNivel : 0.0;
+
+    // -------------------------------------------------------
+    // 4. NOTA FINAL (antes de prorrateo)
+    // -------------------------------------------------------
+    $subtotalCompromisos = $notaCompromisos * ($pesoCompromisos / 100.0);
+    $subtotalComun       = $notaCompComun   * ($pesoCompComun   / 100.0);
+    $subtotalNivel       = $notaCompNivel   * ($pesoCompNivel   / 100.0);
+
+    $subtotalesEjes = [];
+    $subtotalEjesTotal = 0.0;
+    foreach ($pesoEjes as $tipoEje => $pesoEje) {
+        $subtotalEje = ($notasPorEje[$tipoEje] ?? 0.0) * ($pesoEje / 100.0);
+        $subtotalesEjes[$tipoEje] = round($subtotalEje, 4);
+        $subtotalEjesTotal += $subtotalEje;
+    }
+
+    $notaFinal = round($subtotalCompromisos + $subtotalComun + $subtotalNivel + $subtotalEjesTotal, 2);
+
+    // -------------------------------------------------------
+    // 5. PRORRATEO RF3 — evaluaciones eventuales/parciales
+    // -------------------------------------------------------
+    $notaProrrateo   = null;
+    $factorProrrateo = null;
+    if ($evaluacion->dias_laborados && (int)$evaluacion->dias_laborados > 0) {
+        $fechaInicio = new \DateTime($evaluacion->fecha_inicio);
+        $fechaFin    = new \DateTime($evaluacion->fecha_fin);
+        $diasPeriodo = $fechaInicio->diff($fechaFin)->days + 1;
+        if ($diasPeriodo > 0 && (int)$evaluacion->dias_laborados < $diasPeriodo) {
+            $factorProrrateo = (int)$evaluacion->dias_laborados / $diasPeriodo;
+            $notaProrrateo   = round($notaFinal * $factorProrrateo, 2);
+        }
+    }
+
+    // -------------------------------------------------------
+    // 6. CATEGORÍA FINAL
+    // -------------------------------------------------------
+    $notaParaCategoria = $notaProrrateo ?? $notaFinal;
+    $categoria = match(true) {
+        $notaParaCategoria >= 91 => 'SOBRESALIENTE',
+        $notaParaCategoria >= 81 => 'BUENO',
+        $notaParaCategoria >= 71 => 'APROBADO_MEJORA',
+        default                  => 'NO_SATISFACTORIO',
+    };
+
+    // -------------------------------------------------------
+    // 7. PLAN DE MEJORAMIENTO (1er semestre)
+    // -------------------------------------------------------
+    $requierePlanMejoramiento = false;
+    if ($evaluacion->tipo_evaluacion === 'SEMESTRE_1') {
+        if ($sistema === 'RENDIMIENTO_LABORAL' && $categoria === 'APROBADO_MEJORA') {
+            $requierePlanMejoramiento = true;
+        }
+        if ($sistema === 'ACUERDO_GESTION' && $categoria === 'NO_SATISFACTORIO') {
+            $requierePlanMejoramiento = true;
+        }
+    }
+
+    return [
+        'sistema'                   => $sistema,
+        'pesos' => [
+            'compromisos'       => $pesoCompromisos,
+            'comun'             => $pesoCompComun,
+            'nivel_jerarquico'  => $pesoCompNivel,
+            'ejes'              => $pesoEjes,
+        ],
+        'ejes_activos'              => array_keys($ejesActivos),
+        'notas_ejes_raw'            => $notasPorEje,
+        'nota_compromisos_raw'      => round($notaCompromisos, 4),
+        'nota_comp_comun_raw'       => round($notaCompComun, 4),
+        'nota_comp_nivel_raw'       => round($notaCompNivel, 4),
+        'subtotal_compromisos'      => round($subtotalCompromisos, 4),
+        'subtotal_comun'            => round($subtotalComun, 4),
+        'subtotal_nivel'            => round($subtotalNivel, 4),
+        'subtotales_ejes'           => $subtotalesEjes,
+        'subtotal_ejes_total'       => round($subtotalEjesTotal, 4),
+        'nota_final'                => $notaFinal,
+        'dias_laborados'            => $evaluacion->dias_laborados,
+        'factor_prorrateo'          => $factorProrrateo ? round($factorProrrateo, 6) : null,
+        'nota_prorrateo'            => $notaProrrateo,
+        'nota_definitiva'           => $notaProrrateo ?? $notaFinal,
+        'categoria'                 => $categoria,
+        'requiere_plan_mejoramiento'=> $requierePlanMejoramiento,
+    ];
+}
+
+
+// --- GET: Vista previa del cálculo de nota (sin guardar) ---
+Route::get('/evaluaciones/{id}/calculo', function (int $id) {
+    abort_unless(session()->has('usuario_autenticado'), 403);
+
+    $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
+    abort_unless($evaluacion, 404);
+
+    $auth     = session('usuario_autenticado');
+    $rolActivo = $auth['rol_activo'] ?? null;
+
+    if ($rolActivo !== 'admin') {
+        $puedeVer = DB::table('vinculacion')
+            ->whereIn('id_vinculacion', [$evaluacion->id_vinc_evaluado, $evaluacion->id_vinc_evaluador])
+            ->where('id_funcionario', $auth['id_funcionario'] ?? null)
+            ->exists();
+        abort_unless($puedeVer, 403);
+    }
+
+    $calculo = calcularNotaEvaluacion($id);
+
+    return response()->json($calculo);
+})->name('evaluaciones.calculo');
+
+
+// --- POST: Guardar calificación de compromisos (evaluador) ---
+Route::post('/evaluaciones/{id}/calificar-compromisos', function (Request $request, int $id) {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'evaluador', 403);
+
+    $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
+    abort_unless($evaluacion, 404);
+    abort_unless($evaluacion->concertacion_firmada, 403, 'La concertación debe estar firmada antes de calificar.');
+
+    $auth = session('usuario_autenticado');
+    $puedeEditar = DB::table('vinculacion')
+        ->where('id_vinculacion', $evaluacion->id_vinc_evaluador)
+        ->where('id_funcionario', $auth['id_funcionario'] ?? null)
+        ->exists();
+    abort_unless($puedeEditar, 403);
+
+    $data = $request->validate([
+        'compromisos' => ['required', 'array'],
+        'compromisos.*.id_compromiso'          => ['required', 'integer'],
+        'compromisos.*.calificacion_sem1'      => ['nullable', 'numeric', 'min:0', 'max:100'],
+        'compromisos.*.calificacion_sem2'      => ['nullable', 'numeric', 'min:0', 'max:100'],
+        'compromisos.*.calificacion_definitiva'=> ['nullable', 'numeric', 'min:0', 'max:100'],
+    ]);
+
+    foreach ($data['compromisos'] as $item) {
+        $comp = DB::table('compromiso')
+            ->where('id_compromiso', $item['id_compromiso'])
+            ->where('id_evaluacion', $id)
+            ->first();
+
+        if (!$comp) continue;
+
+        $update = [];
+        if (array_key_exists('calificacion_sem1', $item)) {
+            $update['calificacion_sem1'] = $item['calificacion_sem1'];
+        }
+        if (array_key_exists('calificacion_sem2', $item)) {
+            $update['calificacion_sem2'] = $item['calificacion_sem2'];
+        }
+        if (array_key_exists('calificacion_definitiva', $item)) {
+            $update['calificacion_definitiva'] = $item['calificacion_definitiva'];
+        }
+
+        if (!empty($update)) {
+            DB::table('compromiso')
+                ->where('id_compromiso', $item['id_compromiso'])
+                ->update($update);
+        }
+    }
+
+    return response()->json(['success' => true, 'message' => 'Calificaciones de compromisos guardadas.']);
+})->name('evaluaciones.calificar-compromisos');
+
+
+// --- POST: Guardar calificación de competencias (evaluador) ---
+Route::post('/evaluaciones/{id}/calificar-competencias', function (Request $request, int $id) {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'evaluador', 403);
+
+    $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
+    abort_unless($evaluacion, 404);
+    abort_unless($evaluacion->concertacion_firmada, 403, 'La concertación debe estar firmada antes de calificar.');
+
+    $auth = session('usuario_autenticado');
+    $puedeEditar = DB::table('vinculacion')
+        ->where('id_vinculacion', $evaluacion->id_vinc_evaluador)
+        ->where('id_funcionario', $auth['id_funcionario'] ?? null)
+        ->exists();
+    abort_unless($puedeEditar, 403);
+
+    $data = $request->validate([
+        'competencias'   => ['required', 'array'],
+        'competencias.*.nombre_competencia'     => ['required', 'string', 'max:150'],
+        'competencias.*.tipo'                   => ['required', 'in:COMUN,NIVEL_JERARQUICO'],
+        'competencias.*.calificacion_definitiva'=> ['nullable', 'numeric', 'min:0', 'max:100'],
+        'competencias.*.calificacion_sem1'      => ['nullable', 'numeric', 'min:0', 'max:100'],
+        'competencias.*.calificacion_sem2'      => ['nullable', 'numeric', 'min:0', 'max:100'],
+    ]);
+
+    foreach ($data['competencias'] as $item) {
+        $existing = DB::table('competencia_evaluada')
+            ->where('id_evaluacion', $id)
+            ->where('nombre_competencia', $item['nombre_competencia'])
+            ->where('tipo', $item['tipo'])
+            ->first();
+
+        $fields = [
+            'calificacion_sem1'       => $item['calificacion_sem1'] ?? null,
+            'calificacion_sem2'       => $item['calificacion_sem2'] ?? null,
+            'calificacion_definitiva' => $item['calificacion_definitiva'] ?? null,
+        ];
+
+        if ($existing) {
+            DB::table('competencia_evaluada')
+                ->where('id_comp_eval', $existing->id_comp_eval)
+                ->update($fields);
+        } else {
+            DB::table('competencia_evaluada')->insert(array_merge($fields, [
+                'id_evaluacion'      => $id,
+                'nombre_competencia' => $item['nombre_competencia'],
+                'tipo'               => $item['tipo'],
+            ]));
+        }
+    }
+
+    return response()->json(['success' => true, 'message' => 'Competencias guardadas.']);
+})->name('evaluaciones.calificar-competencias');
+
+
+// --- POST: Ejecutar motor de cálculo y guardar nota final (evaluador/admin) ---
+Route::post('/evaluaciones/{id}/calcular-final', function (Request $request, int $id) {
+    $rolActivo = session('usuario_autenticado.rol_activo');
+    abort_unless(in_array($rolActivo, ['evaluador', 'admin']), 403);
+
+    $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
+    abort_unless($evaluacion, 404);
+
+    // Solo admin puede forzar el cálculo; evaluador solo puede calificar sus propias
+    if ($rolActivo === 'evaluador') {
+        $auth = session('usuario_autenticado');
+        $puedeEditar = DB::table('vinculacion')
+            ->where('id_vinculacion', $evaluacion->id_vinc_evaluador)
+            ->where('id_funcionario', $auth['id_funcionario'] ?? null)
+            ->exists();
+        abort_unless($puedeEditar, 403);
+    }
+
+    $calculo = calcularNotaEvaluacion($id);
+
+    if (isset($calculo['error'])) {
+        return response()->json(['error' => $calculo['error']], 422);
+    }
+
+    // Guardar en la base de datos
+    DB::table('evaluacion')->where('id_evaluacion', $id)->update([
+        'nota_compromisos'    => $calculo['nota_compromisos_raw'],
+        'nota_competencias'   => round(($calculo['nota_comp_comun_raw'] + $calculo['nota_comp_nivel_raw']) / 2, 4),
+        'nota_ejes_misionales'=> $calculo['nota_ejes_raw'],
+        'calificacion_final'  => $calculo['nota_definitiva'],
+        'calificacion_parcial'=> $calculo['nota_prorrateo'],
+        'categoria_final'     => $calculo['categoria'],
+        'estado'              => 'CALIFICADA',
+        'fase_actual'         => 5,
+    ]);
+
+    return response()->json([
+        'success' => true,
+        'calculo' => $calculo,
+        'message' => 'Nota final calculada y guardada correctamente.',
+    ]);
+})->name('evaluaciones.calcular-final');
+
+
+// --- GET: Listado de competencias calificadas de una evaluación ---
+Route::get('/evaluaciones/{id}/competencias', function (int $id) {
+    abort_unless(session()->has('usuario_autenticado'), 403);
+
+    $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
+    abort_unless($evaluacion, 404);
+
+    $auth = session('usuario_autenticado');
+    $rolActivo = $auth['rol_activo'] ?? null;
+
+    if ($rolActivo !== 'admin') {
+        $puedeVer = DB::table('vinculacion')
+            ->whereIn('id_vinculacion', [$evaluacion->id_vinc_evaluado, $evaluacion->id_vinc_evaluador])
+            ->where('id_funcionario', $auth['id_funcionario'] ?? null)
+            ->exists();
+        abort_unless($puedeVer, 403);
+    }
+
+    $competencias = DB::table('competencia_evaluada')
+        ->where('id_evaluacion', $id)
+        ->orderBy('tipo')
+        ->orderBy('nombre_competencia')
+        ->get();
+
+    return response()->json(['competencias' => $competencias]);
+})->name('evaluaciones.competencias');
+
+
+// --- GET: Catálogo de competencias por sistema y nivel jerárquico ---
+Route::get('/catalogo/competencias', function (Request $request) {
+    abort_unless(session()->has('usuario_autenticado'), 403);
+
+    $catalogoPath = storage_path('app/competencias_catalogo.json');
+    if (!file_exists($catalogoPath)) {
+        return response()->json(['error' => 'Catálogo no disponible.'], 404);
+    }
+
+    $catalogo = json_decode(file_get_contents($catalogoPath), true);
+
+    // Filtrar por sistema y nivel si se pasan como query params
+    $sistema = strtoupper($request->query('sistema', ''));
+    $nivel   = strtoupper($request->query('nivel', ''));
+
+    if ($sistema && isset($catalogo[$sistema])) {
+        $resultado = $catalogo[$sistema];
+
+        if ($nivel && isset($resultado['NIVEL_JERARQUICO'][$nivel])) {
+            return response()->json([
+                'sistema' => $sistema,
+                'nivel'   => $nivel,
+                'comun'   => $resultado['COMUN'],
+                'nivel_jerarquico' => $resultado['NIVEL_JERARQUICO'][$nivel],
+                'escala'  => $catalogo['escala_calificacion'],
+            ]);
+        }
+
+        return response()->json([
+            'sistema' => $sistema,
+            'data'    => $resultado,
+            'escala'  => $catalogo['escala_calificacion'],
+        ]);
+    }
+
+    return response()->json([
+        'catalogo' => $catalogo,
+    ]);
+})->name('catalogo.competencias');
+
+
+// --- POST: Calificar ejes misionales (evaluador AG con aplica_eje_misional) ---
+Route::post('/evaluaciones/{id}/calificar-ejes', function (Request $request, int $id) {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'evaluador', 403);
+
+    $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
+    abort_unless($evaluacion, 404);
+    abort_unless($evaluacion->concertacion_firmada, 403, 'La concertación debe estar firmada antes de calificar ejes misionales.');
+
+    $auth = session('usuario_autenticado');
+    $puedeEditar = DB::table('vinculacion')
+        ->where('id_vinculacion', $evaluacion->id_vinc_evaluador)
+        ->where('id_funcionario', $auth['id_funcionario'] ?? null)
+        ->exists();
+    abort_unless($puedeEditar, 403);
+
+    // Verificar que el evaluado tiene aplica_eje_misional = 1
+    $vinculacionEvaluado = DB::table('vinculacion')
+        ->where('id_vinculacion', $evaluacion->id_vinc_evaluado)
+        ->first();
+    abort_unless($vinculacionEvaluado && $vinculacionEvaluado->aplica_eje_misional, 403, 'Este evaluado no tiene ejes misionales habilitados.');
+
+    $data = $request->validate([
+        'ejes' => ['required', 'array'],
+        'ejes.*.tipo_eje'    => ['required', 'in:DOCENCIA,INVESTIGACION,PROYECCION_SOCIAL'],
+        'ejes.*.calificacion'=> ['required', 'numeric', 'min:0', 'max:100'],
+        'ejes.*.observacion' => ['nullable', 'string', 'max:500'],
+    ]);
+
+    foreach ($data['ejes'] as $eje) {
+        DB::table('eje_misional_calificacion')->updateOrInsert(
+            ['id_evaluacion' => $id, 'tipo_eje' => $eje['tipo_eje']],
+            [
+                'calificacion' => $eje['calificacion'],
+                'observaciones'=> $eje['observacion'] ?? null,
+            ]
+        );
+    }
+
+    return response()->json(['success' => true, 'message' => 'Ejes misionales calificados correctamente.']);
+})->name('evaluaciones.calificar-ejes');
