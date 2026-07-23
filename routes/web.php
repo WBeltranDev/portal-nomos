@@ -7,52 +7,57 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 
 
-function defaultPonderacionesConfig() {
-    return [
-        'RENDIMIENTO_LABORAL' => [
-            'peso_compromisos' => 80.0,
-            'peso_competencias' => 20.0,
-            'peso_docencia' => 0.0,
-            'peso_investigacion' => 0.0,
-            'peso_proyeccion_social' => 0.0,
-        ],
-        'ACUERDO_GESTION' => [
-            'peso_compromisos' => 50.0,
-            'peso_competencias' => 20.0,
-            'peso_docencia' => 10.0,
-            'peso_investigacion' => 10.0,
-            'peso_proyeccion_social' => 10.0,
-        ],
-    ];
-}
-
-function getPonderacionesConfig() {
-    $configData = defaultPonderacionesConfig();
-    $jsonPath = storage_path('app/ponderaciones.json');
-
-    if (file_exists($jsonPath)) {
-        $storedData = json_decode(file_get_contents($jsonPath), true) ?? [];
-        foreach ($storedData as $sistema => $vals) {
-            if (!isset($configData[$sistema]) || !is_array($vals)) {
-                continue;
-            }
-
-            $configData[$sistema] = array_merge($configData[$sistema], [
-                'peso_compromisos' => (float) ($vals['peso_compromisos'] ?? $configData[$sistema]['peso_compromisos']),
-                'peso_competencias' => (float) ($vals['peso_competencias'] ?? $configData[$sistema]['peso_competencias']),
-                'peso_docencia' => (float) ($vals['peso_docencia'] ?? $configData[$sistema]['peso_docencia']),
-                'peso_investigacion' => (float) ($vals['peso_investigacion'] ?? $configData[$sistema]['peso_investigacion']),
-                'peso_proyeccion_social' => (float) ($vals['peso_proyeccion_social'] ?? $configData[$sistema]['peso_proyeccion_social']),
-            ]);
-        }
+if (!function_exists('defaultPonderacionesConfig')) {
+    function defaultPonderacionesConfig() {
+        return [
+            'RENDIMIENTO_LABORAL' => [
+                'peso_compromisos' => 80.0,
+                'peso_competencias' => 20.0,
+                'peso_docencia' => 0.0,
+                'peso_investigacion' => 0.0,
+                'peso_proyeccion_social' => 0.0,
+            ],
+            'ACUERDO_GESTION' => [
+                'peso_compromisos' => 50.0,
+                'peso_competencias' => 20.0,
+                'peso_docencia' => 10.0,
+                'peso_investigacion' => 10.0,
+                'peso_proyeccion_social' => 10.0,
+            ],
+        ];
     }
-
-    $configData['RENDIMIENTO_LABORAL']['peso_docencia'] = 0.0;
-    $configData['RENDIMIENTO_LABORAL']['peso_investigacion'] = 0.0;
-    $configData['RENDIMIENTO_LABORAL']['peso_proyeccion_social'] = 0.0;
-
-    return $configData;
 }
+
+if (!function_exists('getPonderacionesConfig')) {
+    function getPonderacionesConfig() {
+        $configData = defaultPonderacionesConfig();
+        $jsonPath = storage_path('app/ponderaciones.json');
+
+        if (file_exists($jsonPath)) {
+            $storedData = json_decode(file_get_contents($jsonPath), true) ?? [];
+            foreach ($storedData as $sistema => $vals) {
+                if (!isset($configData[$sistema]) || !is_array($vals)) {
+                    continue;
+                }
+
+                $configData[$sistema] = array_merge($configData[$sistema], [
+                    'peso_compromisos' => (float) ($vals['peso_compromisos'] ?? $configData[$sistema]['peso_compromisos']),
+                    'peso_competencias' => (float) ($vals['peso_competencias'] ?? $configData[$sistema]['peso_competencias']),
+                    'peso_docencia' => (float) ($vals['peso_docencia'] ?? $configData[$sistema]['peso_docencia']),
+                    'peso_investigacion' => (float) ($vals['peso_investigacion'] ?? $configData[$sistema]['peso_investigacion']),
+                    'peso_proyeccion_social' => (float) ($vals['peso_proyeccion_social'] ?? $configData[$sistema]['peso_proyeccion_social']),
+                ]);
+            }
+        }
+
+        $configData['RENDIMIENTO_LABORAL']['peso_docencia'] = 0.0;
+        $configData['RENDIMIENTO_LABORAL']['peso_investigacion'] = 0.0;
+        $configData['RENDIMIENTO_LABORAL']['peso_proyeccion_social'] = 0.0;
+
+        return $configData;
+    }
+}
+
 
 function getTargetCompromisosWeight($id_evaluacion) {
     $evaluacion = DB::table('evaluacion as ev')
@@ -1276,7 +1281,9 @@ Route::post('/evaluaciones/{id}/firmar', function (Request $request, int $id) {
  *
  * Fuente: requerimientos tl (2).pdf | Pesos y ejes misionales (1).pdf | Formatos AG y RL XLSX
  */
-function calcularNotaEvaluacion(int $idEvaluacion): array {
+if (!function_exists('calcularNotaEvaluacion')) {
+    function calcularNotaEvaluacion(int $idEvaluacion): array {
+
     $evaluacion = DB::table('evaluacion as ev')
         ->join('vinculacion as ve', 've.id_vinculacion', '=', 'ev.id_vinc_evaluado')
         ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
@@ -1472,6 +1479,8 @@ function calcularNotaEvaluacion(int $idEvaluacion): array {
         'requiere_plan_mejoramiento'=> $requierePlanMejoramiento,
     ];
 }
+}
+
 
 
 // --- GET: Vista previa del cálculo de nota (sin guardar) ---
