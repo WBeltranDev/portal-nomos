@@ -141,6 +141,7 @@
                 </button>
                 @endif
 
+                @if ($rolActivo !== 'instancia_externa')
                 <button class="sidebar-link w-full @if($rolActivo !== 'admin') active @endif flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-slate-700 transition" onclick="navegarMenu(this, '{{ $rolActivo === 'evaluador' ? 'evaluaciones-evaluador' : 'evaluaciones' }}')">
                     <span class="material-symbols-outlined">fact_check</span>
                     Evaluaciones
@@ -149,6 +150,14 @@
                     <span class="material-symbols-outlined">description</span>
                     Exportar PDF
                 </button>
+                @endif
+
+                @if ($rolActivo === 'instancia_externa')
+                <button class="sidebar-link w-full active flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-slate-700 transition" onclick="navegarMenu(this, 'instancia-externa')">
+                    <span class="material-symbols-outlined">school</span>
+                    Notas Componente Académico
+                </button>
+                @endif
             </nav>
 
             <div class="p-4 border-t border-slate-100">
@@ -713,6 +722,47 @@
 	                                <div id="evidencias-lista-evaluador" class="space-y-2"></div>
 	                            </div>
 
+	                            <div id="calificacion-bloque-evaluador" class="my-6 pt-4 border-t border-slate-100 space-y-3 hidden">
+	                                <div class="flex items-center justify-between gap-3">
+	                                    <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+	                                        <span class="material-symbols-outlined text-base">star</span>
+	                                        Calificación de compromisos
+	                                    </h4>
+	                                </div>
+	                                <p class="text-[10px] text-slate-400 font-semibold">Escala 0-100: Deficiente 0-50 · Bajo 51-70 · Aceptable 71-80 · Alto 81-90 · Muy alto 91-100</p>
+	                                <div class="flex items-center justify-between gap-3">
+	                                    <span id="calificacion-mensaje-evaluador" class="hidden text-xs font-semibold"></span>
+	                                    <button type="button" onclick="guardarCalificacionCompromisos()" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition ml-auto">Guardar calificaciones</button>
+	                                </div>
+	                            </div>
+
+	                            <div id="competencias-bloque-evaluador" class="my-6 pt-4 border-t border-slate-100 space-y-3 hidden">
+	                                <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+	                                    <span class="material-symbols-outlined text-base">psychology</span>
+	                                    Competencias comportamentales
+	                                </h4>
+	                                <div id="competencias-comunes-evaluador" class="space-y-2"></div>
+	                                <div id="competencias-nivel-evaluador" class="space-y-2"></div>
+	                                <div class="flex items-center justify-between gap-3">
+	                                    <span id="competencias-mensaje-evaluador" class="hidden text-xs font-semibold"></span>
+	                                    <button type="button" onclick="guardarCalificacionCompetencias()" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition ml-auto">Guardar competencias</button>
+	                                </div>
+	                            </div>
+
+	                            <div id="resultado-bloque-evaluador" class="my-6 pt-4 border-t border-slate-100 space-y-3 hidden">
+	                                <div class="flex items-center justify-between gap-3">
+	                                    <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+	                                        <span class="material-symbols-outlined text-base">military_tech</span>
+	                                        Resultado de la evaluación
+	                                    </h4>
+	                                    <div class="flex gap-2">
+	                                        <button type="button" onclick="previsualizarCalculoEvaluador()" class="bg-white border border-slate-200 text-slate-700 px-3 py-2 rounded-xl text-xs font-bold hover:border-[#00594E] transition">Ver cálculo</button>
+	                                        <button type="button" onclick="calcularNotaFinalEvaluador()" class="bg-[#B5A160] text-white px-3 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Calcular nota final</button>
+	                                    </div>
+	                                </div>
+	                                <div id="resultado-contenido-evaluador"></div>
+	                            </div>
+
 	                            <div id="compromiso-formulario-evaluador-contenedor" class="bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
                                 <h4 class="text-xs font-bold text-slate-800 uppercase tracking-wide mb-3">Nuevo Compromiso</h4>
                                 <form id="form-nuevo-compromiso-evaluador" onsubmit="agregarCompromisoEvaluador(event)" class="space-y-3">
@@ -826,6 +876,15 @@
                             </div>
                             <form id="form-evidencia-evaluado" class="grid gap-3 rounded-2xl border border-slate-100 bg-slate-50/50 p-4" onsubmit="guardarEvidenciaEvaluado(event)">
                                 <div>
+                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Componente</label>
+                                    <select name="componente" id="evidencia-componente-evaluado" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" onchange="toggleEvidenciaCompromisoSelect()">
+                                        <option value="B">B - Compromisos laborales</option>
+                                        <option value="C">C - Competencias comunes</option>
+                                        <option value="D">D - Competencias nivel jerárquico</option>
+                                        <option value="F">F - Plan de formación y capacitación</option>
+                                    </select>
+                                </div>
+                                <div id="evidencia-compromiso-contenedor-evaluado">
                                     <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Compromiso</label>
                                     <select name="id_compromiso" id="evidencia-compromiso-evaluado" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" required>
                                         <option value="">Selecciona un compromiso</option>
@@ -846,6 +905,15 @@
                             </form>
                             <div id="evidencias-lista-evaluado" class="space-y-2"></div>
                         </div>
+
+                        <div id="resultado-bloque-evaluado" class="mt-6 pt-4 border-t border-slate-100 space-y-3 hidden">
+                            <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                <span class="material-symbols-outlined text-base">military_tech</span>
+                                Resultado de la evaluación
+                            </h4>
+                            <div id="resultado-contenido-evaluado"></div>
+                        </div>
+
                         <div id="firma-evaluado-seccion" class="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between gap-4">
                             <div class="text-xs text-slate-500 leading-tight">Podrás firmar cuando el evaluador haya firmado la concertación.</div>
                             <form id="form-firmar-evaluado" method="POST" action="">
@@ -858,6 +926,47 @@
                     <div id="panel-concertacion-evaluado-empty" class="panel-card rounded-3xl p-8 flex flex-col items-center justify-center text-center text-slate-400">
                         <span class="material-symbols-outlined text-5xl text-slate-300 mb-3">assignment</span>
                         <p class="text-sm">Selecciona una Evaluación de la lista de la izquierda para ver el estado de la concertaci�n.</p>
+                    </div>
+                </div>
+            </section>
+            @endif
+
+            @if ($rolActivo === 'instancia_externa')
+            <section id="section-instancia-externa" class="section-content space-y-6">
+                <div class="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
+                    <div class="panel-card rounded-3xl p-6 h-fit">
+                        <div class="mb-3">
+                            <p class="text-xs font-bold uppercase tracking-[0.22em] text-[#00594E]">Instancia Externa</p>
+                            <h2 class="text-xl font-black text-slate-900">Evaluados de Acuerdo de Gestión</h2>
+                            <p class="text-xs text-slate-500 mt-1">Vicerrectoría de Investigación, Vicerrectoría de Proyección Social y CEDP cargan aquí las notas del componente académico (docencia, investigación, proyección social) para líderes de programa, departamento o director de escuela.</p>
+                        </div>
+                        <div id="instancia-externa-lista" class="space-y-3">
+                            <div class="py-6 text-center text-slate-500 text-xs">Cargando evaluados...</div>
+                        </div>
+                    </div>
+
+                    <div class="space-y-6 lg:sticky lg:top-6">
+                        <div id="panel-instancia-externa" class="panel-card rounded-3xl p-6 hidden">
+                            <div class="flex items-start justify-between gap-4 pb-4 border-b border-slate-100">
+                                <div>
+                                    <p class="text-xs font-bold uppercase tracking-[0.22em] text-[#00594E]">Ejes misionales</p>
+                                    <h3 id="instancia-externa-nombre" class="text-xl font-black text-slate-900 mt-1 leading-snug">Selecciona un evaluado</h3>
+                                    <p id="instancia-externa-detalle" class="text-xs text-slate-500">-</p>
+                                </div>
+                            </div>
+                            <form id="form-instancia-externa" class="mt-4 space-y-3" onsubmit="guardarNotasInstanciaExterna(event)">
+                                <div id="instancia-externa-ejes-contenedor" class="space-y-3"></div>
+                                <div class="flex items-center justify-between gap-3 pt-2">
+                                    <span id="instancia-externa-mensaje" class="hidden text-xs font-semibold"></span>
+                                    <button type="submit" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition ml-auto">Guardar notas</button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <div id="panel-instancia-externa-empty" class="panel-card rounded-3xl p-8 flex flex-col items-center justify-center text-center text-slate-400">
+                            <span class="material-symbols-outlined text-5xl text-slate-300 mb-3">school</span>
+                            <p class="text-sm">Selecciona un evaluado de la lista para cargar sus notas de componente académico.</p>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -987,7 +1096,13 @@
     }
 
     function contarEvidencias(evidencias = []) {
-        return evidencias.filter(evidencia => evidencia.id_compromiso).length;
+        return evidencias.length;
+    }
+
+    function badgeEstadoAprobacion(estado) {
+        const label = estado || 'PENDIENTE';
+        const cls = label === 'APROBADA' ? 'bg-[#EAF2EF] text-[#00594E]' : (label === 'RECHAZADA' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-700');
+        return `<span class="inline-block mt-1 text-[9px] font-bold uppercase px-2 py-0.5 rounded-full ${cls}">${label}</span>`;
     }
 
     function renderEvidenciasCompactas(evidencias = []) {
@@ -1000,6 +1115,8 @@
                 <div class="min-w-0">
                     <p class="text-[11px] font-bold text-slate-700 truncate">${escapeHtml(evidencia.descripcion || 'Evidencia registrada')}</p>
                     <p class="text-[10px] text-slate-400">${escapeHtml(evidencia.fecha_inclusion || '')}</p>
+                    ${badgeEstadoAprobacion(evidencia.estado_aprobacion)}
+                    ${evidencia.estado_aprobacion === 'RECHAZADA' && evidencia.observacion_aprobacion ? `<p class="text-[10px] text-red-600 mt-1">${escapeHtml(evidencia.observacion_aprobacion)}</p>` : ''}
                 </div>
                 <a class="inline-flex items-center gap-1 text-[11px] font-bold text-[#00594E] hover:underline shrink-0" href="${escapeHtml(evidencia.url_o_ubicacion || '#')}" target="_blank" rel="noopener noreferrer">
                     <span class="material-symbols-outlined text-sm">open_in_new</span>
@@ -1007,6 +1124,48 @@
                 </a>
             </div>
         `).join('');
+    }
+
+    function renderEvidenciasEvaluadorAccion(evidencias = []) {
+        if (!evidencias.length) {
+            return '<div class="text-[11px] text-slate-400">Sin evidencias registradas para este compromiso.</div>';
+        }
+
+        return evidencias.map(evidencia => {
+            const estado = evidencia.estado_aprobacion || 'PENDIENTE';
+            const acciones = estado === 'PENDIENTE' ? `
+                <div class="flex gap-1.5 shrink-0">
+                    <button type="button" onclick="aprobarEvidencia(${evidencia.id_evidencia}, 'APROBADA')" class="text-[10px] font-bold px-2 py-1 rounded-lg bg-[#EAF2EF] text-[#00594E] hover:brightness-95">Aprobar</button>
+                    <button type="button" onclick="aprobarEvidencia(${evidencia.id_evidencia}, 'RECHAZADA')" class="text-[10px] font-bold px-2 py-1 rounded-lg bg-red-50 text-red-600 hover:brightness-95">Rechazar</button>
+                </div>` : '';
+            return `
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                    <div class="min-w-0">
+                        <p class="text-[11px] font-bold text-slate-700 truncate">${escapeHtml(evidencia.descripcion || 'Evidencia registrada')}</p>
+                        <p class="text-[10px] text-slate-400">${escapeHtml(evidencia.fecha_inclusion || '')}</p>
+                        ${badgeEstadoAprobacion(estado)}
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                        <a class="inline-flex items-center gap-1 text-[11px] font-bold text-[#00594E] hover:underline" href="${escapeHtml(evidencia.url_o_ubicacion || '#')}" target="_blank" rel="noopener noreferrer">
+                            <span class="material-symbols-outlined text-sm">open_in_new</span><span>Abrir</span>
+                        </a>
+                        ${acciones}
+                    </div>
+                </div>`;
+        }).join('');
+    }
+
+    function aprobarEvidencia(idEvidencia, decision) {
+        if (!selectedEvaluacionId) return;
+        const observacion = decision === 'RECHAZADA' ? (prompt('Motivo del rechazo (opcional):') || '') : '';
+        fetch(`/evaluaciones/${selectedEvaluacionId}/evidencias/${idEvidencia}/aprobar`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
+            body: JSON.stringify({ decision, observacion }),
+        })
+            .then(res => res.json())
+            .then(() => { if (selectedEvaluacionData) cargarCompromisosEvaluador(selectedEvaluacionData, selectedEvaluacionEjes); })
+            .catch(() => {});
     }
 
     function renderObservacionEvaluador(compromiso, observacion = null, bloqueadaPorCierre = false) {
@@ -1333,8 +1492,13 @@
                     div.className = 'p-4 rounded-xl border bg-white';
                     const metasHtml = (c.metas || []).map(m => `<span class="bg-[#EAF2EF] text-[#00594E] text-[10px] font-bold px-2 py-0.5 rounded-full">${escapeHtml(m)}</span>`).join(' ');
                     const deleteBtn = yaFirmado ? '' : `<button type="button" class="text-red-500 hover:text-red-700 mt-1 flex items-center justify-center" onclick="eliminarCompromisoEvaluador(${c.id_compromiso})"><span class="material-symbols-outlined text-lg">delete</span></button>`;
-                    const evidenciasHtml = renderEvidenciasCompactas(evidenciasPorCompromiso[String(c.id_compromiso)] || []);
+                    const evidenciasHtml = renderEvidenciasEvaluadorAccion(evidenciasPorCompromiso[String(c.id_compromiso)] || []);
                     const observacionHtml = renderObservacionEvaluador(c, observacionesPorCompromiso[String(c.id_compromiso)], !estado.congelada);
+                    const calificacionHtml = estado.congelada ? `
+                        <div class="mt-4 pt-3 border-t border-slate-100 flex items-center gap-2">
+                            <label class="text-[10px] font-bold text-slate-500 uppercase">Calificación (0-100)</label>
+                            <input type="number" min="0" max="100" step="0.01" class="calificacion-compromiso-input w-24 text-xs rounded-lg border border-slate-200 p-1.5" data-id-compromiso="${c.id_compromiso}" value="${c.calificacion_definitiva ?? ''}" />
+                        </div>` : '';
                     div.innerHTML = `
                         <div class="flex justify-between items-start gap-4">
                             <div class="flex-1">
@@ -1354,6 +1518,7 @@
                             </div>
                             <div class="space-y-2">${evidenciasHtml}</div>
                         </div>
+                        ${calificacionHtml}
                         ${observacionHtml}
                     `;
                     contenedor.appendChild(div);
@@ -1370,6 +1535,14 @@
 	                const formContainer = document.getElementById('compromiso-formulario-evaluador-contenedor');
 	                if (formContainer) formContainer.classList.toggle('hidden', yaFirmado);
 
+                ['calificacion-bloque-evaluador', 'competencias-bloque-evaluador', 'resultado-bloque-evaluador'].forEach(id => {
+                    const bloque = document.getElementById(id);
+                    if (bloque) bloque.classList.toggle('hidden', !estado.congelada);
+                });
+                if (estado.congelada) {
+                    cargarCalificacionYResultado(ev);
+                }
+
                 const btnFirmar = document.getElementById('btn-firmar-evaluador');
                 const okToSign = contador >= 7 && contador <= 10 && Math.abs(sumaPesos - targetWeight) < 0.01 && !yaFirmado;
                 if (btnFirmar) {
@@ -1380,6 +1553,181 @@
                 if (form) form.action = `/evaluaciones/${ev.id_evaluacion}/firmar`;
             })
             .catch(() => {});
+    }
+
+    // --- S5: Calificación de compromisos/competencias y resultado consolidado ---
+
+    function cargarCalificacionYResultado(ev) {
+        if (!selectedEvaluacionId) return;
+        const sistema = String(ev.sistema || '').trim().toUpperCase();
+        const nivel = String(ev.evaluado_nivel_jerarquico || '').trim().toUpperCase();
+
+        fetch(`/catalogo/competencias?sistema=${encodeURIComponent(sistema)}&nivel=${encodeURIComponent(nivel)}`)
+            .then(res => res.json())
+            .then(catalogo => {
+                fetch(`/evaluaciones/${selectedEvaluacionId}/competencias`)
+                    .then(res => res.json())
+                    .then(payload => renderCompetenciasEvaluador(catalogo, payload.competencias || []))
+                    .catch(() => renderCompetenciasEvaluador(catalogo, []));
+            })
+            .catch(() => {});
+
+        previsualizarCalculoEvaluador();
+    }
+
+    function renderCompetenciasEvaluador(catalogo, existentes = []) {
+        const comunes = catalogo.comun || [];
+        const nivel = catalogo.nivel_jerarquico || [];
+        const notasExistentes = existentes.reduce((acc, c) => {
+            acc[`${c.tipo}::${c.nombre_competencia}`] = c.calificacion_definitiva;
+            return acc;
+        }, {});
+
+        const renderLista = (items, tipo) => items.map(item => {
+            const key = `${tipo}::${item.nombre}`;
+            const valor = notasExistentes[key] ?? '';
+            return `
+                <div class="p-3 rounded-xl border border-slate-100 bg-white">
+                    <p class="text-xs font-bold text-slate-800">${escapeHtml(item.nombre)}</p>
+                    <p class="text-[10px] text-slate-500 mt-0.5">${escapeHtml(item.afirmacion || '')}</p>
+                    <div class="mt-2 flex items-center gap-2">
+                        <label class="text-[10px] font-bold text-slate-500 uppercase">Calificación (0-100)</label>
+                        <input type="number" min="0" max="100" step="0.01" class="competencia-input w-24 text-xs rounded-lg border border-slate-200 p-1.5" data-tipo="${tipo}" data-nombre="${escapeHtml(item.nombre)}" value="${valor}" />
+                    </div>
+                </div>`;
+        }).join('');
+
+        const comunesNode = document.getElementById('competencias-comunes-evaluador');
+        const nivelNode = document.getElementById('competencias-nivel-evaluador');
+        if (comunesNode) comunesNode.innerHTML = '<p class="text-[10px] font-bold text-slate-400 uppercase mb-1">Comunes</p>' + (renderLista(comunes, 'COMUN') || '<p class="text-[11px] text-slate-400">Sin catálogo disponible.</p>');
+        if (nivelNode) nivelNode.innerHTML = '<p class="text-[10px] font-bold text-slate-400 uppercase mb-1">Nivel jerárquico</p>' + (renderLista(nivel, 'NIVEL_JERARQUICO') || '<p class="text-[11px] text-slate-400">Sin catálogo disponible.</p>');
+    }
+
+    function guardarCalificacionCompromisos() {
+        if (!selectedEvaluacionId) return;
+        const compromisos = Array.from(document.querySelectorAll('.calificacion-compromiso-input'))
+            .filter(input => input.value !== '')
+            .map(input => ({ id_compromiso: parseInt(input.dataset.idCompromiso, 10), calificacion_definitiva: parseFloat(input.value) }));
+
+        const msg = document.getElementById('calificacion-mensaje-evaluador');
+        fetch(`/evaluaciones/${selectedEvaluacionId}/calificar-compromisos`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
+            body: JSON.stringify({ compromisos }),
+        })
+            .then(res => res.json())
+            .then(payload => {
+                if (msg) { msg.classList.remove('hidden'); msg.className = 'text-xs font-semibold text-[#00594E]'; msg.innerText = payload.message || 'Calificaciones guardadas.'; }
+                previsualizarCalculoEvaluador();
+            })
+            .catch(() => {
+                if (msg) { msg.classList.remove('hidden'); msg.className = 'text-xs font-semibold text-red-600'; msg.innerText = 'No se pudo guardar.'; }
+            });
+    }
+
+    function guardarCalificacionCompetencias() {
+        if (!selectedEvaluacionId) return;
+        const competencias = Array.from(document.querySelectorAll('.competencia-input'))
+            .filter(input => input.value !== '')
+            .map(input => ({ nombre_competencia: input.dataset.nombre, tipo: input.dataset.tipo, calificacion_definitiva: parseFloat(input.value) }));
+
+        const msg = document.getElementById('competencias-mensaje-evaluador');
+        fetch(`/evaluaciones/${selectedEvaluacionId}/calificar-competencias`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
+            body: JSON.stringify({ competencias }),
+        })
+            .then(res => res.json())
+            .then(payload => {
+                if (msg) { msg.classList.remove('hidden'); msg.className = 'text-xs font-semibold text-[#00594E]'; msg.innerText = payload.message || 'Competencias guardadas.'; }
+                previsualizarCalculoEvaluador();
+            })
+            .catch(() => {
+                if (msg) { msg.classList.remove('hidden'); msg.className = 'text-xs font-semibold text-red-600'; msg.innerText = 'No se pudo guardar.'; }
+            });
+    }
+
+    function renderResultado(calculo, containerId) {
+        const cont = document.getElementById(containerId);
+        if (!cont) return;
+        if (!calculo || calculo.error) {
+            cont.innerHTML = '<div class="text-xs text-slate-400">Aún no hay datos suficientes para calcular la nota.</div>';
+            return;
+        }
+        const categoriaLabel = {
+            SOBRESALIENTE: 'Sobresaliente (91-100)',
+            BUENO: 'Bueno (81-90)',
+            APROBADO_MEJORA: 'Aprobado - Susceptible de mejora (71-80)',
+            NO_SATISFACTORIO: 'No satisfactorio (0-70)',
+        }[calculo.categoria] || calculo.categoria || '-';
+        const categoriaClass = {
+            SOBRESALIENTE: 'bg-[#EAF2EF] text-[#00594E]',
+            BUENO: 'bg-blue-50 text-blue-700',
+            APROBADO_MEJORA: 'bg-amber-50 text-amber-700',
+            NO_SATISFACTORIO: 'bg-red-50 text-red-600',
+        }[calculo.categoria] || 'bg-slate-100 text-slate-600';
+
+        const ejesHtml = calculo.subtotal_ejes_total ? `
+            <div class="flex justify-between text-xs text-slate-600"><span>Ejes misionales</span><span class="font-bold">${calculo.subtotal_ejes_total}</span></div>
+        ` : '';
+
+        const prorrateoHtml = (calculo.nota_prorrateo !== null && calculo.nota_prorrateo !== undefined) ? `
+            <div class="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-600">
+                <p class="font-bold text-slate-700">Evaluación eventual (RF3)</p>
+                <p>Días laborados: ${calculo.dias_laborados ?? '-'} · Factor: ${calculo.factor_prorrateo ?? '-'}</p>
+                <p>Nota antes de prorrateo: ${calculo.nota_final} → Nota con prorrateo: <span class="font-black text-[#00594E]">${calculo.nota_prorrateo}</span></p>
+            </div>
+        ` : '';
+
+        cont.innerHTML = `
+            <div class="rounded-2xl border border-slate-100 bg-slate-50/60 p-4 space-y-2">
+                <div class="flex items-center justify-between">
+                    <span class="text-3xl font-black text-slate-900">${calculo.nota_definitiva ?? '-'}</span>
+                    <span class="text-[10px] font-black uppercase px-3 py-1.5 rounded-full ${categoriaClass}">${categoriaLabel}</span>
+                </div>
+                <div class="space-y-1 pt-2 border-t border-slate-100">
+                    <div class="flex justify-between text-xs text-slate-600"><span>Compromisos (${calculo.pesos?.compromisos ?? '-'}%)</span><span class="font-bold">${calculo.subtotal_compromisos ?? '-'}</span></div>
+                    <div class="flex justify-between text-xs text-slate-600"><span>Competencias comunes (${calculo.pesos?.comun ?? '-'}%)</span><span class="font-bold">${calculo.subtotal_comun ?? '-'}</span></div>
+                    <div class="flex justify-between text-xs text-slate-600"><span>Competencias nivel jerárquico (${calculo.pesos?.nivel_jerarquico ?? '-'}%)</span><span class="font-bold">${calculo.subtotal_nivel ?? '-'}</span></div>
+                    ${ejesHtml}
+                </div>
+                ${prorrateoHtml}
+            </div>
+        `;
+    }
+
+    function previsualizarCalculoEvaluador() {
+        if (!selectedEvaluacionId) return;
+        fetch(`/evaluaciones/${selectedEvaluacionId}/calculo`)
+            .then(res => res.json())
+            .then(calculo => renderResultado(calculo, 'resultado-contenido-evaluador'))
+            .catch(() => {});
+    }
+
+    function calcularNotaFinalEvaluador() {
+        if (!selectedEvaluacionId) return;
+        fetch(`/evaluaciones/${selectedEvaluacionId}/calcular-final`, {
+            method: 'POST',
+            headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
+        })
+            .then(res => res.json())
+            .then(payload => {
+                if (payload.calculo) renderResultado(payload.calculo, 'resultado-contenido-evaluador');
+                else if (payload.error) alert(payload.error);
+            })
+            .catch(() => {});
+    }
+
+    function toggleEvidenciaCompromisoSelect() {
+        const componente = document.getElementById('evidencia-componente-evaluado')?.value || 'B';
+        const contenedor = document.getElementById('evidencia-compromiso-contenedor-evaluado');
+        const select = document.getElementById('evidencia-compromiso-evaluado');
+        const esB = componente === 'B';
+        if (contenedor) contenedor.classList.toggle('hidden', !esB);
+        if (select) {
+            select.required = esB;
+            if (!esB) select.value = '';
+        }
     }
 
     function cargarCompromisosEvaluado(ev) {
@@ -1448,11 +1796,23 @@
                     btnFirmar.disabled = !okToSign;
                     btnFirmar.innerText = locked ? 'Firmado' : 'Firmar Concertación';
                 }
+
+                const resultadoBloque = document.getElementById('resultado-bloque-evaluado');
+                if (resultadoBloque) resultadoBloque.classList.toggle('hidden', !concertacionFirmada);
+                if (concertacionFirmada) cargarResultadoEvaluado();
             });
     }
 
+    function cargarResultadoEvaluado() {
+        if (!selectedEvaluacionId) return;
+        fetch(`/evaluaciones/${selectedEvaluacionId}/calculo`)
+            .then(res => res.json())
+            .then(calculo => renderResultado(calculo, 'resultado-contenido-evaluado'))
+            .catch(() => {});
+    }
+
     function renderEvidenciasLectura(evidencias, listaId, contadorId) {
-        evidencias = (evidencias || []).filter(evidencia => evidencia.id_compromiso);
+        evidencias = evidencias || [];
         const lista = document.getElementById(listaId);
         const contador = document.getElementById(contadorId);
         if (contador) contador.innerText = `${contarEvidencias(evidencias)} registradas`;
@@ -1480,7 +1840,11 @@
 
             const date = document.createElement('p');
             date.className = 'text-[10px] text-slate-400 mt-0.5';
-            date.innerText = evidencia.fecha_inclusion || '';
+            const componenteLabel = evidencia.componente && evidencia.componente !== 'B' ? ` · Componente ${evidencia.componente}` : '';
+            date.innerText = (evidencia.fecha_inclusion || '') + componenteLabel;
+
+            const estado = document.createElement('span');
+            estado.innerHTML = badgeEstadoAprobacion(evidencia.estado_aprobacion);
 
             const link = document.createElement('a');
             link.className = 'inline-flex items-center justify-center gap-1 text-xs font-bold text-[#00594E] hover:underline shrink-0';
@@ -1491,6 +1855,13 @@
 
             content.appendChild(description);
             content.appendChild(date);
+            content.appendChild(estado);
+            if (evidencia.estado_aprobacion === 'RECHAZADA' && evidencia.observacion_aprobacion) {
+                const motivo = document.createElement('p');
+                motivo.className = 'text-[10px] text-red-600 mt-1';
+                motivo.innerText = evidencia.observacion_aprobacion;
+                content.appendChild(motivo);
+            }
             item.appendChild(content);
             item.appendChild(link);
             lista.appendChild(item);
@@ -1536,7 +1907,8 @@
         const button = form?.querySelector('button[type="submit"]');
         const descripcion = form?.querySelector('[name="descripcion"]')?.value || '';
         const url = form?.querySelector('[name="url"]')?.value || '';
-        if (!form || !compromisoId || !url.trim()) return;
+        const componente = form?.querySelector('[name="componente"]')?.value || 'B';
+        if (!form || !url.trim() || (componente === 'B' && !compromisoId)) return;
 
         if (button) {
             button.disabled = true;
@@ -1550,7 +1922,7 @@
                 'Accept': 'application/json',
                 'X-CSRF-TOKEN': '{{ csrf_token() }}'
             },
-            body: JSON.stringify({ id_compromiso: compromisoId, descripcion, url })
+            body: JSON.stringify({ id_compromiso: componente === 'B' ? compromisoId : null, componente, descripcion, url })
         })
             .then(async res => {
                 const payload = await res.json().catch(() => ({}));
@@ -1560,6 +1932,7 @@
                 }
                 form.reset();
                 if (origen === 'evaluado') {
+                    toggleEvidenciaCompromisoSelect();
                     mostrarMensajeEvidencia('Evidencia registrada correctamente.');
                     if (selectedEvaluacionData) cargarCompromisosEvaluado(selectedEvaluacionData);
                 } else if (selectedEvaluacionData) {
@@ -1703,18 +2076,148 @@
         });
     }
 
+    // --- S4: Módulo Instancia Externa (Vicerrectoría Investigación / Proyección Social / CEDP) ---
+
+    let selectedEvalExternaId = null;
+
+    const EJE_LABELS = {
+        DOCENCIA: 'Docencia',
+        INVESTIGACION: 'Investigación',
+        PROYECCION_SOCIAL: 'Proyección Social',
+    };
+
+    function cargarListaInstanciaExterna() {
+        const contenedor = document.getElementById('instancia-externa-lista');
+        if (!contenedor) return;
+        fetch('/instancia-externa/evaluaciones')
+            .then(res => res.json())
+            .then(payload => {
+                const evaluaciones = payload.evaluaciones || [];
+                contenedor.innerHTML = '';
+                if (!evaluaciones.length) {
+                    contenedor.innerHTML = '<div class="py-8 text-center text-slate-500 text-xs">No hay evaluados de Acuerdo de Gestión con ejes misionales habilitados.</div>';
+                    return;
+                }
+                evaluaciones.forEach(ev => {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'evaluacion-externa-card w-full text-left p-4 rounded-2xl border border-slate-200 bg-white cursor-pointer hover:border-[#00594E] transition';
+                    const ejesTexto = (ev.ejes_activos || []).map(e => EJE_LABELS[e] || e).join(' · ');
+                    const cargados = (ev.calificaciones || []).length;
+                    btn.innerHTML = `
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <h4 class="font-bold text-slate-900 text-sm leading-snug">${escapeHtml(ev.evaluado_nombres || '')} ${escapeHtml(ev.evaluado_apellidos || '')}</h4>
+                                <p class="text-xs text-slate-500 mt-0.5">${escapeHtml(ev.evaluado_cargo || '')} - ${escapeHtml(ev.evaluado_area || '')}</p>
+                            </div>
+                            <span class="text-[10px] font-bold uppercase px-2 py-1 rounded-full ${cargados ? 'bg-[#EAF2EF] text-[#00594E]' : 'bg-amber-50 text-amber-700'}">${cargados ? cargados + ' nota(s)' : 'Sin notas'}</span>
+                        </div>
+                        <div class="flex justify-between items-center mt-3">
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#EAF2EF] text-[#00594E]">AG</span>
+                            <span class="text-[9px] uppercase tracking-wide font-bold text-slate-400">${escapeHtml(ejesTexto)}</span>
+                        </div>
+                    `;
+                    btn.onclick = () => abrirInstanciaExterna(btn, ev);
+                    contenedor.appendChild(btn);
+                });
+            })
+            .catch(() => {
+                contenedor.innerHTML = '<div class="py-8 text-center text-red-500 text-xs">No se pudo cargar el listado.</div>';
+            });
+    }
+
+    function abrirInstanciaExterna(card, ev) {
+        selectedEvalExternaId = ev.id_evaluacion;
+
+        const panel = document.getElementById('panel-instancia-externa');
+        const empty = document.getElementById('panel-instancia-externa-empty');
+        if (empty) empty.classList.add('hidden');
+        if (panel) panel.classList.remove('hidden');
+
+        const setText = (id, value) => {
+            const node = document.getElementById(id);
+            if (node) node.innerText = value;
+        };
+        setText('instancia-externa-nombre', `${ev.evaluado_nombres || ''} ${ev.evaluado_apellidos || ''}`.trim());
+        setText('instancia-externa-detalle', `${ev.evaluado_cargo || '-'} - ${ev.evaluado_area || '-'}`);
+
+        const notasExistentes = (ev.calificaciones || []).reduce((acc, c) => {
+            acc[c.eje] = c;
+            return acc;
+        }, {});
+
+        const contenedor = document.getElementById('instancia-externa-ejes-contenedor');
+        if (contenedor) {
+            contenedor.innerHTML = (ev.ejes_activos || []).map(eje => {
+                const existente = notasExistentes[eje];
+                return `
+                    <div class="p-3 rounded-xl border border-slate-100 bg-slate-50/50">
+                        <p class="text-xs font-bold text-slate-800">${EJE_LABELS[eje] || eje}</p>
+                        ${existente ? `<p class="text-[10px] text-slate-400 mt-0.5">Última carga: ${escapeHtml(existente.fecha_ingreso || '')} (${escapeHtml(existente.origen || '-')})</p>` : ''}
+                        <div class="mt-2 flex items-center gap-2">
+                            <label class="text-[10px] font-bold text-slate-500 uppercase">Calificación (0-100)</label>
+                            <input type="number" min="0" max="100" step="0.01" class="eje-externa-input w-24 text-xs rounded-lg border border-slate-200 p-1.5" data-eje="${eje}" value="${existente?.calificacion ?? ''}" />
+                        </div>
+                        <textarea class="eje-externa-observacion mt-2 w-full text-xs rounded-lg border border-slate-200 p-2" rows="2" data-eje="${eje}" placeholder="Observaciones (opcional)">${escapeHtml(existente?.observaciones || '')}</textarea>
+                    </div>`;
+            }).join('') || '<p class="text-xs text-slate-400">Este evaluado no tiene ejes misionales activos.</p>';
+        }
+
+        document.querySelectorAll('.evaluacion-externa-card').forEach(el => el.classList.remove('ring-2', 'ring-[#00594E]'));
+        if (card) card.classList.add('ring-2', 'ring-[#00594E]');
+    }
+
+    function guardarNotasInstanciaExterna(e) {
+        e.preventDefault();
+        if (!selectedEvalExternaId) return;
+
+        const ejes = Array.from(document.querySelectorAll('.eje-externa-input'))
+            .filter(input => input.value !== '')
+            .map(input => {
+                const eje = input.dataset.eje;
+                const observacion = document.querySelector(`.eje-externa-observacion[data-eje="${eje}"]`)?.value || '';
+                return { tipo_eje: eje, calificacion: parseFloat(input.value), observacion };
+            });
+
+        const msg = document.getElementById('instancia-externa-mensaje');
+        if (!ejes.length) {
+            if (msg) { msg.classList.remove('hidden'); msg.className = 'text-xs font-semibold text-red-600'; msg.innerText = 'Ingresa al menos una calificación.'; }
+            return;
+        }
+
+        fetch(`/evaluaciones/${selectedEvalExternaId}/ejes-externa`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
+            body: JSON.stringify({ ejes }),
+        })
+            .then(async res => {
+                const payload = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(payload.message || 'No se pudo guardar.');
+                if (msg) { msg.classList.remove('hidden'); msg.className = 'text-xs font-semibold text-[#00594E]'; msg.innerText = payload.message || 'Notas guardadas.'; }
+                cargarListaInstanciaExterna();
+            })
+            .catch(error => {
+                if (msg) { msg.classList.remove('hidden'); msg.className = 'text-xs font-semibold text-red-600'; msg.innerText = error.message; }
+            });
+    }
+
     window.addEventListener('DOMContentLoaded', () => {
         const activeRole = "{{ $rolActivo }}";
         if (activeRole === 'admin') {
             navegarMenu(null, 'usuarios');
         } else if (activeRole === 'evaluador') {
             navegarMenu(null, 'evaluaciones-evaluador');
+        } else if (activeRole === 'instancia_externa') {
+            navegarMenu(null, 'instancia-externa');
         } else {
             navegarMenu(null, 'evaluaciones');
         }
         if (activeRole === 'evaluador') {
             const firstEvaluacion = document.querySelector('.evaluacion-evaluador-card');
             if (firstEvaluacion) firstEvaluacion.click();
+        }
+        if (activeRole === 'instancia_externa') {
+            cargarListaInstanciaExterna();
         }
         const firstCard = document.querySelector('.empleado-card');
         if (activeRole === 'admin' && firstCard) {

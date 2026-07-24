@@ -360,6 +360,7 @@ Route::get('/dashboard', function () {
     $evaluacionesEvaluador = collect();
     $evaluacionesEvaluado = collect();
     $evaluadosDisponibles = collect();
+    $evaluacionesInstanciaExterna = collect();
     $miVinculacionEvaluador = null;
 
     // 1. Data for Admin
@@ -421,7 +422,7 @@ Route::get('/dashboard', function () {
                 $join->on('f_er.id_evaluacion', '=', 'ev.id_evaluacion')
                      ->where('f_er.tipo_firma', '=', 'CONCERTACION_EVALUADOR');
             })
-            ->select('ev.id_evaluacion', 'ev.estado', 'p.fecha_inicio', 'p.fecha_fin', 'ev.tipo_evaluacion as tipo_nombre', 'fe.nombres as evaluado_nombres', 'fe.apellidos as evaluado_apellidos', 'p.sistema', 've.cargo as evaluado_cargo', 've.area as evaluado_area', 'ev.fase_actual', 've.aplica_eje_misional', 'ev.concertacion_firmada', DB::raw('IF(f_ev.id_firma IS NOT NULL, 1, 0) as evaluado_firmado'), DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado'))
+            ->select('ev.id_evaluacion', 'ev.estado', 'p.fecha_inicio', 'p.fecha_fin', 'ev.tipo_evaluacion as tipo_nombre', 'fe.nombres as evaluado_nombres', 'fe.apellidos as evaluado_apellidos', 'p.sistema', 've.cargo as evaluado_cargo', 've.area as evaluado_area', 've.nivel_jerarquico as evaluado_nivel_jerarquico', 'ev.fase_actual', 've.aplica_eje_misional', 'ev.concertacion_firmada', DB::raw('IF(f_ev.id_firma IS NOT NULL, 1, 0) as evaluado_firmado'), DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado'))
             ->orderByDesc('ev.id_evaluacion')
             ->get();
 
@@ -480,9 +481,14 @@ Route::get('/dashboard', function () {
                 $join->on('f_er.id_evaluacion', '=', 'ev.id_evaluacion')
                     ->where('f_er.tipo_firma', '=', 'CONCERTACION_EVALUADOR');
             })
-            ->select('ev.id_evaluacion', 'ev.estado', 'p.fecha_inicio', 'p.fecha_fin', 'ev.tipo_evaluacion as tipo_nombre', 'fa.nombres as evaluador_nombres', 'fa.apellidos as evaluador_apellidos', 'p.sistema', 've.cargo as evaluado_cargo', 've.area as evaluado_area', 'ev.concertacion_firmada', 'ev.fase_actual', 've.aplica_eje_misional', DB::raw('IF(f_ev.id_firma IS NOT NULL, 1, 0) as evaluado_firmado'), DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado'))
+            ->select('ev.id_evaluacion', 'ev.estado', 'p.fecha_inicio', 'p.fecha_fin', 'ev.tipo_evaluacion as tipo_nombre', 'fa.nombres as evaluador_nombres', 'fa.apellidos as evaluador_apellidos', 'p.sistema', 've.cargo as evaluado_cargo', 've.area as evaluado_area', 've.nivel_jerarquico as evaluado_nivel_jerarquico', 'ev.concertacion_firmada', 'ev.fase_actual', 've.aplica_eje_misional', DB::raw('IF(f_ev.id_firma IS NOT NULL, 1, 0) as evaluado_firmado'), DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado'))
             ->orderByDesc('ev.id_evaluacion')
             ->get();
+    }
+
+    // 4. Data for Instancia Externa
+    if ($rolActivo === 'instancia_externa') {
+        $evaluacionesInstanciaExterna = obtenerEvaluacionesAgConEjesMisionales();
     }
 
     // Support lists
@@ -499,7 +505,7 @@ Route::get('/dashboard', function () {
         'usuario', 'rolActivo', 'usuarios', 'empleados', 'evaluaciones',
         'periodos', 'ponderaciones', 'evaluacionesEvaluador', 'evaluacionesEvaluado',
         'evaluadosDisponibles', 'miVinculacionEvaluador', 'acuerdosRL', 'acuerdosAG',
-        'ponderacionesConfig'
+        'ponderacionesConfig', 'evaluacionesInstanciaExterna'
     ));
 });
 
@@ -1053,30 +1059,75 @@ Route::post('/evaluaciones/{id}/evidencias', function (Request $request, int $id
     }
 
     $data = $request->validate([
-        'id_compromiso' => ['required', 'integer'],
+        'componente' => ['nullable', 'in:B,C,D,F'],
+        'id_compromiso' => ['required_if:componente,B', 'nullable', 'integer'],
         'descripcion' => ['nullable', 'string', 'max:500'],
         'url' => ['required', 'url', 'max:1000'],
     ]);
 
-    $compromiso = DB::table('compromiso')
-        ->where('id_compromiso', $data['id_compromiso'])
-        ->where('id_evaluacion', $id)
-        ->first();
+    $componente = $data['componente'] ?? 'B';
 
-    abort_unless($compromiso, 422);
+    $idCompromiso = null;
+    if ($componente === 'B') {
+        $compromiso = DB::table('compromiso')
+            ->where('id_compromiso', $data['id_compromiso'])
+            ->where('id_evaluacion', $id)
+            ->first();
+
+        abort_unless($compromiso, 422);
+        $idCompromiso = $compromiso->id_compromiso;
+    }
 
     DB::table('evidencia')->insert([
         'id_evaluacion' => $id,
-        'id_compromiso' => $compromiso->id_compromiso,
+        'id_compromiso' => $idCompromiso,
+        'componente' => $componente,
         'descripcion' => ($data['descripcion'] ?? null) ?: 'Evidencia registrada',
         'tipo_evidencia' => 'LINK',
         'url_o_ubicacion' => $data['url'],
         'fecha_inclusion' => date('Y-m-d H:i:s'),
         'id_vinc_registra' => $vinculacionRegistra->id_vinculacion,
+        'estado_aprobacion' => 'PENDIENTE',
     ]);
 
     return response()->json(['success' => true]);
 })->name('evaluaciones.evidencias.store');
+
+Route::post('/evaluaciones/{id}/evidencias/{idEvidencia}/aprobar', function (Request $request, int $id, int $idEvidencia) {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'evaluador', 403);
+
+    $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
+    abort_unless($evaluacion, 404);
+
+    $auth = session('usuario_autenticado');
+    $vinculacionEvaluador = DB::table('vinculacion')
+        ->where('id_vinculacion', $evaluacion->id_vinc_evaluador)
+        ->where('id_funcionario', $auth['id_funcionario'] ?? null)
+        ->first();
+
+    abort_unless($vinculacionEvaluador, 403);
+
+    $evidencia = DB::table('evidencia')
+        ->where('id_evidencia', $idEvidencia)
+        ->where('id_evaluacion', $id)
+        ->first();
+
+    abort_unless($evidencia, 404);
+
+    $data = $request->validate([
+        'decision' => ['required', 'in:APROBADA,RECHAZADA'],
+        'observacion' => ['nullable', 'string', 'max:1000'],
+    ]);
+
+    DB::table('evidencia')->where('id_evidencia', $idEvidencia)->update([
+        'estado_aprobacion' => $data['decision'],
+        'id_vinc_aprueba' => $vinculacionEvaluador->id_vinculacion,
+        'fecha_aprobacion' => date('Y-m-d H:i:s'),
+        'observacion_aprobacion' => $data['observacion'] ?? null,
+    ]);
+
+    return response()->json(['success' => true, 'message' => 'Evidencia ' . strtolower($data['decision']) . ' correctamente.']);
+})->name('evaluaciones.evidencias.aprobar');
 
 Route::post('/evaluaciones/{id}/compromisos', function (Request $request, int $id) {
     abort_unless(session('usuario_autenticado.rol_activo') === 'evaluador', 403);
@@ -1329,7 +1380,7 @@ if (!function_exists('calcularNotaEvaluacion')) {
         $ejeCals = DB::table('eje_misional_calificacion')
             ->where('id_evaluacion', $idEvaluacion)
             ->whereNotNull('calificacion')
-            ->pluck('calificacion', 'tipo_eje')
+            ->pluck('calificacion', 'eje')
             ->toArray();
 
         foreach ($ejesActivos as $tipoEje => $activo) {
@@ -1443,7 +1494,8 @@ if (!function_exists('calcularNotaEvaluacion')) {
     // 7. PLAN DE MEJORAMIENTO (1er semestre)
     // -------------------------------------------------------
     $requierePlanMejoramiento = false;
-    if ($evaluacion->tipo_evaluacion === 'SEMESTRE_1') {
+    $tipoEval = $evaluacion->tipo_evaluacion ?? $evaluacion->tipo ?? 'SEMESTRE_1';
+    if ($tipoEval === 'SEMESTRE_1') {
         if ($sistema === 'RENDIMIENTO_LABORAL' && $categoria === 'APROBADO_MEJORA') {
             $requierePlanMejoramiento = true;
         }
@@ -1642,7 +1694,7 @@ Route::post('/evaluaciones/{id}/calcular-final', function (Request $request, int
     DB::table('evaluacion')->where('id_evaluacion', $id)->update([
         'nota_compromisos'    => $calculo['nota_compromisos_raw'],
         'nota_competencias'   => round(($calculo['nota_comp_comun_raw'] + $calculo['nota_comp_nivel_raw']) / 2, 4),
-        'nota_ejes_misionales'=> $calculo['nota_ejes_raw'],
+        'nota_ejes_misionales'=> $calculo['subtotal_ejes_total'] ?? 0,
         'calificacion_final'  => $calculo['nota_definitiva'],
         'calificacion_parcial'=> $calculo['nota_prorrateo'],
         'categoria_final'     => $calculo['categoria'],
@@ -1757,13 +1809,109 @@ Route::post('/evaluaciones/{id}/calificar-ejes', function (Request $request, int
 
     foreach ($data['ejes'] as $eje) {
         DB::table('eje_misional_calificacion')->updateOrInsert(
-            ['id_evaluacion' => $id, 'tipo_eje' => $eje['tipo_eje']],
+            ['id_evaluacion' => $id, 'eje' => $eje['tipo_eje']],
             [
                 'calificacion' => $eje['calificacion'],
                 'observaciones'=> $eje['observacion'] ?? null,
+                'id_vinc_ingresador' => $evaluacion->id_vinc_evaluador,
+                'id_usuario_ingresador' => $auth['id_usuario'] ?? null,
+                'origen' => 'EVALUADOR',
             ]
         );
     }
 
     return response()->json(['success' => true, 'message' => 'Ejes misionales calificados correctamente.']);
 })->name('evaluaciones.calificar-ejes');
+
+
+/**
+ * Lista evaluaciones AG con ejes misionales habilitados (aplica_eje_misional=1) y
+ * concertación firmada, para el módulo de Instancias Externas (Vicerrectoría de
+ * Investigación, Vicerrectoría de Proyección Social, CEDP). El pliego indica que la
+ * carga de estas notas es exclusiva de las instancias externas; ver también
+ * /evaluaciones/{id}/calificar-ejes (evaluador) — ambos endpoints conviven hasta que
+ * Talento Humano confirme si el evaluador debe perder ese permiso.
+ */
+if (!function_exists('obtenerEvaluacionesAgConEjesMisionales')) {
+    function obtenerEvaluacionesAgConEjesMisionales() {
+        $evaluaciones = DB::table('evaluacion as ev')
+            ->join('vinculacion as ve', 've.id_vinculacion', '=', 'ev.id_vinc_evaluado')
+            ->join('funcionario as fe', 'fe.id_funcionario', '=', 've.id_funcionario')
+            ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
+            ->where('p.sistema', 'ACUERDO_GESTION')
+            ->where('ve.aplica_eje_misional', 1)
+            ->where('ev.concertacion_firmada', 1)
+            ->select('ev.id_evaluacion', 'ev.tipo_evaluacion as tipo_nombre', 'ev.fase_actual', 'p.fecha_inicio', 'p.fecha_fin', 'fe.nombres as evaluado_nombres', 'fe.apellidos as evaluado_apellidos', 've.cargo as evaluado_cargo', 've.area as evaluado_area')
+            ->orderByDesc('ev.id_evaluacion')
+            ->get();
+
+        $jsonPath = storage_path('app/evaluacion_ejes.json');
+        $ejesJson = file_exists($jsonPath) ? (json_decode(file_get_contents($jsonPath), true) ?? []) : [];
+
+        foreach ($evaluaciones as $ev) {
+            $config = $ejesJson[$ev->id_evaluacion] ?? [];
+            $ejesActivos = ['DOCENCIA'];
+            if (!empty($config['investigacion'])) $ejesActivos[] = 'INVESTIGACION';
+            if (!empty($config['proyeccion_social'])) $ejesActivos[] = 'PROYECCION_SOCIAL';
+            $ev->ejes_activos = $ejesActivos;
+
+            $ev->calificaciones = DB::table('eje_misional_calificacion')
+                ->where('id_evaluacion', $ev->id_evaluacion)
+                ->get(['eje', 'calificacion', 'observaciones', 'origen', 'fecha_ingreso']);
+        }
+
+        return $evaluaciones;
+    }
+}
+
+Route::get('/instancia-externa/evaluaciones', function () {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'instancia_externa', 403);
+
+    return response()->json([
+        'evaluaciones' => obtenerEvaluacionesAgConEjesMisionales(),
+    ]);
+})->name('instancia-externa.evaluaciones');
+
+// --- POST: Calificar ejes misionales — Instancia Externa (Vicerrectoría Investigación / Proyección Social / CEDP) ---
+// Endpoint aditivo: no reemplaza /evaluaciones/{id}/calificar-ejes (evaluador). Ver nota arriba.
+Route::post('/evaluaciones/{id}/ejes-externa', function (Request $request, int $id) {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'instancia_externa', 403);
+
+    $evaluacion = DB::table('evaluacion as ev')
+        ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
+        ->where('ev.id_evaluacion', $id)
+        ->select('ev.*', 'p.sistema')
+        ->first();
+    abort_unless($evaluacion, 404);
+    abort_unless(strtoupper(trim((string) $evaluacion->sistema)) === 'ACUERDO_GESTION', 422, 'Solo aplica a evaluaciones de Acuerdo de Gestión.');
+    abort_unless($evaluacion->concertacion_firmada, 403, 'La concertación debe estar firmada antes de calificar ejes misionales.');
+
+    $vinculacionEvaluado = DB::table('vinculacion')
+        ->where('id_vinculacion', $evaluacion->id_vinc_evaluado)
+        ->first();
+    abort_unless($vinculacionEvaluado && $vinculacionEvaluado->aplica_eje_misional, 403, 'Este evaluado no tiene ejes misionales habilitados.');
+
+    $data = $request->validate([
+        'ejes' => ['required', 'array'],
+        'ejes.*.tipo_eje'    => ['required', 'in:DOCENCIA,INVESTIGACION,PROYECCION_SOCIAL'],
+        'ejes.*.calificacion'=> ['required', 'numeric', 'min:0', 'max:100'],
+        'ejes.*.observacion' => ['nullable', 'string', 'max:500'],
+    ]);
+
+    $auth = session('usuario_autenticado');
+
+    foreach ($data['ejes'] as $eje) {
+        DB::table('eje_misional_calificacion')->updateOrInsert(
+            ['id_evaluacion' => $id, 'eje' => $eje['tipo_eje']],
+            [
+                'calificacion' => $eje['calificacion'],
+                'observaciones'=> $eje['observacion'] ?? null,
+                'id_vinc_ingresador' => null,
+                'id_usuario_ingresador' => $auth['id_usuario'] ?? null,
+                'origen' => 'INSTANCIA_EXTERNA',
+            ]
+        );
+    }
+
+    return response()->json(['success' => true, 'message' => 'Notas de componente académico cargadas correctamente.']);
+})->name('evaluaciones.ejes-externa');
