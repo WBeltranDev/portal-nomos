@@ -920,6 +920,7 @@ Route::get('/evaluaciones/{id}/compromisos', function (int $id) {
             'evaluado_firmado' => $evaluadoFirmado,
             'evaluador_firmado' => $evaluadorFirmado,
             'congelada' => (bool) $evaluacion->concertacion_firmada,
+            'calificada' => $evaluacion->estado === 'CALIFICADA',
             'fase_actual' => $evaluacion->fase_actual,
         ],
     ]);
@@ -1058,6 +1059,10 @@ Route::post('/evaluaciones/{id}/evidencias', function (Request $request, int $id
         return response()->json(['message' => 'Debes esperar a que el evaluador y el evaluado firmen la concertación antes de registrar evidencias.'], 422);
     }
 
+    if ($evaluacion->estado === 'CALIFICADA') {
+        return response()->json(['message' => 'Esta evaluación ya fue calificada y calculada; no se pueden registrar más evidencias.'], 422);
+    }
+
     $data = $request->validate([
         'componente' => ['nullable', 'in:B,C,D,F'],
         'id_compromiso' => ['required_if:componente,B', 'nullable', 'integer'],
@@ -1106,6 +1111,8 @@ Route::post('/evaluaciones/{id}/evidencias/{idEvidencia}/aprobar', function (Req
         ->first();
 
     abort_unless($vinculacionEvaluador, 403);
+
+    abort_if($evaluacion->estado === 'CALIFICADA', 422, 'Esta evaluación ya fue calificada y calculada; las evidencias quedaron congeladas y no se pueden modificar.');
 
     $evidencia = DB::table('evidencia')
         ->where('id_evidencia', $idEvidencia)
@@ -1339,7 +1346,7 @@ if (!function_exists('calcularNotaEvaluacion')) {
         ->join('vinculacion as ve', 've.id_vinculacion', '=', 'ev.id_vinc_evaluado')
         ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
         ->where('ev.id_evaluacion', $idEvaluacion)
-        ->select('ev.*', 'p.sistema', 'p.fecha_inicio', 'p.fecha_fin', 've.aplica_eje_misional')
+        ->select('ev.*', 'p.sistema', 'p.fecha_inicio', 'p.fecha_fin', 've.aplica_eje_misional', 've.nivel_jerarquico')
         ->first();
 
     if (!$evaluacion) {
@@ -1504,6 +1511,52 @@ if (!function_exists('calcularNotaEvaluacion')) {
         }
     }
 
+    // -------------------------------------------------------
+    // 8. PENDIENTES — qué falta por calificar antes de poder cerrar la evaluación
+    // -------------------------------------------------------
+    $totalCompromisos = DB::table('compromiso')->where('id_evaluacion', $idEvaluacion)->count();
+    $compromisosSinCalificar = DB::table('compromiso')
+        ->where('id_evaluacion', $idEvaluacion)
+        ->whereNull('calificacion_definitiva')
+        ->count();
+
+    $catalogoPath = storage_path('app/competencias_catalogo.json');
+    $catalogo = file_exists($catalogoPath) ? (json_decode(file_get_contents($catalogoPath), true) ?? []) : [];
+    $nivelJerarquico = strtoupper(trim((string) $evaluacion->nivel_jerarquico));
+
+    $comunesEsperadas = collect($catalogo[$sistema]['COMUN'] ?? [])->pluck('nombre')->all();
+    $nivelEsperadas   = collect($catalogo[$sistema]['NIVEL_JERARQUICO'][$nivelJerarquico] ?? [])->pluck('nombre')->all();
+
+    $comunesCalificadas = DB::table('competencia_evaluada')
+        ->where('id_evaluacion', $idEvaluacion)->where('tipo', 'COMUN')
+        ->whereNotNull('calificacion_definitiva')->pluck('nombre_competencia')->all();
+    $nivelCalificadas = DB::table('competencia_evaluada')
+        ->where('id_evaluacion', $idEvaluacion)->where('tipo', 'NIVEL_JERARQUICO')
+        ->whereNotNull('calificacion_definitiva')->pluck('nombre_competencia')->all();
+
+    $comunesFaltantes = array_values(array_diff($comunesEsperadas, $comunesCalificadas));
+    $nivelFaltantes   = array_values(array_diff($nivelEsperadas, $nivelCalificadas));
+
+    $ejesFaltantes = [];
+    foreach (array_keys($ejesActivos) as $tipoEjeActivo) {
+        if (!isset($ejeCals[$tipoEjeActivo])) {
+            $ejesFaltantes[] = $tipoEjeActivo;
+        }
+    }
+
+    $pendientes = [
+        'compromisos_sin_calificar'      => $compromisosSinCalificar,
+        'competencias_comunes_faltantes' => $comunesFaltantes,
+        'competencias_nivel_faltantes'   => $nivelFaltantes,
+        'ejes_faltantes'                 => $ejesFaltantes,
+    ];
+
+    $calificacionCompleta = $totalCompromisos > 0
+        && $compromisosSinCalificar === 0
+        && empty($comunesFaltantes)
+        && empty($nivelFaltantes)
+        && empty($ejesFaltantes);
+
     return [
         'sistema'                   => $sistema,
         'pesos' => [
@@ -1529,6 +1582,9 @@ if (!function_exists('calcularNotaEvaluacion')) {
         'nota_definitiva'           => $notaProrrateo ?? $notaFinal,
         'categoria'                 => $categoria,
         'requiere_plan_mejoramiento'=> $requierePlanMejoramiento,
+        'calificacion_completa'     => $calificacionCompleta,
+        'pendientes'                => $pendientes,
+        'estado'                    => $evaluacion->estado,
     ];
 }
 }
@@ -1566,6 +1622,7 @@ Route::post('/evaluaciones/{id}/calificar-compromisos', function (Request $reque
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
     abort_unless($evaluacion->concertacion_firmada, 403, 'La concertación debe estar firmada antes de calificar.');
+    abort_if($evaluacion->estado === 'CALIFICADA', 422, 'Esta evaluación ya fue calificada y calculada; las notas quedaron congeladas y no se pueden modificar.');
 
     $auth = session('usuario_autenticado');
     $puedeEditar = DB::table('vinculacion')
@@ -1619,6 +1676,7 @@ Route::post('/evaluaciones/{id}/calificar-competencias', function (Request $requ
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
     abort_unless($evaluacion->concertacion_firmada, 403, 'La concertación debe estar firmada antes de calificar.');
+    abort_if($evaluacion->estado === 'CALIFICADA', 422, 'Esta evaluación ya fue calificada y calculada; las notas quedaron congeladas y no se pueden modificar.');
 
     $auth = session('usuario_autenticado');
     $puedeEditar = DB::table('vinculacion')
@@ -1684,10 +1742,23 @@ Route::post('/evaluaciones/{id}/calcular-final', function (Request $request, int
         abort_unless($puedeEditar, 403);
     }
 
+    // Solo el admin puede forzar el cálculo pasando por encima de estas dos validaciones
+    // (evaluación ya calificada, o calificaciones incompletas). El evaluador no puede.
+    if ($rolActivo === 'evaluador') {
+        abort_if($evaluacion->estado === 'CALIFICADA', 422, 'Esta evaluación ya fue calificada y calculada; no se puede volver a calcular.');
+    }
+
     $calculo = calcularNotaEvaluacion($id);
 
     if (isset($calculo['error'])) {
         return response()->json(['error' => $calculo['error']], 422);
+    }
+
+    if ($rolActivo === 'evaluador' && !($calculo['calificacion_completa'] ?? false)) {
+        return response()->json([
+            'error' => 'Faltan calificaciones por registrar antes de calcular la nota final.',
+            'pendientes' => $calculo['pendientes'],
+        ], 422);
     }
 
     // Guardar en la base de datos
@@ -1786,6 +1857,7 @@ Route::post('/evaluaciones/{id}/calificar-ejes', function (Request $request, int
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
     abort_unless($evaluacion->concertacion_firmada, 403, 'La concertación debe estar firmada antes de calificar ejes misionales.');
+    abort_if($evaluacion->estado === 'CALIFICADA', 422, 'Esta evaluación ya fue calificada y calculada; las notas quedaron congeladas y no se pueden modificar.');
 
     $auth = session('usuario_autenticado');
     $puedeEditar = DB::table('vinculacion')
@@ -1841,7 +1913,7 @@ if (!function_exists('obtenerEvaluacionesAgConEjesMisionales')) {
             ->where('p.sistema', 'ACUERDO_GESTION')
             ->where('ve.aplica_eje_misional', 1)
             ->where('ev.concertacion_firmada', 1)
-            ->select('ev.id_evaluacion', 'ev.tipo_evaluacion as tipo_nombre', 'ev.fase_actual', 'p.fecha_inicio', 'p.fecha_fin', 'fe.nombres as evaluado_nombres', 'fe.apellidos as evaluado_apellidos', 've.cargo as evaluado_cargo', 've.area as evaluado_area')
+            ->select('ev.id_evaluacion', 'ev.tipo_evaluacion as tipo_nombre', 'ev.fase_actual', 'ev.estado', 'p.fecha_inicio', 'p.fecha_fin', 'fe.nombres as evaluado_nombres', 'fe.apellidos as evaluado_apellidos', 've.cargo as evaluado_cargo', 've.area as evaluado_area')
             ->orderByDesc('ev.id_evaluacion')
             ->get();
 
@@ -1885,6 +1957,7 @@ Route::post('/evaluaciones/{id}/ejes-externa', function (Request $request, int $
     abort_unless($evaluacion, 404);
     abort_unless(strtoupper(trim((string) $evaluacion->sistema)) === 'ACUERDO_GESTION', 422, 'Solo aplica a evaluaciones de Acuerdo de Gestión.');
     abort_unless($evaluacion->concertacion_firmada, 403, 'La concertación debe estar firmada antes de calificar ejes misionales.');
+    abort_if($evaluacion->estado === 'CALIFICADA', 422, 'Esta evaluación ya fue calificada y calculada; las notas quedaron congeladas y no se pueden modificar.');
 
     $vinculacionEvaluado = DB::table('vinculacion')
         ->where('id_vinculacion', $evaluacion->id_vinc_evaluado)

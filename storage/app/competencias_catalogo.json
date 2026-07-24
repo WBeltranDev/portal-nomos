@@ -1,0 +1,130 @@
+{
+    "RENDIMIENTO_LABORAL": {
+        "COMUN": [
+            {"nombre": "Aprendizaje continuo",            "afirmacion": "Identifica, incorpora y aplica nuevos conocimientos sobre regulaciones vigentes, tecnologías disponibles, métodos y programas de trabajo para mantener actualizada la efectividad de sus prácticas laborales y su visión del contexto."},
+            {"nombre": "Orientación a Resultados",        "afirmacion": "Desempeña las funciones del cargo encaminadas a facilitar el desarrollo y ejecución de las actividades con eficacia, calidad y oportunidad."},
+            {"nombre": "Orientación a los Usuarios y ciudadano", "afirmacion": "Orienta a los usuarios y suministra la información que les sea solicitada, de conformidad con los procedimientos establecidos."},
+            {"nombre": "Compromiso con la organización",  "afirmacion": "Alinea el propio comportamiento a las necesidades, prioridades y metas organizacionales. Antepone las necesidades de la organización a sus propias necesidades."},
+            {"nombre": "Trabajo en equipo",               "afirmacion": "Trabaja con otros de forma integrada y armónica para la consecución de metas institucionales comunes."},
+            {"nombre": "Adaptación al cambio",            "afirmacion": "Enfrenta con flexibilidad las situaciones nuevas asumiendo un manejo positivo y constructivo de los cambios."}
+        ],
+        "NIVEL_JERARQUICO": {
+            "DIRECTIVO": [
+                {"nombre": "Liderazgo",                       "afirmacion": "Genera condiciones que motiven a sus colaboradores, favoreciendo el desarrollo de las personas y de la entidad."},
+                {"nombre": "Planeación",                      "afirmacion": "Determina eficazmente las metas y prioridades institucionales, identificando las acciones, los responsables, los plazos y los recursos requeridos para alcanzarlas."},
+                {"nombre": "Toma de decisiones",              "afirmacion": "Elige con oportunidad, entre múltiples alternativas, los proyectos a realizar, estableciendo responsabilidades precisas con base en las prioridades de la entidad."},
+                {"nombre": "Dirección y Desarrollo de personal","afirmacion": "Favorece el aprendizaje y desarrollo de sus colaboradores, articulando las potencialidades y necesidades individuales con las de la organización."},
+                {"nombre": "Conocimiento del entorno",        "afirmacion": "Está al tanto de las circunstancias y las relaciones de poder que influyen en el entorno organizacional."}
+            ],
+            "ASESOR": [
+                {"nombre": "Experticia profesional",          "afirmacion": "Aplica el conocimiento profesional en la resolución de problemas y transfiere su conocimiento experto a otros."},
+                {"nombre": "Conocimiento del entorno",        "afirmacion": "Está al tanto de las circunstancias y las relaciones de poder que influyen en el entorno organizacional."},
+                {"nombre": "Construcción de relaciones",      "afirmacion": "Establece y mantiene relaciones cordiales y recíprocas con redes o grupos de personas internas y externas a la organización."},
+                {"nombre": "Iniciativa",                      "afirmacion": "Propone e implementa mejoras para aumentar la calidad y mejorar la efectividad de su trabajo."}
+            ],
+            "PROFESIONAL": [
+                {"nombre": "Apoyo Técnico Profesional",       "afirmacion": "Pone a disposición de la Universidad sus saberes profesionales específicos y sus experiencias previas, gestionando la actualización de sus saberes expertos."},
+                {"nombre": "Comunicación Efectiva",           "afirmacion": "Establece comunicación efectiva y positiva con superiores jerárquicos, pares y ciudadanos, tanto en la expresión escrita, como verbal y gestual."},
+                {"nombre": "Gestión de Procedimientos",       "afirmacion": "Desarrolla las tareas a cargo en el marco de los procedimientos vigentes y propone e introduce acciones para acelerar la mejora continua y la productividad."},
+                {"nombre": "Instrumentación de Decisiones",   "afirmacion": "Decide sobre las cuestiones en las que es responsable con criterios de economía, eficacia, eficiencia y transparencia de la decisión."}
+            ],
+            "TECNICO": [
+                {"nombre": "Experticia técnica",              "afirmacion": "Entiende y aplica los conocimientos técnicos del área de desempeño y los relaciona con la práctica."},
+                {"nombre": "Trabajo en equipo y colaboración","afirmacion": "Trabaja con otros de forma integrada y armónica para la consecución de metas institucionales comunes."},
+                {"nombre": "Creatividad e innovación",        "afirmacion": "Presenta ideas y métodos novedosos y concretarlos en acciones."}
+            ],
+            "ASISTENCIAL": [
+                {"nombre": "Manejo de la información",        "afirmacion": "Maneja con respeto las informaciones personales e institucionales de que dispone."},
+                {"nombre": "Adaptación al entorno",           "afirmacion": "Aprende de la experiencia de otros y aplica ese aprendizaje en la resolución de situaciones o problemas habituales."},
+                {"nombre": "Disciplina",                      "afirmacion": "Se ajusta a las políticas institucionales y a las normas vigentes."},
+                {"nombre": "Relaciones interpersonales",      "afirmacion": "Establece y mantiene relaciones de trabajo amables y cordiales con sus compañeros."},
+                {"nombre": "Colaboración",                    "afirmacion": "Coopera con los demás con el fin de alcanzar los objetivos institucionales."}
+            ]
+        }
+    },
+    "ACUERDO_GESTION": {
+        "COMUN": [
+            {"nombre": "Aprendizaje continuo",               "afirmacion": "Identifica, incorpora y aplica nuevos conocimientos sobre regulaciones vigentes, tecnologías disponibles, métodos y programas de trabajo para mantener actualizada la efectividad de sus prácticas laborales y su visión del contexto."},
+            {"nombre": "Orientación a Resultados",           "afirmacion": "Desempeña las funciones del cargo encaminadas a facilitar el desarrollo y ejecución de las actividades con eficacia, calidad y oportunidad."},
+            {"nombre": "Orientación a los Usuarios y ciudadano","afirmacion": "Orienta a los usuarios y suministra la información que les sea solicitada, de conformidad con los procedimientos establecidos."},
+            {"nombre": "Compromiso con la organización",     "afirmacion": "Alinea el propio comportamiento a las necesidades, prioridades y metas organizacionales. Antepone las necesidades de la organización a sus propias necesidades."},
+            {"nombre": "Trabajo en equipo",                  "afirmacion": "Trabaja con otros de forma integrada y armónica para la consecución de metas institucionales comunes."},
+            {"nombre": "Adaptación al cambio",               "afirmacion": "Enfrenta con flexibilidad las situaciones nuevas asumiendo un manejo positivo y constructivo de los cambios."}
+        ],
+        "NIVEL_JERARQUICO": {
+            "DIRECTIVO": [
+                {"nombre": "Visión estratégica",              "afirmacion": "Visualiza el impacto de las tendencias del entorno en el trabajo de su equipo y de la Universidad."},
+                {"nombre": "Liderazgo efectivo",              "afirmacion": "Genera condiciones que motiven a sus colaboradores, favoreciendo el desarrollo de las personas y de la entidad."},
+                {"nombre": "Planeación institucional",        "afirmacion": "Determina eficazmente las metas y prioridades institucionales, identificando las acciones, los responsables, los plazos y los recursos requeridos para alcanzarlas."},
+                {"nombre": "Toma de decisiones",              "afirmacion": "Elige con oportunidad, entre múltiples alternativas, los proyectos a realizar, estableciendo responsabilidades precisas con base en las prioridades de la entidad."},
+                {"nombre": "Dirección y desarrollo personal", "afirmacion": "Identifica, ubica y desarrolla el talento humano a su cargo, orientando la identificación de necesidades de formación y capacitación."}
+            ],
+            "ASESOR": [
+                {"nombre": "Experticia profesional",          "afirmacion": "Aplica el conocimiento profesional en la resolución de problemas y transfiere su conocimiento experto a otros."},
+                {"nombre": "Conocimiento del entorno",        "afirmacion": "Está al tanto de las circunstancias y las relaciones de poder que influyen en el entorno organizacional."},
+                {"nombre": "Construcción de relaciones",      "afirmacion": "Establece y mantiene relaciones cordiales y recíprocas con redes o grupos de personas internas y externas a la organización."},
+                {"nombre": "Iniciativa",                      "afirmacion": "Propone e implementa mejoras para aumentar la calidad y mejorar la efectividad de su trabajo."}
+            ],
+            "PROFESIONAL": [
+                {"nombre": "Aporte Técnico-Profesional",      "afirmacion": "Aporta soluciones alternativas en lo que refiere a sus saberes específicos. Informa su experiencia específica en el proceso de toma de decisiones que involucran aspectos de su especialidad."},
+                {"nombre": "Comunicación efectiva",           "afirmacion": "Establece comunicación efectiva y positiva con superiores jerárquicos, pares y ciudadanos, tanto en la expresión escrita, como verbal y gestual."},
+                {"nombre": "Gestión de procedimientos",       "afirmacion": "Desarrolla las tareas a cargo en el marco de los procedimientos vigentes y propone e introduce acciones para acelerar la mejora continua y la productividad."},
+                {"nombre": "Instrumentación de decisiones",   "afirmacion": "Discrimina con efectividad entre las decisiones que deben ser elevadas a un superior, socializadas al equipo de trabajo o pertenecen a la esfera individual de trabajo."},
+                {"nombre": "Dirección y desarrollo personal", "afirmacion": "Identifica, ubica y desarrolla el talento humano a su cargo. Orienta la identificación de necesidades de formación y capacitación y apoya la ejecución de las acciones propuestas para satisfacerlas."},
+                {"nombre": "Toma de decisiones",              "afirmacion": "Elige con oportunidad, entre las alternativas disponibles, los proyectos a realizar, estableciendo responsabilidades precisas con base en las prioridades de la entidad."}
+            ],
+            "TECNICO": [
+                {"nombre": "Experticia técnica",              "afirmacion": "Entiende y aplica los conocimientos técnicos del área de desempeño y los relaciona con la práctica."},
+                {"nombre": "Trabajo en equipo y colaboración","afirmacion": "Trabaja con otros de forma integrada y armónica para la consecución de metas institucionales comunes."},
+                {"nombre": "Creatividad e innovación",        "afirmacion": "Presenta ideas y métodos novedosos y los concretiza en acciones."}
+            ],
+            "ASISTENCIAL": [
+                {"nombre": "Manejo de la información",        "afirmacion": "Maneja con respeto las informaciones personales e institucionales de que dispone."},
+                {"nombre": "Adaptación al entorno",           "afirmacion": "Aprende de la experiencia de otros y aplica ese aprendizaje en la resolución de situaciones o problemas habituales."},
+                {"nombre": "Disciplina",                      "afirmacion": "Se ajusta a las políticas institucionales y a las normas vigentes."},
+                {"nombre": "Relaciones interpersonales",      "afirmacion": "Establece y mantiene relaciones de trabajo amables y cordiales con sus compañeros."},
+                {"nombre": "Colaboración",                    "afirmacion": "Coopera con los demás con el fin de alcanzar los objetivos institucionales."}
+            ]
+        }
+    },
+    "escala_calificacion": {
+        "descripcion": "Escala individual de calificación (0 a 100) para compromisos y competencias",
+        "rangos": [
+            {"rango": "0 - 50",  "nivel": "Deficiente", "codigo": 1},
+            {"rango": "51 - 70", "nivel": "Bajo",       "codigo": 2},
+            {"rango": "71 - 80", "nivel": "Aceptable",  "codigo": 3},
+            {"rango": "81 - 90", "nivel": "Alto",       "codigo": 4},
+            {"rango": "91 - 100","nivel": "Muy alto",   "codigo": 5}
+        ]
+    },
+    "categorias_finales": {
+        "descripcion": "Categorías de la calificación definitiva de desempeño",
+        "rangos": [
+            {"rango": "91 - 100", "categoria": "SOBRESALIENTE",    "codigo": "S"},
+            {"rango": "81 - 90",  "categoria": "BUENO",            "codigo": "B"},
+            {"rango": "71 - 80",  "categoria": "APROBADO_MEJORA",  "codigo": "AM", "nota": "Susceptible de mejora"},
+            {"rango": "0 - 70",   "categoria": "NO_SATISFACTORIO", "codigo": "NS"}
+        ]
+    },
+    "plan_mejoramiento": {
+        "RL": "Aplica en 1er semestre si categoría = APROBADO_MEJORA (71-80). Bloquea al evaluador hasta concertación y firma del plan.",
+        "AG": "Aplica en 1er semestre si categoría = NO_SATISFACTORIO (0-70). Bloquea al evaluador hasta concertación y firma del plan."
+    },
+    "pesos_base": {
+        "RENDIMIENTO_LABORAL": {
+            "compromisos": 70,
+            "competencias_comunes": 15,
+            "competencias_nivel_jerarquico": 15,
+            "ejes_misionales": "No aplica"
+        },
+        "ACUERDO_GESTION": {
+            "compromisos_base": 85,
+            "compromisos_con_ejes": "85 - (n_ejes_activos × 10), mínimo 55%",
+            "competencias_comunes": 7.5,
+            "competencias_nivel_jerarquico": 7.5,
+            "por_eje_activo": 10,
+            "ejes_disponibles": ["DOCENCIA", "INVESTIGACION", "PROYECCION_SOCIAL"],
+            "nota": "Solo aplica a quienes son líderes de programa, departamento o director de escuela (aplica_eje_misional=1). Docencia siempre activa si aplica_eje_misional=1."
+        }
+    }
+}

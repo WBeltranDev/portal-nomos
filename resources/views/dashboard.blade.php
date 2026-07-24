@@ -757,7 +757,7 @@
 	                                    </h4>
 	                                    <div class="flex gap-2">
 	                                        <button type="button" onclick="previsualizarCalculoEvaluador()" class="bg-white border border-slate-200 text-slate-700 px-3 py-2 rounded-xl text-xs font-bold hover:border-[#00594E] transition">Ver cálculo</button>
-	                                        <button type="button" onclick="calcularNotaFinalEvaluador()" class="bg-[#B5A160] text-white px-3 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Calcular nota final</button>
+	                                        <button type="button" id="btn-calcular-nota-final" onclick="calcularNotaFinalEvaluador()" class="bg-[#B5A160] text-white px-3 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition disabled:opacity-50 disabled:cursor-not-allowed">Calcular nota final</button>
 	                                    </div>
 	                                </div>
 	                                <div id="resultado-contenido-evaluador"></div>
@@ -786,7 +786,7 @@
 
                             <div class="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between gap-4">
                                 <div class="text-xs text-slate-500 leading-tight">Podrás firmar cuando tengas de 7 a 10 compromisos que sumen exactamente el porcentaje objetivo.</div>
-                                <form id="form-firmar-evaluacion" method="POST" action="">
+                                <form id="form-firmar-evaluacion" method="POST" action="" onsubmit="return confirm('¿Confirmas firmar la concertación? Una vez que ambas partes firmen, los compromisos y sus porcentajes quedarán bloqueados y no se podrán editar.')">
                                     @csrf
                                     <button type="submit" id="btn-firmar-evaluador" class="bg-[#00594E] text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:brightness-110 transition disabled:opacity-50" disabled>Firmar concertación</button>
                                 </form>
@@ -916,7 +916,7 @@
 
                         <div id="firma-evaluado-seccion" class="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between gap-4">
                             <div class="text-xs text-slate-500 leading-tight">Podrás firmar cuando el evaluador haya firmado la concertación.</div>
-                            <form id="form-firmar-evaluado" method="POST" action="">
+                            <form id="form-firmar-evaluado" method="POST" action="" onsubmit="return confirm('¿Confirmas firmar la concertación? Una vez que ambas partes firmen, los compromisos y sus porcentajes quedarán bloqueados y no se podrán editar.')">
                                 @csrf
                                 <button type="submit" id="btn-firmar-evaluado" class="bg-[#00594E] text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:brightness-110 transition disabled:opacity-50" disabled>Firmar Concertación</button>
                             </form>
@@ -1126,14 +1126,14 @@
         `).join('');
     }
 
-    function renderEvidenciasEvaluadorAccion(evidencias = []) {
+    function renderEvidenciasEvaluadorAccion(evidencias = [], bloqueada = false) {
         if (!evidencias.length) {
             return '<div class="text-[11px] text-slate-400">Sin evidencias registradas para este compromiso.</div>';
         }
 
         return evidencias.map(evidencia => {
             const estado = evidencia.estado_aprobacion || 'PENDIENTE';
-            const acciones = estado === 'PENDIENTE' ? `
+            const acciones = (estado === 'PENDIENTE' && !bloqueada) ? `
                 <div class="flex gap-1.5 shrink-0">
                     <button type="button" onclick="aprobarEvidencia(${evidencia.id_evidencia}, 'APROBADA')" class="text-[10px] font-bold px-2 py-1 rounded-lg bg-[#EAF2EF] text-[#00594E] hover:brightness-95">Aprobar</button>
                     <button type="button" onclick="aprobarEvidencia(${evidencia.id_evidencia}, 'RECHAZADA')" class="text-[10px] font-bold px-2 py-1 rounded-lg bg-red-50 text-red-600 hover:brightness-95">Rechazar</button>
@@ -1157,14 +1157,28 @@
 
     function aprobarEvidencia(idEvidencia, decision) {
         if (!selectedEvaluacionId) return;
-        const observacion = decision === 'RECHAZADA' ? (prompt('Motivo del rechazo (opcional):') || '') : '';
+
+        let observacion = '';
+        if (decision === 'RECHAZADA') {
+            const motivo = prompt('Motivo del rechazo:');
+            if (motivo === null) return; // el evaluador canceló el cuadro: no se rechaza nada
+            if (!motivo.trim()) { alert('Debes indicar un motivo para rechazar la evidencia.'); return; }
+            observacion = motivo.trim();
+            if (!confirm('¿Confirmas rechazar esta evidencia? Esta decisión quedará registrada y no podrás deshacerla desde aquí.')) return;
+        } else {
+            if (!confirm('¿Confirmas aprobar esta evidencia? Esta decisión quedará registrada y no podrás deshacerla desde aquí.')) return;
+        }
+
         fetch(`/evaluaciones/${selectedEvaluacionId}/evidencias/${idEvidencia}/aprobar`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
             body: JSON.stringify({ decision, observacion }),
         })
-            .then(res => res.json())
-            .then(() => { if (selectedEvaluacionData) cargarCompromisosEvaluador(selectedEvaluacionData, selectedEvaluacionEjes); })
+            .then(async res => {
+                const payload = await res.json().catch(() => ({}));
+                if (!res.ok) { alert(payload.message || 'No se pudo registrar la decisión.'); return; }
+                if (selectedEvaluacionData) cargarCompromisosEvaluador(selectedEvaluacionData, selectedEvaluacionEjes);
+            })
             .catch(() => {});
     }
 
@@ -1492,12 +1506,12 @@
                     div.className = 'p-4 rounded-xl border bg-white';
                     const metasHtml = (c.metas || []).map(m => `<span class="bg-[#EAF2EF] text-[#00594E] text-[10px] font-bold px-2 py-0.5 rounded-full">${escapeHtml(m)}</span>`).join(' ');
                     const deleteBtn = yaFirmado ? '' : `<button type="button" class="text-red-500 hover:text-red-700 mt-1 flex items-center justify-center" onclick="eliminarCompromisoEvaluador(${c.id_compromiso})"><span class="material-symbols-outlined text-lg">delete</span></button>`;
-                    const evidenciasHtml = renderEvidenciasEvaluadorAccion(evidenciasPorCompromiso[String(c.id_compromiso)] || []);
+                    const evidenciasHtml = renderEvidenciasEvaluadorAccion(evidenciasPorCompromiso[String(c.id_compromiso)] || [], estado.calificada);
                     const observacionHtml = renderObservacionEvaluador(c, observacionesPorCompromiso[String(c.id_compromiso)], !estado.congelada);
                     const calificacionHtml = estado.congelada ? `
                         <div class="mt-4 pt-3 border-t border-slate-100 flex items-center gap-2">
                             <label class="text-[10px] font-bold text-slate-500 uppercase">Calificación (0-100)</label>
-                            <input type="number" min="0" max="100" step="0.01" class="calificacion-compromiso-input w-24 text-xs rounded-lg border border-slate-200 p-1.5" data-id-compromiso="${c.id_compromiso}" value="${c.calificacion_definitiva ?? ''}" />
+                            <input type="number" min="0" max="100" step="0.01" class="calificacion-compromiso-input w-24 text-xs rounded-lg border border-slate-200 p-1.5 disabled:bg-slate-100 disabled:text-slate-500" data-id-compromiso="${c.id_compromiso}" value="${c.calificacion_definitiva ?? ''}" ${estado.calificada ? 'disabled' : ''} />
                         </div>` : '';
                     div.innerHTML = `
                         <div class="flex justify-between items-start gap-4">
@@ -1539,8 +1553,15 @@
                     const bloque = document.getElementById(id);
                     if (bloque) bloque.classList.toggle('hidden', !estado.congelada);
                 });
+                document.querySelectorAll('#calificacion-bloque-evaluador button, #competencias-bloque-evaluador button').forEach(btn => {
+                    btn.disabled = !!estado.calificada;
+                    btn.classList.toggle('opacity-50', !!estado.calificada);
+                    btn.classList.toggle('cursor-not-allowed', !!estado.calificada);
+                });
+                const btnCalcularFinal = document.getElementById('btn-calcular-nota-final');
+                if (btnCalcularFinal) btnCalcularFinal.disabled = !!estado.calificada;
                 if (estado.congelada) {
-                    cargarCalificacionYResultado(ev);
+                    cargarCalificacionYResultado(ev, !!estado.calificada);
                 }
 
                 const btnFirmar = document.getElementById('btn-firmar-evaluador');
@@ -1557,7 +1578,7 @@
 
     // --- S5: Calificación de compromisos/competencias y resultado consolidado ---
 
-    function cargarCalificacionYResultado(ev) {
+    function cargarCalificacionYResultado(ev, bloqueada = false) {
         if (!selectedEvaluacionId) return;
         const sistema = String(ev.sistema || '').trim().toUpperCase();
         const nivel = String(ev.evaluado_nivel_jerarquico || '').trim().toUpperCase();
@@ -1567,15 +1588,15 @@
             .then(catalogo => {
                 fetch(`/evaluaciones/${selectedEvaluacionId}/competencias`)
                     .then(res => res.json())
-                    .then(payload => renderCompetenciasEvaluador(catalogo, payload.competencias || []))
-                    .catch(() => renderCompetenciasEvaluador(catalogo, []));
+                    .then(payload => renderCompetenciasEvaluador(catalogo, payload.competencias || [], bloqueada))
+                    .catch(() => renderCompetenciasEvaluador(catalogo, [], bloqueada));
             })
             .catch(() => {});
 
         previsualizarCalculoEvaluador();
     }
 
-    function renderCompetenciasEvaluador(catalogo, existentes = []) {
+    function renderCompetenciasEvaluador(catalogo, existentes = [], bloqueada = false) {
         const comunes = catalogo.comun || [];
         const nivel = catalogo.nivel_jerarquico || [];
         const notasExistentes = existentes.reduce((acc, c) => {
@@ -1592,7 +1613,7 @@
                     <p class="text-[10px] text-slate-500 mt-0.5">${escapeHtml(item.afirmacion || '')}</p>
                     <div class="mt-2 flex items-center gap-2">
                         <label class="text-[10px] font-bold text-slate-500 uppercase">Calificación (0-100)</label>
-                        <input type="number" min="0" max="100" step="0.01" class="competencia-input w-24 text-xs rounded-lg border border-slate-200 p-1.5" data-tipo="${tipo}" data-nombre="${escapeHtml(item.nombre)}" value="${valor}" />
+                        <input type="number" min="0" max="100" step="0.01" class="competencia-input w-24 text-xs rounded-lg border border-slate-200 p-1.5 disabled:bg-slate-100 disabled:text-slate-500" data-tipo="${tipo}" data-nombre="${escapeHtml(item.nombre)}" value="${valor}" ${bloqueada ? 'disabled' : ''} />
                     </div>
                 </div>`;
         }).join('');
@@ -1647,6 +1668,17 @@
             });
     }
 
+    function formatPendientes(pendientes = {}) {
+        const items = [];
+        if (pendientes.compromisos_sin_calificar) {
+            items.push(`${pendientes.compromisos_sin_calificar} compromiso(s) sin calificación`);
+        }
+        (pendientes.competencias_comunes_faltantes || []).forEach(n => items.push(`Competencia común: ${n}`));
+        (pendientes.competencias_nivel_faltantes || []).forEach(n => items.push(`Competencia de nivel: ${n}`));
+        (pendientes.ejes_faltantes || []).forEach(e => items.push(`Eje misional: ${EJE_LABELS[e] || e}`));
+        return items;
+    }
+
     function renderResultado(calculo, containerId) {
         const cont = document.getElementById(containerId);
         if (!cont) return;
@@ -1654,6 +1686,20 @@
             cont.innerHTML = '<div class="text-xs text-slate-400">Aún no hay datos suficientes para calcular la nota.</div>';
             return;
         }
+
+        const pendientesItems = formatPendientes(calculo.pendientes || {});
+        const bloqueadaHtml = calculo.estado === 'CALIFICADA' ? `
+            <div class="rounded-xl border border-[#00594E]/20 bg-[#EAF2EF] p-3 text-[11px] font-semibold text-[#00594E] flex items-center gap-2">
+                <span class="material-symbols-outlined text-base">lock</span>
+                Esta evaluación ya fue calificada y calculada. Las notas y evidencias quedaron congeladas.
+            </div>
+        ` : (pendientesItems.length ? `
+            <div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] font-semibold text-amber-700">
+                <p class="flex items-center gap-2 mb-1"><span class="material-symbols-outlined text-base">warning</span>Falta calificar antes de poder cerrar la evaluación:</p>
+                <ul class="list-disc list-inside space-y-0.5 font-normal">${pendientesItems.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul>
+            </div>
+        ` : '');
+
         const categoriaLabel = {
             SOBRESALIENTE: 'Sobresaliente (91-100)',
             BUENO: 'Bueno (81-90)',
@@ -1680,6 +1726,7 @@
         ` : '';
 
         cont.innerHTML = `
+            ${bloqueadaHtml}
             <div class="rounded-2xl border border-slate-100 bg-slate-50/60 p-4 space-y-2">
                 <div class="flex items-center justify-between">
                     <span class="text-3xl font-black text-slate-900">${calculo.nota_definitiva ?? '-'}</span>
@@ -1706,14 +1753,22 @@
 
     function calcularNotaFinalEvaluador() {
         if (!selectedEvaluacionId) return;
+        if (!confirm('¿Confirmas calcular y guardar la nota final? Una vez calculada, la evaluación queda cerrada: no podrás modificar calificaciones ni evidencias después.')) return;
+
         fetch(`/evaluaciones/${selectedEvaluacionId}/calcular-final`, {
             method: 'POST',
             headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
         })
-            .then(res => res.json())
-            .then(payload => {
-                if (payload.calculo) renderResultado(payload.calculo, 'resultado-contenido-evaluador');
-                else if (payload.error) alert(payload.error);
+            .then(async res => {
+                const payload = await res.json().catch(() => ({}));
+                if (payload.calculo) {
+                    renderResultado(payload.calculo, 'resultado-contenido-evaluador');
+                    if (payload.success && selectedEvaluacionData) cargarCompromisosEvaluador(selectedEvaluacionData, selectedEvaluacionEjes);
+                } else if (payload.pendientes) {
+                    alert('Faltan calificaciones por registrar antes de calcular la nota final:\n\n' + formatPendientes(payload.pendientes).map(i => '• ' + i).join('\n'));
+                } else if (payload.error) {
+                    alert(payload.error);
+                }
             })
             .catch(() => {});
     }
@@ -2146,9 +2201,15 @@
             return acc;
         }, {});
 
+        const bloqueada = ev.estado === 'CALIFICADA';
         const contenedor = document.getElementById('instancia-externa-ejes-contenedor');
         if (contenedor) {
-            contenedor.innerHTML = (ev.ejes_activos || []).map(eje => {
+            const avisoBloqueada = bloqueada ? `
+                <div class="rounded-xl border border-slate-200 bg-slate-100 p-3 text-[11px] font-semibold text-slate-600 flex items-center gap-2">
+                    <span class="material-symbols-outlined text-base">lock</span>
+                    Esta evaluación ya fue calificada y calculada; las notas quedaron congeladas.
+                </div>` : '';
+            contenedor.innerHTML = avisoBloqueada + ((ev.ejes_activos || []).map(eje => {
                 const existente = notasExistentes[eje];
                 return `
                     <div class="p-3 rounded-xl border border-slate-100 bg-slate-50/50">
@@ -2156,11 +2217,18 @@
                         ${existente ? `<p class="text-[10px] text-slate-400 mt-0.5">Última carga: ${escapeHtml(existente.fecha_ingreso || '')} (${escapeHtml(existente.origen || '-')})</p>` : ''}
                         <div class="mt-2 flex items-center gap-2">
                             <label class="text-[10px] font-bold text-slate-500 uppercase">Calificación (0-100)</label>
-                            <input type="number" min="0" max="100" step="0.01" class="eje-externa-input w-24 text-xs rounded-lg border border-slate-200 p-1.5" data-eje="${eje}" value="${existente?.calificacion ?? ''}" />
+                            <input type="number" min="0" max="100" step="0.01" class="eje-externa-input w-24 text-xs rounded-lg border border-slate-200 p-1.5 disabled:bg-slate-100 disabled:text-slate-500" data-eje="${eje}" value="${existente?.calificacion ?? ''}" ${bloqueada ? 'disabled' : ''} />
                         </div>
-                        <textarea class="eje-externa-observacion mt-2 w-full text-xs rounded-lg border border-slate-200 p-2" rows="2" data-eje="${eje}" placeholder="Observaciones (opcional)">${escapeHtml(existente?.observaciones || '')}</textarea>
+                        <textarea class="eje-externa-observacion mt-2 w-full text-xs rounded-lg border border-slate-200 p-2 disabled:bg-slate-100 disabled:text-slate-500" rows="2" data-eje="${eje}" placeholder="Observaciones (opcional)" ${bloqueada ? 'disabled' : ''}>${escapeHtml(existente?.observaciones || '')}</textarea>
                     </div>`;
-            }).join('') || '<p class="text-xs text-slate-400">Este evaluado no tiene ejes misionales activos.</p>';
+            }).join('') || '<p class="text-xs text-slate-400">Este evaluado no tiene ejes misionales activos.</p>');
+        }
+
+        const btnGuardarExterna = document.querySelector('#form-instancia-externa button[type="submit"]');
+        if (btnGuardarExterna) {
+            btnGuardarExterna.disabled = bloqueada;
+            btnGuardarExterna.classList.toggle('opacity-50', bloqueada);
+            btnGuardarExterna.classList.toggle('cursor-not-allowed', bloqueada);
         }
 
         document.querySelectorAll('.evaluacion-externa-card').forEach(el => el.classList.remove('ring-2', 'ring-[#00594E]'));
