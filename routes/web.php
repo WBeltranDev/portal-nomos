@@ -1897,42 +1897,66 @@ Route::post('/evaluaciones/{id}/calificar-ejes', function (Request $request, int
 
 
 /**
- * Lista evaluaciones AG con ejes misionales habilitados (aplica_eje_misional=1) y
- * concertación firmada, para el módulo de Instancias Externas (Vicerrectoría de
- * Investigación, Vicerrectoría de Proyección Social, CEDP). El pliego indica que la
+ * Lista TODOS los funcionarios con ejes misionales habilitados (aplica_eje_misional=1,
+ * sistema AG, vinculación activa), para el módulo de Instancias Externas (Vicerrectoría
+ * de Investigación, Vicerrectoría de Proyección Social, CEDP). El pliego indica que la
  * carga de estas notas es exclusiva de las instancias externas; ver también
  * /evaluaciones/{id}/calificar-ejes (evaluador) — ambos endpoints conviven hasta que
  * Talento Humano confirme si el evaluador debe perder ese permiso.
+ *
+ * A propósito NO se filtra por si ya existe evaluación o concertación firmada: la lista
+ * debe mostrar a todo el que tiene el eje habilitado, para que la instancia externa vea
+ * quién falta por tener evaluación abierta. La carga de notas en sí sigue exigiendo que
+ * exista la evaluación y que la concertación esté firmada (ver /ejes-externa).
  */
 if (!function_exists('obtenerEvaluacionesAgConEjesMisionales')) {
     function obtenerEvaluacionesAgConEjesMisionales() {
-        $evaluaciones = DB::table('evaluacion as ev')
-            ->join('vinculacion as ve', 've.id_vinculacion', '=', 'ev.id_vinc_evaluado')
-            ->join('funcionario as fe', 'fe.id_funcionario', '=', 've.id_funcionario')
-            ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
-            ->where('p.sistema', 'ACUERDO_GESTION')
-            ->where('ve.aplica_eje_misional', 1)
-            ->where('ev.concertacion_firmada', 1)
-            ->select('ev.id_evaluacion', 'ev.tipo_evaluacion as tipo_nombre', 'ev.fase_actual', 'ev.estado', 'p.fecha_inicio', 'p.fecha_fin', 'fe.nombres as evaluado_nombres', 'fe.apellidos as evaluado_apellidos', 've.cargo as evaluado_cargo', 've.area as evaluado_area')
-            ->orderByDesc('ev.id_evaluacion')
+        $periodoAG = DB::table('periodo')
+            ->where('sistema', 'ACUERDO_GESTION')
+            ->where('estado', 'ABIERTO')
+            ->orderByDesc('id_periodo')
+            ->first();
+
+        $personas = DB::table('vinculacion as v')
+            ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
+            ->where('v.sistema_evaluacion', 'ACUERDO_GESTION')
+            ->where('v.aplica_eje_misional', 1)
+            ->where('v.activa', 1)
+            ->select('v.id_vinculacion', 'v.cargo as evaluado_cargo', 'v.area as evaluado_area', 'f.nombres as evaluado_nombres', 'f.apellidos as evaluado_apellidos')
+            ->orderBy('f.apellidos')
             ->get();
 
         $jsonPath = storage_path('app/evaluacion_ejes.json');
         $ejesJson = file_exists($jsonPath) ? (json_decode(file_get_contents($jsonPath), true) ?? []) : [];
 
-        foreach ($evaluaciones as $ev) {
-            $config = $ejesJson[$ev->id_evaluacion] ?? [];
+        foreach ($personas as $persona) {
+            $evaluacion = $periodoAG
+                ? DB::table('evaluacion')
+                    ->where('id_periodo', $periodoAG->id_periodo)
+                    ->where('id_vinc_evaluado', $persona->id_vinculacion)
+                    ->orderByDesc('id_evaluacion')
+                    ->first()
+                : null;
+
+            $persona->id_evaluacion = $evaluacion->id_evaluacion ?? null;
+            $persona->fase_actual = $evaluacion->fase_actual ?? null;
+            $persona->estado = $evaluacion->estado ?? null;
+            $persona->concertacion_firmada = $evaluacion ? (bool) $evaluacion->concertacion_firmada : false;
+
+            $config = $evaluacion ? ($ejesJson[$evaluacion->id_evaluacion] ?? []) : [];
             $ejesActivos = ['DOCENCIA'];
             if (!empty($config['investigacion'])) $ejesActivos[] = 'INVESTIGACION';
             if (!empty($config['proyeccion_social'])) $ejesActivos[] = 'PROYECCION_SOCIAL';
-            $ev->ejes_activos = $ejesActivos;
+            $persona->ejes_activos = $ejesActivos;
 
-            $ev->calificaciones = DB::table('eje_misional_calificacion')
-                ->where('id_evaluacion', $ev->id_evaluacion)
-                ->get(['eje', 'calificacion', 'observaciones', 'origen', 'fecha_ingreso']);
+            $persona->calificaciones = $evaluacion
+                ? DB::table('eje_misional_calificacion')
+                    ->where('id_evaluacion', $evaluacion->id_evaluacion)
+                    ->get(['eje', 'calificacion', 'observaciones', 'origen', 'fecha_ingreso'])
+                : collect();
         }
 
-        return $evaluaciones;
+        return $personas;
     }
 }
 

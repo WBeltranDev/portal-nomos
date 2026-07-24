@@ -749,6 +749,21 @@
 	                                </div>
 	                            </div>
 
+	                            <div id="ejes-misionales-bloque-evaluador" class="my-6 pt-4 border-t border-slate-100 space-y-3 hidden">
+	                                <div class="flex items-center justify-between gap-3">
+	                                    <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+	                                        <span class="material-symbols-outlined text-base">school</span>
+	                                        Ejes misionales
+	                                    </h4>
+	                                </div>
+	                                <p class="text-[10px] text-slate-400 font-semibold">El pliego indica que el evaluador consolida estas notas (recibidas de las instancias externas cuando aplique) y las socializa al evaluado.</p>
+	                                <div id="ejes-misionales-inputs-evaluador" class="space-y-3"></div>
+	                                <div class="flex items-center justify-between gap-3">
+	                                    <span id="ejes-misionales-mensaje-evaluador" class="hidden text-xs font-semibold"></span>
+	                                    <button type="button" id="btn-guardar-ejes-evaluador" onclick="guardarEjesMisionalesEvaluador()" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition ml-auto disabled:opacity-50 disabled:cursor-not-allowed">Guardar ejes misionales</button>
+	                                </div>
+	                            </div>
+
 	                            <div id="resultado-bloque-evaluador" class="my-6 pt-4 border-t border-slate-100 space-y-3 hidden">
 	                                <div class="flex items-center justify-between gap-3">
 	                                    <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
@@ -1511,7 +1526,7 @@
                     const calificacionHtml = estado.congelada ? `
                         <div class="mt-4 pt-3 border-t border-slate-100 flex items-center gap-2">
                             <label class="text-[10px] font-bold text-slate-500 uppercase">Calificación (0-100)</label>
-                            <input type="number" min="0" max="100" step="0.01" class="calificacion-compromiso-input w-24 text-xs rounded-lg border border-slate-200 p-1.5 disabled:bg-slate-100 disabled:text-slate-500" data-id-compromiso="${c.id_compromiso}" value="${c.calificacion_definitiva ?? ''}" ${estado.calificada ? 'disabled' : ''} />
+                            <input type="number" min="0" max="100" step="0.01" class="calificacion-compromiso-input w-24 text-xs rounded-lg border border-slate-200 p-1.5 disabled:bg-slate-100 disabled:text-slate-500" data-id-compromiso="${c.id_compromiso}" value="${c.calificacion_definitiva ?? ''}" onblur="clampCalificacion(this)" ${estado.calificada ? 'disabled' : ''} />
                         </div>` : '';
                     div.innerHTML = `
                         <div class="flex justify-between items-start gap-4">
@@ -1553,7 +1568,7 @@
                     const bloque = document.getElementById(id);
                     if (bloque) bloque.classList.toggle('hidden', !estado.congelada);
                 });
-                document.querySelectorAll('#calificacion-bloque-evaluador button, #competencias-bloque-evaluador button').forEach(btn => {
+                document.querySelectorAll('#calificacion-bloque-evaluador button, #competencias-bloque-evaluador button, #ejes-misionales-bloque-evaluador button').forEach(btn => {
                     btn.disabled = !!estado.calificada;
                     btn.classList.toggle('opacity-50', !!estado.calificada);
                     btn.classList.toggle('cursor-not-allowed', !!estado.calificada);
@@ -1613,7 +1628,7 @@
                     <p class="text-[10px] text-slate-500 mt-0.5">${escapeHtml(item.afirmacion || '')}</p>
                     <div class="mt-2 flex items-center gap-2">
                         <label class="text-[10px] font-bold text-slate-500 uppercase">Calificación (0-100)</label>
-                        <input type="number" min="0" max="100" step="0.01" class="competencia-input w-24 text-xs rounded-lg border border-slate-200 p-1.5 disabled:bg-slate-100 disabled:text-slate-500" data-tipo="${tipo}" data-nombre="${escapeHtml(item.nombre)}" value="${valor}" ${bloqueada ? 'disabled' : ''} />
+                        <input type="number" min="0" max="100" step="0.01" class="competencia-input w-24 text-xs rounded-lg border border-slate-200 p-1.5 disabled:bg-slate-100 disabled:text-slate-500" data-tipo="${tipo}" data-nombre="${escapeHtml(item.nombre)}" value="${valor}" onblur="clampCalificacion(this)" ${bloqueada ? 'disabled' : ''} />
                     </div>
                 </div>`;
         }).join('');
@@ -1622,6 +1637,23 @@
         const nivelNode = document.getElementById('competencias-nivel-evaluador');
         if (comunesNode) comunesNode.innerHTML = '<p class="text-[10px] font-bold text-slate-400 uppercase mb-1">Comunes</p>' + (renderLista(comunes, 'COMUN') || '<p class="text-[11px] text-slate-400">Sin catálogo disponible.</p>');
         if (nivelNode) nivelNode.innerHTML = '<p class="text-[10px] font-bold text-slate-400 uppercase mb-1">Nivel jerárquico</p>' + (renderLista(nivel, 'NIVEL_JERARQUICO') || '<p class="text-[11px] text-slate-400">Sin catálogo disponible.</p>');
+    }
+
+    function clampCalificacion(input) {
+        if (input.value === '') return;
+        let val = parseFloat(input.value);
+        if (isNaN(val)) { input.value = ''; return; }
+        if (val > 100) val = 100;
+        if (val < 0) val = 0;
+        input.value = val;
+    }
+
+    function parseErrorMessage(payload, fallback) {
+        if (payload && payload.errors) {
+            const primero = Object.values(payload.errors)[0];
+            if (Array.isArray(primero) && primero[0]) return primero[0];
+        }
+        return (payload && payload.message) || fallback;
     }
 
     function guardarCalificacionCompromisos() {
@@ -1636,13 +1668,14 @@
             headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
             body: JSON.stringify({ compromisos }),
         })
-            .then(res => res.json())
-            .then(payload => {
+            .then(async res => {
+                const payload = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(parseErrorMessage(payload, 'No se pudo guardar. Revisa que las calificaciones estén entre 0 y 100.'));
                 if (msg) { msg.classList.remove('hidden'); msg.className = 'text-xs font-semibold text-[#00594E]'; msg.innerText = payload.message || 'Calificaciones guardadas.'; }
                 previsualizarCalculoEvaluador();
             })
-            .catch(() => {
-                if (msg) { msg.classList.remove('hidden'); msg.className = 'text-xs font-semibold text-red-600'; msg.innerText = 'No se pudo guardar.'; }
+            .catch(error => {
+                if (msg) { msg.classList.remove('hidden'); msg.className = 'text-xs font-semibold text-red-600'; msg.innerText = error.message; }
             });
     }
 
@@ -1658,13 +1691,14 @@
             headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
             body: JSON.stringify({ competencias }),
         })
-            .then(res => res.json())
-            .then(payload => {
+            .then(async res => {
+                const payload = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(parseErrorMessage(payload, 'No se pudo guardar. Revisa que las calificaciones estén entre 0 y 100.'));
                 if (msg) { msg.classList.remove('hidden'); msg.className = 'text-xs font-semibold text-[#00594E]'; msg.innerText = payload.message || 'Competencias guardadas.'; }
                 previsualizarCalculoEvaluador();
             })
-            .catch(() => {
-                if (msg) { msg.classList.remove('hidden'); msg.className = 'text-xs font-semibold text-red-600'; msg.innerText = 'No se pudo guardar.'; }
+            .catch(error => {
+                if (msg) { msg.classList.remove('hidden'); msg.className = 'text-xs font-semibold text-red-600'; msg.innerText = error.message; }
             });
     }
 
@@ -1747,8 +1781,68 @@
         if (!selectedEvaluacionId) return;
         fetch(`/evaluaciones/${selectedEvaluacionId}/calculo`)
             .then(res => res.json())
-            .then(calculo => renderResultado(calculo, 'resultado-contenido-evaluador'))
+            .then(calculo => {
+                renderResultado(calculo, 'resultado-contenido-evaluador');
+                renderEjesMisionalesEvaluador(calculo);
+            })
             .catch(() => {});
+    }
+
+    function renderEjesMisionalesEvaluador(calculo) {
+        const bloque = document.getElementById('ejes-misionales-bloque-evaluador');
+        const contenedor = document.getElementById('ejes-misionales-inputs-evaluador');
+        const btn = document.getElementById('btn-guardar-ejes-evaluador');
+        if (!bloque || !contenedor) return;
+
+        const ejesActivos = calculo?.ejes_activos || [];
+        if (!ejesActivos.length) {
+            bloque.classList.add('hidden');
+            return;
+        }
+        bloque.classList.remove('hidden');
+
+        const bloqueada = calculo.estado === 'CALIFICADA';
+        const notas = calculo.notas_ejes_raw || {};
+
+        contenedor.innerHTML = ejesActivos.map(eje => `
+            <div class="p-3 rounded-xl border border-slate-100 bg-slate-50/50">
+                <p class="text-xs font-bold text-slate-800">${EJE_LABELS[eje] || eje}</p>
+                <div class="mt-2 flex items-center gap-2">
+                    <label class="text-[10px] font-bold text-slate-500 uppercase">Calificación (0-100)</label>
+                    <input type="number" min="0" max="100" step="0.01" class="eje-misional-evaluador-input w-24 text-xs rounded-lg border border-slate-200 p-1.5 disabled:bg-slate-100 disabled:text-slate-500" data-eje="${eje}" value="${notas[eje] ?? ''}" onblur="clampCalificacion(this)" ${bloqueada ? 'disabled' : ''} />
+                </div>
+            </div>
+        `).join('');
+
+        if (btn) btn.disabled = bloqueada;
+    }
+
+    function guardarEjesMisionalesEvaluador() {
+        if (!selectedEvaluacionId) return;
+        const ejes = Array.from(document.querySelectorAll('.eje-misional-evaluador-input'))
+            .filter(input => input.value !== '')
+            .map(input => ({ tipo_eje: input.dataset.eje, calificacion: parseFloat(input.value) }));
+
+        const msg = document.getElementById('ejes-misionales-mensaje-evaluador');
+        if (!ejes.length) {
+            if (msg) { msg.classList.remove('hidden'); msg.className = 'text-xs font-semibold text-red-600'; msg.innerText = 'Ingresa al menos una calificación.'; }
+            return;
+        }
+
+        fetch(`/evaluaciones/${selectedEvaluacionId}/calificar-ejes`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
+            body: JSON.stringify({ ejes }),
+        })
+            .then(async res => {
+                const payload = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(parseErrorMessage(payload, 'No se pudo guardar. Revisa que las calificaciones estén entre 0 y 100.'));
+                if (msg) { msg.classList.remove('hidden'); msg.className = 'text-xs font-semibold text-[#00594E]'; msg.innerText = payload.message || 'Ejes misionales guardados.'; }
+                previsualizarCalculoEvaluador();
+            })
+            .catch(error => {
+                if (msg) { msg.classList.remove('hidden'); msg.className = 'text-xs font-semibold text-red-600'; msg.innerText = error.message; }
+            });
     }
 
     function calcularNotaFinalEvaluador() {
@@ -2159,13 +2253,27 @@
                     btn.className = 'evaluacion-externa-card w-full text-left p-4 rounded-2xl border border-slate-200 bg-white cursor-pointer hover:border-[#00594E] transition';
                     const ejesTexto = (ev.ejes_activos || []).map(e => EJE_LABELS[e] || e).join(' · ');
                     const cargados = (ev.calificaciones || []).length;
+                    let badgeTexto, badgeClass;
+                    if (!ev.id_evaluacion) {
+                        badgeTexto = 'Sin evaluación abierta';
+                        badgeClass = 'bg-slate-100 text-slate-500';
+                    } else if (!ev.concertacion_firmada) {
+                        badgeTexto = 'Concertación pendiente';
+                        badgeClass = 'bg-amber-50 text-amber-700';
+                    } else if (cargados) {
+                        badgeTexto = cargados + ' nota(s)';
+                        badgeClass = 'bg-[#EAF2EF] text-[#00594E]';
+                    } else {
+                        badgeTexto = 'Sin notas';
+                        badgeClass = 'bg-amber-50 text-amber-700';
+                    }
                     btn.innerHTML = `
                         <div class="flex items-start justify-between gap-3">
                             <div class="min-w-0">
                                 <h4 class="font-bold text-slate-900 text-sm leading-snug">${escapeHtml(ev.evaluado_nombres || '')} ${escapeHtml(ev.evaluado_apellidos || '')}</h4>
                                 <p class="text-xs text-slate-500 mt-0.5">${escapeHtml(ev.evaluado_cargo || '')} - ${escapeHtml(ev.evaluado_area || '')}</p>
                             </div>
-                            <span class="text-[10px] font-bold uppercase px-2 py-1 rounded-full ${cargados ? 'bg-[#EAF2EF] text-[#00594E]' : 'bg-amber-50 text-amber-700'}">${cargados ? cargados + ' nota(s)' : 'Sin notas'}</span>
+                            <span class="text-[10px] font-bold uppercase px-2 py-1 rounded-full ${badgeClass}">${badgeTexto}</span>
                         </div>
                         <div class="flex justify-between items-center mt-3">
                             <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#EAF2EF] text-[#00594E]">AG</span>
@@ -2201,13 +2309,21 @@
             return acc;
         }, {});
 
-        const bloqueada = ev.estado === 'CALIFICADA';
+        let avisoTexto = null;
+        if (!ev.id_evaluacion) {
+            avisoTexto = 'Aún no se ha creado la evaluación de este periodo para esta persona. El evaluador debe abrirla primero (asignar el periodo) antes de poder cargar notas.';
+        } else if (!ev.concertacion_firmada) {
+            avisoTexto = 'La evaluación ya existe, pero la concertación de compromisos todavía no ha sido firmada por evaluador y evaluado. Podrás cargar las notas una vez se firme.';
+        } else if (ev.estado === 'CALIFICADA') {
+            avisoTexto = 'Esta evaluación ya fue calificada y calculada; las notas quedaron congeladas.';
+        }
+        const bloqueada = !!avisoTexto;
         const contenedor = document.getElementById('instancia-externa-ejes-contenedor');
         if (contenedor) {
-            const avisoBloqueada = bloqueada ? `
+            const avisoBloqueada = avisoTexto ? `
                 <div class="rounded-xl border border-slate-200 bg-slate-100 p-3 text-[11px] font-semibold text-slate-600 flex items-center gap-2">
-                    <span class="material-symbols-outlined text-base">lock</span>
-                    Esta evaluación ya fue calificada y calculada; las notas quedaron congeladas.
+                    <span class="material-symbols-outlined text-base">${ev.estado === 'CALIFICADA' ? 'lock' : 'info'}</span>
+                    ${escapeHtml(avisoTexto)}
                 </div>` : '';
             contenedor.innerHTML = avisoBloqueada + ((ev.ejes_activos || []).map(eje => {
                 const existente = notasExistentes[eje];
@@ -2217,7 +2333,7 @@
                         ${existente ? `<p class="text-[10px] text-slate-400 mt-0.5">Última carga: ${escapeHtml(existente.fecha_ingreso || '')} (${escapeHtml(existente.origen || '-')})</p>` : ''}
                         <div class="mt-2 flex items-center gap-2">
                             <label class="text-[10px] font-bold text-slate-500 uppercase">Calificación (0-100)</label>
-                            <input type="number" min="0" max="100" step="0.01" class="eje-externa-input w-24 text-xs rounded-lg border border-slate-200 p-1.5 disabled:bg-slate-100 disabled:text-slate-500" data-eje="${eje}" value="${existente?.calificacion ?? ''}" ${bloqueada ? 'disabled' : ''} />
+                            <input type="number" min="0" max="100" step="0.01" class="eje-externa-input w-24 text-xs rounded-lg border border-slate-200 p-1.5 disabled:bg-slate-100 disabled:text-slate-500" data-eje="${eje}" value="${existente?.calificacion ?? ''}" onblur="clampCalificacion(this)" ${bloqueada ? 'disabled' : ''} />
                         </div>
                         <textarea class="eje-externa-observacion mt-2 w-full text-xs rounded-lg border border-slate-200 p-2 disabled:bg-slate-100 disabled:text-slate-500" rows="2" data-eje="${eje}" placeholder="Observaciones (opcional)" ${bloqueada ? 'disabled' : ''}>${escapeHtml(existente?.observaciones || '')}</textarea>
                     </div>`;
@@ -2260,7 +2376,7 @@
         })
             .then(async res => {
                 const payload = await res.json().catch(() => ({}));
-                if (!res.ok) throw new Error(payload.message || 'No se pudo guardar.');
+                if (!res.ok) throw new Error(parseErrorMessage(payload, 'No se pudo guardar. Revisa que las calificaciones estén entre 0 y 100.'));
                 if (msg) { msg.classList.remove('hidden'); msg.className = 'text-xs font-semibold text-[#00594E]'; msg.innerText = payload.message || 'Notas guardadas.'; }
                 cargarListaInstanciaExterna();
             })
