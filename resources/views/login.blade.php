@@ -27,7 +27,7 @@
 
 <header class="flex justify-between items-center px-4 sm:px-margin-desktop h-16 w-full fixed top-0 left-0 right-0 bg-surface-container-lowest z-50 border-b border-slate-100 m-0">
     <div class="flex items-center gap-2">
-        <span class="material-symbols-outlined text-primary text-xl" style="font-variation-settings: 'FILL' 1;">eco</span>
+        <img src="/escudo-color.png" alt="Unitrópico" class="h-9 sm:h-10 w-auto object-contain" />
         <span class="text-base sm:text-lg font-bold text-primary">Unitrópico</span>
     </div>
     <div class="text-on-surface-variant text-[10px] sm:text-xs font-semibold tracking-wider text-right max-w-[200px] sm:max-w-none">
@@ -81,7 +81,8 @@
     </div>
 </main>
 
-<footer class="w-full px-4 sm:px-margin-desktop py-6 border-t border-outline-variant bg-white/80 backdrop-blur-sm text-center">
+<footer class="w-full px-4 sm:px-margin-desktop py-6 border-t border-outline-variant bg-white/80 backdrop-blur-sm flex flex-col items-center gap-2 text-center">
+    <img src="/logo.png" alt="SERAG" class="h-8 sm:h-9 w-auto object-contain" />
     <span class="text-xs sm:text-sm font-medium text-on-surface-variant">© 2026 Unitrópico</span>
 </footer>
 

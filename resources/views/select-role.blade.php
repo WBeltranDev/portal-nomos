@@ -3,6 +3,9 @@
 @section('content')
 <main class="min-h-screen flex items-center justify-center px-4 py-10 bg-[radial-gradient(circle_at_top_left,_rgba(181,161,96,0.14),_transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(0,64,55,0.12),_transparent_28%),linear-gradient(180deg,_#f8faf8_0%,_#f3f6f4_100%)]">
     <div class="w-full max-w-xl bg-white/85 backdrop-blur-md rounded-3xl shadow-xl border border-slate-100 p-6 sm:p-8 lg:p-10">
+        <div class="mb-6">
+            <img src="/logo.png" alt="Unitrópico" class="h-14 w-auto object-contain" />
+        </div>
         <div class="mb-8">
             <div class="inline-flex items-center gap-2 rounded-full bg-[#EAF2EF] px-4 py-1.5 mb-4">
                 <span class="material-symbols-outlined text-primary text-base">swap_horiz</span>
