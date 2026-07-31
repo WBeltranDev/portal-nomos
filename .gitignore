@@ -26,4 +26,5 @@ Homestead.json
 Homestead.yaml
 Thumbs.db
 evaluacion_unitropico.sql
-Arbol jerarquico.txt
+Arbol jerarquico.txt/bootstrap/cache/*.php
+/bootstrap/cache/*.php

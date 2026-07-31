@@ -1,4 +1,14 @@
 services:
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: portal_nomos_phpmyadmin
+    ports:
+      - "8081:80"
+    environment:
+      PMA_HOST: mysql   # <-- Cambiado de "db" a "mysql"
+      PMA_PORT: 3306
+    depends_on:
+      - mysql           # <-- Cambiado de "db" a "mysql"
   app:
     build:
       context: .

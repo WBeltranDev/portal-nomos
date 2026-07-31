@@ -1,4 +1,4 @@
-﻿@extends('layouts.app')
+@extends('layouts.app')
 
 @section('content')
 <style>
@@ -195,10 +195,12 @@
                     <span class="material-symbols-outlined">fact_check</span>
                     Evaluaciones
                 </button>
+                @if ($rolActivo === 'evaluado')
                 <button class="sidebar-link w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-slate-700 transition" onclick="navegarMenu(this, 'reportes')">
                     <span class="material-symbols-outlined">description</span>
                     Exportar PDF
                 </button>
+                @endif
                 @endif
 
                 @if ($rolActivo === 'instancia_externa')
@@ -322,7 +324,7 @@
                                 <div id="empleado-avatar" class="w-14 h-14 rounded-2xl bg-[#00594E] flex items-center justify-center text-white text-lg font-black shadow-md">--</div>
                                 <div class="min-w-0">
                                     <h3 id="empleado-nombre" class="text-lg font-black text-slate-900 leading-tight">Selecciona uno</h3>
-                                    <p id="empleado-cargo" class="text-xs text-slate-500 mt-0.5">Ver�s sus datos ampliados</p>
+                                    <p id="empleado-cargo" class="text-xs text-slate-500 mt-0.5">Verás sus datos ampliados</p>
                                 </div>
                             </div>
                             <div class="mt-4 space-y-2 text-xs">
@@ -346,24 +348,12 @@
 
                         <!-- Asignación de evaluados a evaluador -->
                         <div class="panel-card rounded-3xl p-6">
-                            <h3 class="text-lg font-bold text-slate-800 mb-2">Asignar Evaluado</h3>
-                            <p class="text-xs text-slate-500 mb-4">Vincula un funcionario a su evaluador para que el evaluador pueda abrir la evaluación.</p>
+                            <h3 class="text-lg font-bold text-slate-800 mb-2">Asignar personas a evaluar</h3>
+                            <p class="text-xs text-slate-500 mb-4">Selecciona primero el evaluador y, posteriormente, las personas que deberá evaluar.</p>
                             <form method="POST" action="{{ route('admin.asignaciones.store') }}" class="space-y-3">
                                 @csrf
                                 <div>
-                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Evaluado (Vinculación)</label>
-                                    <input type="search" id="buscar-evaluado-asignacion" oninput="filtrarOpcionesAsignacion('buscar-evaluado-asignacion', 'select-evaluado-asignacion')" class="mb-2 w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Buscar evaluado por nombre o cargo" />
-                                    <select name="id_vinc_evaluado" id="select-evaluado-asignacion" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
-                                        <option value="">Selecciona un evaluado</option>
-                                        @foreach($empleados as $e)
-                                            @if($e->id_vinculacion)
-                                                <option value="{{ $e->id_vinculacion }}">{{ $e->nombres }} {{ $e->apellidos }} - {{ $e->nombre_cargo }}</option>
-                                            @endif
-                                        @endforeach
-                                    </select>
-                                </div>
-                                <div>
-                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Evaluador (Vinculaci�n)</label>
+                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Evaluador (Vinculación)</label>
                                     <input type="search" id="buscar-evaluador-asignacion" oninput="filtrarOpcionesAsignacion('buscar-evaluador-asignacion', 'select-evaluador-asignacion')" class="mb-2 w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Buscar evaluador por nombre o cargo" />
                                     <select name="id_vinc_evaluador" id="select-evaluador-asignacion" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
                                         <option value="">Selecciona un evaluador</option>
@@ -374,10 +364,30 @@
                                         @endforeach
                                     </select>
                                 </div>
-                                <button type="submit" class="w-full bg-[#B5A160] text-white rounded-xl py-2.5 text-xs font-bold hover:brightness-110 transition shadow-md shadow-[#B5A160]/20">Asignar evaluado</button>
+                                <div>
+                                    <div class="flex items-center justify-between mb-1">
+                                        <label class="block text-[10px] font-bold text-slate-600 uppercase">Personas a evaluar</label>
+                                        <span id="contador-asignacion" class="text-[10px] font-bold rounded-full px-2.5 py-1 bg-[#EAF2EF] text-[#00594E]">0 seleccionadas</span>
+                                    </div>
+                                    <input type="search" id="buscar-evaluado-asignacion" oninput="filtrarCheckboxAsignacion()" class="mb-1.5 w-full text-xs rounded-xl border border-slate-200 p-2 bg-white outline-none focus:border-[#00594E]" placeholder="Buscar persona por nombre o cargo" />
+                                    <div id="lista-evaluados-asignacion" class="h-32 max-w-xs w-full overflow-y-auto rounded-xl border border-slate-200 divide-y divide-slate-100 bg-white">
+                                        @foreach($empleados as $e)
+                                            @if($e->id_vinculacion)
+                                                <label class="checkbox-evaluado flex items-center gap-2.5 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 cursor-pointer" hidden data-buscar="{{ strtolower($e->nombres . ' ' . $e->apellidos . ' ' . ($e->nombre_cargo ?? '')) }}">
+                                                    <input type="checkbox" name="id_vinc_evaluado[]" value="{{ $e->id_vinculacion }}" onchange="contarAsignados()" class="shrink-0 rounded border-slate-300 text-[#00594E] focus:ring-[#00594E]" />
+                                                    <span class="min-w-0">
+                                                        <span class="block font-semibold leading-tight">{{ $e->nombres }} {{ $e->apellidos }}</span>
+                                                        <span class="block text-slate-400 text-[10px] truncate">{{ $e->nombre_cargo }}</span>
+                                                    </span>
+                                                </label>
+                                            @endif
+                                        @endforeach
+                                    </div>
+                                </div>
+                                <button type="submit" class="w-full bg-[#B5A160] text-white rounded-xl py-2.5 text-xs font-bold hover:brightness-110 transition shadow-md shadow-[#B5A160]/20">Asignar evaluador</button>
                             </form>
                         </div>
-                    </aside>
+                    
                 </div>
             </section>
 
@@ -595,7 +605,7 @@
                         <div>
                             <p class="text-xs font-bold uppercase tracking-[0.22em] text-[#00594E]">Planes de mejoramiento</p>
                             <h2 class="text-2xl sm:text-3xl font-black text-slate-900">Planes condicionados a la calificación</h2>
-                            <p class="text-sm text-slate-500 mt-1">RL 71-80 (Susceptible de mejora) y AG 0-70 (No satisfactorio), primer semestre.</p>
+                            <p class="text-sm text-slate-500 mt-1">RL y AG 0-70 (No satisfactorio), primer semestre.</p>
                         </div>
                     </div>
                     <div id="planes-admin-lista" class="grid gap-4 lg:grid-cols-2">
@@ -608,7 +618,7 @@
                         <div>
                             <p class="text-xs font-bold uppercase tracking-[0.22em] text-[#00594E]">Renuencia</p>
                             <h2 class="text-2xl sm:text-3xl font-black text-slate-900">Renuncias a la firma con testigos</h2>
-                            <p class="text-sm text-slate-500 mt-1">Concertaciones firmadas con renuencia y los testigos registrados.</p>
+                            <p class="text-sm text-slate-500 mt-1">Notificaciones de calificación con renuencia y los testigos registrados.</p>
                         </div>
                     </div>
                     <div id="renuencias-admin-lista" class="grid gap-4 lg:grid-cols-2">
@@ -679,6 +689,11 @@
                             <div>
                                 <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Motivo (opcional)</label>
                                 <input type="text" name="motivo" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Motivo del traslado" />
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Nombre o referencia del funcionario para la evaluación parcial</label>
+                                <input type="text" name="referencia" maxlength="200" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Ej. Juan Pérez — Traslado a Secretaría General" />
+                                <p class="text-[9px] text-slate-400 mt-1">Identifica la evaluación PARCIAL que se genera en el periodo abierto con el nombre o referencia del funcionario.</p>
                             </div>
                             <button type="submit" class="w-full bg-[#B5A160] text-white rounded-xl py-2.5 text-xs font-bold hover:brightness-110 transition shadow-md shadow-[#B5A160]/20">Registrar traslado</button>
                         </form>
@@ -864,6 +879,13 @@
                                         <div class="min-w-0">
                                             <h4 class="font-bold text-slate-900 text-sm leading-snug">{{ $ev->evaluado_nombres }} {{ $ev->evaluado_apellidos }}</h4>
                                             <p class="text-xs text-slate-500 mt-0.5">{{ $ev->evaluado_cargo }} - {{ $ev->evaluado_area }}</p>
+                                            @if($ev->tipo_nombre === 'PARCIAL' && $ev->referencia)
+                                                <p class="text-[10px] font-semibold text-[#00594E] mt-1">{{ $ev->referencia }}</p>
+                                            @endif
+                                            <div class="mt-2 space-y-0.5 text-[10px] text-slate-500">
+                                                <p><span class="font-semibold text-slate-600">Período de evaluación:</span> {{ $ev->anio }} · Semestre {{ $ev->semestre }}</p>
+                                                <p><span class="font-semibold text-slate-600">Fechas de calificación:</span> {{ \Carbon\Carbon::parse($ev->fecha_inicio)->format('d/m/Y') }} al {{ \Carbon\Carbon::parse($ev->fecha_fin)->format('d/m/Y') }}</p>
+                                            </div>
                                         </div>
                                         <span class="text-[10px] font-bold uppercase px-2 py-1 rounded-full {{ $ev->evaluador_firmado ? 'bg-[#EAF2EF] text-[#00594E]' : 'bg-amber-50 text-amber-700' }}">
                                             {{ $ev->evaluador_firmado ? 'Firmó' : 'Pendiente' }}
@@ -970,25 +992,9 @@
                                 </form>
                                 </div>
 
-                                <div class="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between gap-4">
+                                <div id="seccion-firmar-evaluador" class="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between gap-4">
                                 <div class="text-xs text-slate-500 leading-tight">Podrás firmar cuando tengas de 7 a 10 compromisos que sumen exactamente el porcentaje objetivo.</div>
-                                <div id="renuencia-seccion-evaluador" class="hidden w-full">
-                                <label class="flex items-center gap-2.5 text-xs text-slate-600 cursor-pointer rounded-xl border border-amber-200 bg-amber-50/60 p-3">
-                                <input type="checkbox" id="chk-renuncia-evaluador" onchange="toggleRenuencia('evaluador')" class="rounded border-amber-300 text-amber-600 focus:ring-amber-500" />
-                                <span class="font-semibold">Renuncio a firmar la concertación</span>
-                                </label>
-                                <div id="testigos-evaluador" class="hidden mt-3 rounded-xl border border-slate-100 bg-slate-50/50 p-4 space-y-3">
-                                <p class="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Testigos de la renuencia</p>
-                                <div class="grid grid-cols-2 gap-2">
-                                <input type="text" id="testigo1-nombre-evaluador" placeholder="Nombre del testigo 1" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" />
-                                <input type="text" id="testigo1-cargo-evaluador" placeholder="Cargo del testigo 1" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" />
-                                </div>
-                                <div class="grid grid-cols-2 gap-2">
-                                <input type="text" id="testigo2-nombre-evaluador" placeholder="Nombre del testigo 2 (opcional)" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" />
-                                <input type="text" id="testigo2-cargo-evaluador" placeholder="Cargo del testigo 2 (opcional)" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" />
-                                </div>
-                                </div>
-                                </div>
+
                                 <form id="form-firmar-evaluacion" method="POST" action="" onsubmit="firmarConcertacion(event, 'evaluador')" class="shrink-0">
                                 @csrf
                                 <button type="submit" id="btn-firmar-evaluador" class="bg-[#00594E] text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:brightness-110 transition disabled:opacity-50" disabled>Firmar concertación</button>
@@ -1109,7 +1115,14 @@
                             @forelse($evaluacionesEvaluado as $ev)
                                 <div class="evaluacion-card p-4 rounded-2xl border border-slate-200 bg-white cursor-pointer hover:border-[#00594E] transition" onclick="abrirConcertacionEvaluado(this, @js($ev))">
                                     <h4 class="font-bold text-slate-900 text-sm leading-snug">{{ $ev->tipo_nombre }}</h4>
+                                    @if($ev->tipo_nombre === 'PARCIAL' && $ev->referencia)
+                                        <p class="text-[10px] font-semibold text-[#00594E] mt-1">{{ $ev->referencia }}</p>
+                                    @endif
                                     <p class="text-xs text-slate-500 mt-0.5">Evaluador: {{ $ev->evalador_nombres ?? 'Mi Evaluador' }} {{ $ev->evalador_apellidos ?? '' }}</p>
+                                    <div class="mt-2 space-y-0.5 text-[10px] text-slate-500">
+                                        <p><span class="font-semibold text-slate-600">Período de evaluación:</span> {{ $ev->anio }} · Semestre {{ $ev->semestre }}</p>
+                                        <p><span class="font-semibold text-slate-600">Fechas de calificación:</span> {{ \Carbon\Carbon::parse($ev->fecha_inicio)->format('d/m/Y') }} al {{ \Carbon\Carbon::parse($ev->fecha_fin)->format('d/m/Y') }}</p>
+                                    </div>
                                     <div class="flex justify-between items-center mt-3">
                                         <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#EAF2EF] text-[#00594E]">
                                             {{ $ev->sistema === 'RENDIMIENTO_LABORAL' ? 'RL' : 'AG' }}
@@ -1224,30 +1237,14 @@
                             </div>
 
                             <div id="firma-evaluado-seccion" class="mt-6 pt-4 border-t border-slate-100 space-y-3">
-                                <div class="flex items-center justify-between gap-4">
+                                <div id="seccion-firmar-evaluado" class="flex items-center justify-between gap-4">
                                     <div class="text-xs text-slate-500 leading-tight">Podrás firmar cuando el evaluador haya firmado la concertación.</div>
                                     <form id="form-firmar-evaluado" method="POST" action="" onsubmit="firmarConcertacion(event, 'evaluado')" class="shrink-0">
                                         @csrf
                                         <button type="submit" id="btn-firmar-evaluado" class="bg-[#00594E] text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:brightness-110 transition disabled:opacity-50" disabled>Firmar Concertación</button>
                                     </form>
                                 </div>
-                                <div id="renuencia-seccion-evaluado" class="hidden">
-                                    <label class="flex items-center gap-2.5 text-xs text-slate-600 cursor-pointer rounded-xl border border-amber-200 bg-amber-50/60 p-3">
-                                        <input type="checkbox" id="chk-renuncia-evaluado" onchange="toggleRenuencia('evaluado')" class="rounded border-amber-300 text-amber-600 focus:ring-amber-500" />
-                                        <span class="font-semibold">Renuncio a firmar la concertación</span>
-                                    </label>
-                                    <div id="testigos-evaluado" class="hidden mt-3 rounded-xl border border-slate-100 bg-slate-50/50 p-4 space-y-3">
-                                        <p class="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Testigos de la renuencia</p>
-                                        <div class="grid grid-cols-2 gap-2">
-                                            <input type="text" id="testigo1-nombre-evaluado" placeholder="Nombre del testigo 1" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" />
-                                            <input type="text" id="testigo1-cargo-evaluado" placeholder="Cargo del testigo 1" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" />
-                                        </div>
-                                        <div class="grid grid-cols-2 gap-2">
-                                            <input type="text" id="testigo2-nombre-evaluado" placeholder="Nombre del testigo 2 (opcional)" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" />
-                                            <input type="text" id="testigo2-cargo-evaluado" placeholder="Cargo del testigo 2 (opcional)" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" />
-                                        </div>
-                                    </div>
-                                </div>
+
 
                                 <div id="firmas-concertacion-evaluado" class="mt-3 hidden"></div>
                             </div>
@@ -1349,6 +1346,69 @@
             </section>
             @endif
 
+            @if ($rolActivo === 'evaluado')
+            <section id="section-reportes" class="section-content hidden space-y-6">
+                <div class="panel-card rounded-3xl p-6">
+                    <div class="mb-4">
+                        <p class="text-xs font-bold uppercase tracking-[0.22em] text-[#00594E]">Exportar PDF</p>
+                        <h2 class="text-xl font-black text-slate-900 mt-1">Informes institucionales de evaluación</h2>
+                        <p class="text-xs text-slate-500 mt-1">Descarga los informes oficiales en PDF de tus evaluaciones ya calificadas. El informe anual promedia los semestres A y B del periodo.</p>
+                    </div>
+
+                    @php
+                        $informesDisponibles = $evaluacionesEvaluado->filter(fn ($e) => $e->estado === 'CALIFICADA');
+                    @endphp
+
+                    @if($informesDisponibles->isEmpty())
+                        <div class="py-10 text-center text-slate-500 text-sm">
+                            <span class="material-symbols-outlined text-4xl text-slate-300 mb-2 block">picture_as_pdf</span>
+                            Aún no tienes informes disponibles. Cuando una de tus evaluaciones sea calificada, aparecerá aquí para descargarla.
+                        </div>
+                    @else
+                        <div class="overflow-x-auto rounded-2xl border border-slate-100">
+                            <table class="w-full text-left text-xs">
+                                <thead>
+                                    <tr class="bg-[#EAF2EF] text-[#00594E] uppercase tracking-wide">
+                                        <th class="px-4 py-3 font-black">Sistema</th>
+                                        <th class="px-4 py-3 font-black">Evaluación</th>
+                                        <th class="px-4 py-3 font-black">Periodo</th>
+                                        <th class="px-4 py-3 font-black">Evaluador</th>
+                                        <th class="px-4 py-3 font-black text-right">Descargar</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach($informesDisponibles as $ev)
+                                        <tr class="border-t border-slate-100 odd:bg-white even:bg-slate-50/50">
+                                            <td class="px-4 py-3">
+                                                <span class="font-bold px-2 py-0.5 rounded-full bg-[#EAF2EF] text-[#00594E]">
+                                                    {{ $ev->sistema === 'RENDIMIENTO_LABORAL' ? 'RL' : 'AG' }}
+                                                </span>
+                                            </td>
+                                            <td class="px-4 py-3 font-bold text-slate-800">{{ $ev->tipo_nombre }}</td>
+                                            <td class="px-4 py-3 text-slate-600">
+                                                {{ \Carbon\Carbon::parse($ev->fecha_inicio)->format('d/m/Y') }} al {{ \Carbon\Carbon::parse($ev->fecha_fin)->format('d/m/Y') }}
+                                            </td>
+                                            <td class="px-4 py-3 text-slate-600">{{ $ev->evaluador_nombres }} {{ $ev->evaluador_apellidos }}</td>
+                                            <td class="px-4 py-3">
+                                                <div class="flex justify-end gap-2">
+                                                    <a href="/evaluaciones/{{ $ev->id_evaluacion }}/informe" class="inline-flex items-center gap-1.5 rounded-lg bg-[#00594E] text-white px-3 py-1.5 text-[11px] font-bold hover:brightness-110 transition">
+                                                        <span class="material-symbols-outlined text-sm">picture_as_pdf</span> PDF semestral
+                                                    </a>
+                                                    <a href="/evaluaciones/{{ $ev->id_evaluacion }}/informe-anual" class="inline-flex items-center gap-1.5 rounded-lg bg-[#B5A160] text-white px-3 py-1.5 text-[11px] font-bold hover:brightness-110 transition">
+                                                        <span class="material-symbols-outlined text-sm">picture_as_pdf</span> PDF anual
+                                                    </a>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    @endif
+                </div>
+            </section>
+            @endif
+
             @if ($rolActivo === 'instancia_externa')
             <section id="section-instancia-externa" class="section-content space-y-6">
                 <div class="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
@@ -1435,6 +1495,7 @@
 
 <script>
     let selectedEvaluacionId = null;
+    let selectedEstadoEvaluacion = null;
     let selectedEvaluacionData = null;
     let selectedEvaluacionEjes = {};
     let selectedPlanData = null;
@@ -1494,6 +1555,21 @@
         if (!seleccionVisible) {
             select.value = '';
         }
+    }
+
+    function contarAsignados() {
+        const contador = document.getElementById('contador-asignacion');
+        if (!contador) return;
+        const total = document.querySelectorAll('#lista-evaluados-asignacion input[name="id_vinc_evaluado[]"]:checked').length;
+        contador.innerText = total + (total === 1 ? ' seleccionada' : ' seleccionadas');
+    }
+
+    function filtrarCheckboxAsignacion() {
+        const input = document.getElementById('buscar-evaluado-asignacion');
+        const termino = (input?.value || '').trim().toLowerCase();
+        document.querySelectorAll('#lista-evaluados-asignacion .checkbox-evaluado').forEach(item => {
+            item.hidden = !termino || !item.dataset.buscar.includes(termino);
+        });
     }
 
     function agruparEvidenciasPorCompromiso(evidencias = []) {
@@ -1834,7 +1910,6 @@
             .catch(() => cargarCompromisosEvaluado(ev));
         cargarCompetenciasEvaluado();
         cargarEjesEvaluado(ev);
-        reiniciarRenuencia('evaluado');
         cargarRecursosEvaluado(ev);
         cargarPlanMejoramientoEvaluado(ev);
         document.querySelectorAll('.evaluacion-card').forEach(el => el.classList.remove('ring-2', 'ring-[#00594E]'));
@@ -1991,7 +2066,6 @@
                 cargarCompromisosEvaluador(ev, {});
             });
 
-        reiniciarRenuencia('evaluador');
         cargarRecursosEvaluador(ev);
         cargarPlanMejoramientoEvaluador(ev);
         document.querySelectorAll('.evaluacion-evaluador-card').forEach(el => el.classList.remove('ring-2', 'ring-[#00594E]'));
@@ -2007,6 +2081,7 @@
 	                const evidencias = payload.evidencias || [];
 	                const observaciones = payload.observaciones || [];
 	                const estado = payload.estado || {};
+	                selectedEstadoEvaluacion = estado;
 	                const contenedor = document.getElementById('compromisos-lista-contenedor');
 	                const badge = document.getElementById('concertacion-sistema');
 	                if (!contenedor) return;
@@ -2104,14 +2179,18 @@
                     cargarCalificacionYResultado(ev, !!estado.calificada);
                 }
 
+                const seccionFirmarEvaluador = document.getElementById('seccion-firmar-evaluador');
+                if (seccionFirmarEvaluador) {
+                    seccionFirmarEvaluador.classList.toggle('hidden', yaFirmado);
+                }
+
                 const btnFirmar = document.getElementById('btn-firmar-evaluador');
                 const okToSign = contador >= 7 && contador <= 10 && Math.abs(sumaPesos - targetWeight) < 0.01 && !yaFirmado;
                 if (btnFirmar) {
                     btnFirmar.disabled = !okToSign;
                     btnFirmar.innerText = yaFirmado ? 'Firmado' : 'Firmar concertación';
                 }
-                const renSectEvaluador = document.getElementById('renuencia-seccion-evaluador');
-                if (renSectEvaluador) renSectEvaluador.classList.toggle('hidden', !okToSign);
+
                 const form = document.getElementById('form-firmar-evaluacion');
                 if (form) form.action = `/evaluaciones/${ev.id_evaluacion}/firmar`;
                 renderFirmasConcertacion(estado, 'firmas-concertacion-evaluador');
@@ -2295,6 +2374,72 @@
             </div>
         ` : '';
 
+        const pdfHtml = (calculo.estado === 'CALIFICADA' && containerId === 'resultado-contenido-evaluado') ? `
+            <div class="mt-3 flex flex-wrap gap-2">
+                <a href="/evaluaciones/${selectedEvaluacionId}/informe" class="inline-flex items-center gap-2 rounded-xl bg-[#00594E] text-white px-4 py-2 text-xs font-bold hover:brightness-110 transition">
+                    <span class="material-symbols-outlined text-sm">picture_as_pdf</span> Descargar PDF semestral
+                </a>
+                <a href="/evaluaciones/${selectedEvaluacionId}/informe-anual" class="inline-flex items-center gap-2 rounded-xl bg-[#B5A160] text-white px-4 py-2 text-xs font-bold hover:brightness-110 transition">
+                    <span class="material-symbols-outlined text-sm">picture_as_pdf</span> Descargar PDF anual
+                </a>
+            </div>
+        ` : '';
+
+        let notificacionHtml = '';
+        if (calculo.estado === 'CALIFICADA') {
+            const estadoNotif = selectedEstadoEvaluacion || {};
+            if (estadoNotif.notificacion_firmada) {
+                if (estadoNotif.renuencia_notificacion) {
+                    const tList = (estadoNotif.testigos_notificacion || []).map(t => `<p class="text-[11px] text-amber-800 font-medium">• <b>${escapeHtml(t.nombre_testigo || t.nombre)}</b> (${escapeHtml(t.cargo_testigo || t.cargo)})</p>`).join('');
+                    notificacionHtml = `
+                        <div class="mt-4 p-4 rounded-2xl border border-amber-200 bg-amber-50/70 space-y-2">
+                            <div class="flex items-center gap-2">
+                                <span class="material-symbols-outlined text-amber-600">verified_user</span>
+                                <p class="text-xs font-bold text-amber-900">Notificación registrada con renuencia del evaluado</p>
+                            </div>
+                            <p class="text-[11px] text-amber-700">El evaluado se rehusó a firmar la notificación de su calificación. Se registraron los siguientes testigos:</p>
+                            <div class="pt-1 space-y-1">
+                                ${tList}
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    notificacionHtml = `
+                        <div class="mt-4 p-4 rounded-2xl border border-emerald-200 bg-emerald-50/70 flex items-center justify-between gap-3">
+                            <div class="flex items-center gap-2">
+                                <span class="material-symbols-outlined text-emerald-600">check_circle</span>
+                                <div>
+                                    <p class="text-xs font-bold text-emerald-900">Notificación de la calificación firmada por el evaluado</p>
+                                    <p class="text-[10px] text-emerald-700">Fecha: ${escapeHtml(estadoNotif.fecha_notificacion || 'Registrada')}</p>
+                                </div>
+                            </div>
+                            <span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-emerald-100 text-emerald-800">Firmada</span>
+                        </div>
+                    `;
+                }
+            } else {
+                notificacionHtml = `
+                    <div class="mt-4 p-4 rounded-2xl border border-slate-200 bg-white space-y-3 shadow-sm">
+                        <div class="flex items-center justify-between">
+                            <h5 class="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
+                                <span class="material-symbols-outlined text-base text-[#00594E]">draw</span>
+                                Notificación de la Calificación (Nota)
+                            </h5>
+                            <span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-amber-50 text-amber-700">Pendiente de firma</span>
+                        </div>
+                        <p class="text-xs text-slate-600 leading-snug">El evaluado debe firmar la notificación de su calificación.</p>
+
+                        <div class="flex items-center justify-between gap-3 pt-1">
+                            <span id="msg-notif-calificacion" class="hidden text-xs font-semibold"></span>
+                            <button type="button" id="btn-notif-calificacion" onclick="firmarNotificacionCalificacion()" class="ml-auto bg-[#00594E] text-white px-5 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">
+                                Firmar notificación
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
         cont.innerHTML = `
             ${bloqueadaHtml}
             <div class="rounded-2xl border border-slate-100 bg-slate-50/60 p-4 space-y-2">
@@ -2310,6 +2455,8 @@
                 </div>
                 ${prorrateoHtml}
             </div>
+            ${pdfHtml}
+            ${notificacionHtml}
         `;
     }
 
@@ -2485,8 +2632,12 @@
                     btnFirmar.disabled = !okToSign;
                     btnFirmar.innerText = locked ? 'Firmado' : 'Firmar Concertación';
                 }
-                const renSectEvaluado = document.getElementById('renuencia-seccion-evaluado');
-                if (renSectEvaluado) renSectEvaluado.classList.toggle('hidden', !okToSign);
+
+                const seccionFirmarEvaluado = document.getElementById('seccion-firmar-evaluado');
+                if (seccionFirmarEvaluado) {
+                    seccionFirmarEvaluado.classList.toggle('hidden', locked);
+                }
+
 
                 renderFirmasConcertacion(estado, 'firmas-concertacion-evaluado');
 
@@ -2931,55 +3082,46 @@
 
     // --- S6: Renuencia, recursos (reposición/apelación) y plan de mejoramiento ---
 
-    function reiniciarRenuencia(rol) {
-        const chk = document.getElementById(`chk-renuncia-${rol}`);
-        if (chk) chk.checked = false;
-        const testigos = document.getElementById(`testigos-${rol}`);
-        if (testigos) testigos.classList.add('hidden');
-        [`testigo1-nombre-${rol}`, `testigo1-cargo-${rol}`, `testigo2-nombre-${rol}`, `testigo2-cargo-${rol}`].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.value = '';
+    function toggleRenuenciaNotificacion() {}
+
+    function firmarNotificacionCalificacion() {
+        if (!selectedEvaluacionId) return;
+        const msg = document.getElementById('msg-notif-calificacion');
+        const btn = document.getElementById('btn-notif-calificacion');
+
+        if (!confirm('¿Confirmas firmar la notificación de la calificación recibida?')) {
+            return;
+        }
+
+        if (btn) btn.disabled = true;
+
+        fetchJson(`/evaluaciones/${selectedEvaluacionId}/firmar-notificacion`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
+            },
+            body: JSON.stringify({ renuencia, testigos })
+        })
+        .then(payload => {
+            mostrarMensaje(msg, payload.message || 'Procesado con éxito.', true);
+            if (selectedEvaluacionData) {
+                if (typeof cargarCompromisosEvaluado === 'function') cargarCompromisosEvaluado(selectedEvaluacionData);
+                if (typeof cargarCompromisosEvaluador === 'function') cargarCompromisosEvaluador(selectedEvaluacionData);
+            }
+        })
+        .catch(err => {
+            mostrarMensaje(msg, err.message || 'Ocurrió un error al registrar.', false);
+            if (btn) btn.disabled = false;
         });
     }
 
-    function toggleRenuencia(rol) {
-        const chk = document.getElementById(`chk-renuncia-${rol}`);
-        const testigos = document.getElementById(`testigos-${rol}`);
-        if (chk && testigos) testigos.classList.toggle('hidden', !chk.checked);
-    }
-
     function firmarConcertacion(e, rol) {
-        const chk = document.getElementById(`chk-renuncia-${rol}`);
-        const renunciando = !!(chk && chk.checked);
-        if (!renunciando) {
-            return confirm('¿Confirmas firmar la concertación? Una vez que ambas partes firmen, los compromisos y sus porcentajes quedarán bloqueados y no se podrán editar.');
+        if (!confirm('¿Confirmas firmar la concertación? Una vez que ambas partes firmen, los compromisos y sus porcentajes quedarán bloqueados y no se podrán editar.')) {
+            e.preventDefault();
+            return false;
         }
-        e.preventDefault();
-        const nombre = (document.getElementById(`testigo1-nombre-${rol}`)?.value || '').trim();
-        const cargo = (document.getElementById(`testigo1-cargo-${rol}`)?.value || '').trim();
-        const nombre2 = (document.getElementById(`testigo2-nombre-${rol}`)?.value || '').trim();
-        const cargo2 = (document.getElementById(`testigo2-cargo-${rol}`)?.value || '').trim();
-        if (!nombre || !cargo) {
-            alert('Debes registrar al menos un testigo (nombre y cargo) cuando renuncias a firmar.');
-            return;
-        }
-        const form = e.target;
-        form.querySelectorAll('[name^="testigos["], [name="renuncia"]').forEach(el => el.remove());
-        const addHidden = (name, value) => {
-            const input = document.createElement('input');
-            input.type = 'hidden';
-            input.name = name;
-            input.value = value;
-            form.appendChild(input);
-        };
-        addHidden('renuncia', '1');
-        addHidden('testigos[0][nombre]', nombre);
-        addHidden('testigos[0][cargo]', cargo);
-        if (nombre2 || cargo2) {
-            addHidden('testigos[1][nombre]', nombre2);
-            addHidden('testigos[1][cargo]', cargo2);
-        }
-        form.submit();
+        return true;
     }
 
     function mostrarMensaje(el, texto, ok) {
@@ -2992,31 +3134,22 @@
     function renderFirmasConcertacion(estado, contenedorId) {
         const contenedor = document.getElementById(contenedorId);
         if (!contenedor) return;
-        const testigos = estado.testigos || [];
-        const tarjetaFirma = (rol, label, firmado, renuencia) => {
+        const tarjetaFirma = (rol, label, firmado) => {
             const badge = firmado
-                ? `<span class="text-[10px] font-bold uppercase rounded-full px-2 py-0.5 ${renuencia ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}">${renuencia ? 'Firmó con renuencia' : 'Firmado'}</span>`
+                ? `<span class="text-[10px] font-bold uppercase rounded-full px-2 py-0.5 bg-emerald-50 text-emerald-700">Firmado</span>`
                 : `<span class="text-[10px] font-bold uppercase rounded-full px-2 py-0.5 bg-slate-100 text-slate-500">Sin firmar</span>`;
-            const testigosRol = testigos.filter(t => t.tipo_firma === (rol === 'evaluador' ? 'CONCERTACION_EVALUADOR' : 'CONCERTACION_EVALUADO'));
-            const testigosHtml = testigosRol.length
-                ? `<div class="mt-2 pt-2 border-t border-slate-100 space-y-1">
-                     <p class="text-[9px] font-bold uppercase text-slate-400">Testigos</p>
-                     ${testigosRol.map(t => `<p class="text-[10px] text-slate-600">• ${escapeHtml(t.nombre_testigo)} — ${escapeHtml(t.cargo_testigo)}</p>`).join('')}
-                   </div>`
-                : '';
             return `<div class="rounded-xl border border-slate-100 bg-white p-3">
                 <div class="flex items-center justify-between gap-2">
                     <p class="text-[10px] font-bold text-slate-500 uppercase">${label}</p>
                     ${badge}
                 </div>
-                ${testigosHtml}
             </div>`;
         };
         contenedor.innerHTML = `
             <div class="rounded-2xl border border-slate-100 bg-slate-50/50 p-3 grid sm:grid-cols-2 gap-2">
                 <p class="text-[10px] font-bold uppercase tracking-wide text-slate-500 col-span-full">Estado de la concertación</p>
-                ${tarjetaFirma('evaluador', 'Evaluador', !!estado.evaluador_firmado, !!estado.renuencia_evaluador)}
-                ${tarjetaFirma('evaluado', 'Evaluado', !!estado.evaluado_firmado, !!estado.renuencia_evaluado)}
+                ${tarjetaFirma('evaluador', 'Evaluador', !!estado.evaluador_firmado)}
+                ${tarjetaFirma('evaluado', 'Evaluado', !!estado.evaluado_firmado)}
             </div>`;
         contenedor.classList.remove('hidden');
     }
@@ -3274,8 +3407,10 @@
             .then(async res => {
                 const payload = await res.json().catch(() => ({}));
                 if (!res.ok) throw new Error(parseErrorMessage(payload, 'No se pudo guardar el plan.'));
-                mostrarMensaje(mensaje, payload.message || 'Plan guardado.', true);
-                cargarPlanMejoramientoEvaluador(selectedEvaluacionData);
+                mostrarMensaje(mensaje, payload.message || 'Plan guardado. Ya puedes firmarlo.', true);
+                if (selectedEvaluacionData) {
+                    cargarPlanMejoramientoEvaluador(selectedEvaluacionData);
+                }
                 setTimeout(() => { if (mensaje) mensaje.classList.add('hidden'); }, 4000);
             })
             .catch(error => mostrarMensaje(mensaje, error.message, false));
@@ -3300,12 +3435,25 @@
                 }
                 const contenido = document.getElementById('plan-contenido-evaluado');
                 if (contenido) {
-                    contenido.innerHTML = plan
-                        ? `<div class="rounded-2xl border border-slate-100 bg-slate-50/50 p-4">
-                            <p class="text-[10px] font-bold text-slate-500 uppercase mb-2">Temas del plan</p>
-                            <p class="text-xs text-slate-700 whitespace-pre-wrap">${escapeHtml(plan.descripcion_temas || '')}</p>
-                           </div>`
-                        : '<div class="rounded-xl border border-dashed border-slate-200 bg-white p-4 text-xs text-slate-500 text-center">Tu evaluador aún no ha creado el plan de mejoramiento. Se habilitará la firma cuando esté listo.</div>';
+                    if (!plan) {
+                        contenido.innerHTML = '<div class="rounded-xl border border-dashed border-slate-200 bg-white p-4 text-xs text-slate-500 text-center">Tu evaluador aún no ha redactado el plan de mejoramiento. Se habilitará cuando esté listo.</div>';
+                    } else if (!plan.firmado_evaluador) {
+                        contenido.innerHTML = `
+                            <div class="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 space-y-2">
+                                <p class="text-xs font-bold text-amber-900">Plan de mejoramiento redactado por tu evaluador</p>
+                                <p class="text-xs text-slate-700 whitespace-pre-wrap">${escapeHtml(plan.descripcion_temas || '')}</p>
+                                <p class="text-[11px] text-amber-700 font-semibold pt-1 flex items-center gap-1">
+                                    <span class="material-symbols-outlined text-sm">schedule</span>
+                                    Tu evaluador debe firmar este plan para habilitar tu botón de firma.
+                                </p>
+                            </div>`;
+                    } else {
+                        contenido.innerHTML = `
+                            <div class="rounded-2xl border border-slate-100 bg-slate-50/50 p-4">
+                                <p class="text-[10px] font-bold text-slate-500 uppercase mb-2">Temas del plan</p>
+                                <p class="text-xs text-slate-700 whitespace-pre-wrap">${escapeHtml(plan.descripcion_temas || '')}</p>
+                            </div>`;
+                    }
                 }
                 const puedeFirmar = plan && !!plan.firmado_evaluador && !plan.firmado_evaluado;
                 const btnFirmar = document.getElementById('btn-firmar-plan-evaluado');
@@ -3320,21 +3468,33 @@
     }
 
     function firmarPlanMejoramiento(rol) {
-        if (!selectedPlanData || !selectedPlanData.id_plan) return;
-        if (!confirm('¿Confirmas firmar el plan de mejoramiento?')) return;
-        fetchJson(`/plan-mejoramiento/${selectedPlanData.id_plan}/firmar`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
-            body: '{}',
-        })
-            .then(async res => {
-                const payload = await res.json().catch(() => ({}));
-                if (!res.ok) throw new Error(parseErrorMessage(payload, 'No se pudo firmar el plan.'));
-                alert(payload.message || 'Firma registrada.');
-                if (rol === 'evaluador') cargarPlanMejoramientoEvaluador(selectedEvaluacionData);
-                if (rol === 'evaluado') cargarPlanMejoramientoEvaluado(selectedEvaluacionData);
+        if (!selectedEvaluacionId) return;
+        fetchJson(`/evaluaciones/${selectedEvaluacionId}/plan-mejoramiento`)
+            .then(res => res.json())
+            .then(payload => {
+                const plan = payload.plan;
+                if (!plan || !plan.id_plan) {
+                    alert('Primero se debe guardar el plan de mejoramiento antes de firmarlo.');
+                    return;
+                }
+                if (!confirm('¿Confirmas firmar el plan de mejoramiento?')) return;
+                fetchJson(`/plan-mejoramiento/${plan.id_plan}/firmar`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
+                    body: '{}',
+                })
+                .then(async res => {
+                    const pData = await res.json().catch(() => ({}));
+                    if (!res.ok) throw new Error(parseErrorMessage(pData, 'No se pudo firmar el plan.'));
+                    alert(pData.message || 'Firma registrada con éxito.');
+                    if (selectedEvaluacionData) {
+                        if (typeof cargarPlanMejoramientoEvaluador === 'function') cargarPlanMejoramientoEvaluador(selectedEvaluacionData);
+                        if (typeof cargarPlanMejoramientoEvaluado === 'function') cargarPlanMejoramientoEvaluado(selectedEvaluacionData);
+                    }
+                })
+                .catch(error => alert(error.message));
             })
-            .catch(error => alert(error.message));
+            .catch(() => alert('Ocurrió un error al obtener la información del plan.'));
     }
 
     function cargarRecursosAdmin() {
@@ -3412,7 +3572,7 @@
             .then(payload => {
                 const renuencias = payload.renuencias || [];
                 if (!renuencias.length) {
-                    lista.innerHTML = '<div class="col-span-full rounded-xl border border-dashed border-slate-200 bg-white p-8 text-xs text-slate-500 text-center">No hay renuncias a la firma de concertación registradas.</div>';
+                    lista.innerHTML = '<div class="col-span-full rounded-xl border border-dashed border-slate-200 bg-white p-8 text-xs text-slate-500 text-center">No hay renuencias a la firma de notificación registradas.</div>';
                     return;
                 }
                 lista.innerHTML = renuencias.map(r => `
@@ -3422,7 +3582,7 @@
                                 <p class="text-xs font-black text-slate-800 truncate">${escapeHtml(r.evaluado_nombres || '')} ${escapeHtml(r.evaluado_apellidos || '')}</p>
                                 <p class="text-[10px] text-slate-400">Evaluador: ${escapeHtml(r.evaluador_nombres || '')} ${escapeHtml(r.evaluador_apellidos || '')} · ${r.sistema === 'RENDIMIENTO_LABORAL' ? 'RL' : 'AG'} · ${r.tipo_evaluacion === 'SEMESTRE_1' ? 'Semestre 1' : 'Otro'}</p>
                             </div>
-                            <span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-amber-50 text-amber-700">${r.tipo_firma === 'CONCERTACION_EVALUADOR' ? 'Evaluador renunció' : 'Evaluado renunció'}</span>
+                            <span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-amber-50 text-amber-700">${r.tipo_firma === 'NOTIFICACION_EVALUADO' ? 'Renuencia de notificación' : (r.tipo_firma === 'CONCERTACION_EVALUADOR' ? 'Evaluador renunció' : 'Evaluado renunció')}</span>
                         </div>
                         <p class="text-[10px] text-slate-400">Firma registrada: ${escapeHtml(r.fecha_firma || '')}</p>
                         <div class="rounded-xl border border-slate-100 bg-slate-50/50 p-3 space-y-1">
@@ -3496,6 +3656,7 @@
                                 <p class="text-[10px] text-slate-500 truncate">Evaluador: ${escapeHtml(t.nuevo_nombres || '')} ${escapeHtml(t.nuevo_apellidos || '')}</p>
                             </div>
                         </div>
+                        ${t.referencia ? `<p class="text-[10px] font-semibold text-[#00594E]">${escapeHtml(t.referencia)}</p>` : ''}
                         ${t.motivo ? `<p class="text-[10px] text-slate-400 italic">${escapeHtml(t.motivo)}</p>` : ''}
                     </div>`).join('');
             })

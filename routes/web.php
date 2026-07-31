@@ -386,7 +386,7 @@ Route::get('/dashboard', function () {
             ->join('vinculacion as va', 'va.id_vinculacion', '=', 'ev.id_vinc_evaluador')
             ->join('funcionario as fa', 'fa.id_funcionario', '=', 'va.id_funcionario')
             ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
-            ->select('ev.id_evaluacion', 'ev.estado', 'p.fecha_inicio', 'p.fecha_fin', 'ev.tipo_evaluacion as tipo_nombre', 'fe.nombres as evaluado_nombres', 'fe.apellidos as evaluado_apellidos', 'fa.nombres as evaluador_nombres', 'fa.apellidos as evaluador_apellidos', 'p.sistema')
+            ->select('ev.id_evaluacion', 'ev.estado', 'p.anio', 'p.semestre', 'p.fecha_inicio', 'p.fecha_fin', 'ev.tipo_evaluacion as tipo_nombre', 'fe.nombres as evaluado_nombres', 'fe.apellidos as evaluado_apellidos', 'fa.nombres as evaluador_nombres', 'fa.apellidos as evaluador_apellidos', 'p.sistema')
             ->orderByDesc('ev.id_evaluacion')
             ->get();
 
@@ -423,7 +423,7 @@ Route::get('/dashboard', function () {
                 $join->on('f_er.id_evaluacion', '=', 'ev.id_evaluacion')
                      ->where('f_er.tipo_firma', '=', 'CONCERTACION_EVALUADOR');
             })
-            ->select('ev.id_evaluacion', 'ev.estado', 'p.fecha_inicio', 'p.fecha_fin', 'ev.tipo_evaluacion as tipo_nombre', 'fe.nombres as evaluado_nombres', 'fe.apellidos as evaluado_apellidos', 'p.sistema', 've.cargo as evaluado_cargo', 've.area as evaluado_area', 've.nivel_jerarquico as evaluado_nivel_jerarquico', 'ev.fase_actual', 've.aplica_eje_misional', 'ev.concertacion_firmada', DB::raw('IF(f_ev.id_firma IS NOT NULL, 1, 0) as evaluado_firmado'), DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado'))
+            ->select('ev.id_evaluacion', 'ev.estado', 'p.anio', 'p.semestre', 'p.fecha_inicio', 'p.fecha_fin', 'ev.tipo_evaluacion as tipo_nombre', 'ev.referencia', 'fe.nombres as evaluado_nombres', 'fe.apellidos as evaluado_apellidos', 'p.sistema', 've.cargo as evaluado_cargo', 've.area as evaluado_area', 've.nivel_jerarquico as evaluado_nivel_jerarquico', 'ev.fase_actual', 've.aplica_eje_misional', 'ev.concertacion_firmada', DB::raw('IF(f_ev.id_firma IS NOT NULL, 1, 0) as evaluado_firmado'), DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado'))
             ->orderByDesc('ev.id_evaluacion')
             ->get();
 
@@ -436,15 +436,8 @@ Route::get('/dashboard', function () {
             ->where('va.id_funcionario', $usuario['id_funcionario'])
             ->where('ev.estado', 'CALIFICADA')
             ->where('ev.tipo_evaluacion', 'SEMESTRE_1')
-            ->where(function ($q) {
-                $q->where(function ($q2) {
-                    $q2->where('p.sistema', 'RENDIMIENTO_LABORAL')
-                        ->where('ev.categoria_final', 'APROBADO_MEJORA');
-                })->orWhere(function ($q3) {
-                    $q3->where('p.sistema', 'ACUERDO_GESTION')
-                        ->where('ev.categoria_final', 'NO_SATISFACTORIO');
-                });
-            })
+            ->whereIn('p.sistema', ['RENDIMIENTO_LABORAL', 'ACUERDO_GESTION'])
+            ->where('ev.categoria_final', 'NO_SATISFACTORIO')
             ->where(function ($q) {
                 $q->whereNull('pm.id_plan')->orWhere('pm.estado', '!=', 'CONCERTADO');
             })
@@ -515,7 +508,7 @@ Route::get('/dashboard', function () {
                 $join->on('f_er.id_evaluacion', '=', 'ev.id_evaluacion')
                     ->where('f_er.tipo_firma', '=', 'CONCERTACION_EVALUADOR');
             })
-            ->select('ev.id_evaluacion', 'ev.estado', 'p.fecha_inicio', 'p.fecha_fin', 'ev.tipo_evaluacion as tipo_nombre', 'fa.nombres as evaluador_nombres', 'fa.apellidos as evaluador_apellidos', 'p.sistema', 've.cargo as evaluado_cargo', 've.area as evaluado_area', 've.nivel_jerarquico as evaluado_nivel_jerarquico', 'ev.concertacion_firmada', 'ev.fase_actual', 've.aplica_eje_misional', DB::raw('IF(f_ev.id_firma IS NOT NULL, 1, 0) as evaluado_firmado'), DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado'))
+            ->select('ev.id_evaluacion', 'ev.estado', 'p.anio', 'p.semestre', 'p.fecha_inicio', 'p.fecha_fin', 'ev.tipo_evaluacion as tipo_nombre', 'ev.referencia', 'fa.nombres as evaluador_nombres', 'fa.apellidos as evaluador_apellidos', 'p.sistema', 've.cargo as evaluado_cargo', 've.area as evaluado_area', 've.nivel_jerarquico as evaluado_nivel_jerarquico', 'ev.concertacion_firmada', 'ev.fase_actual', 've.aplica_eje_misional', DB::raw('IF(f_ev.id_firma IS NOT NULL, 1, 0) as evaluado_firmado'), DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado'))
             ->orderByDesc('ev.id_evaluacion')
             ->get();
     }
@@ -782,14 +775,12 @@ Route::post('/admin/asignaciones', function (Request $request) {
     abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
 
     $data = $request->validate([
-        'id_vinc_evaluado' => ['required', 'integer', 'exists:vinculacion,id_vinculacion'],
-        'id_vinc_evaluador' => ['required', 'integer', 'exists:vinculacion,id_vinculacion', 'different:id_vinc_evaluado'],
+        'id_vinc_evaluado' => ['required', 'array', 'min:1'],
+        'id_vinc_evaluado.*' => ['required', 'integer', 'exists:vinculacion,id_vinculacion'],
+        'id_vinc_evaluador' => ['required', 'integer', 'exists:vinculacion,id_vinculacion'],
     ]);
 
-    $evaluado = DB::table('vinculacion')
-        ->where('id_vinculacion', $data['id_vinc_evaluado'])
-        ->where('activa', 1)
-        ->first();
+    $idsEvaluados = array_values(array_unique(array_map('intval', $data['id_vinc_evaluado'])));
 
     $evaluador = DB::table('vinculacion')
         ->where('id_vinculacion', $data['id_vinc_evaluador'])
@@ -797,11 +788,27 @@ Route::post('/admin/asignaciones', function (Request $request) {
         ->where('es_evaluador', 1)
         ->first();
 
-    abort_unless($evaluado && $evaluador, 403);
+    abort_unless($evaluador, 403);
 
-    guardarEvaluadorAsignacion((int) $data['id_vinc_evaluador'], (int) $data['id_vinc_evaluado']);
+    if (in_array((int) $data['id_vinc_evaluador'], $idsEvaluados, true)) {
+        return back()->withErrors(['asignaciones' => 'El evaluador no puede asignarse a sí mismo como evaluado.']);
+    }
 
-    return back()->with('success_asignacion', 'Evaluado asignado al evaluador correctamente.');
+    $evaluados = DB::table('vinculacion')
+        ->whereIn('id_vinculacion', $idsEvaluados)
+        ->where('activa', 1)
+        ->get();
+
+    abort_unless($evaluados->count() === count($idsEvaluados), 403);
+
+    $contador = 0;
+    foreach ($evaluados as $evaluado) {
+        guardarEvaluadorAsignacion((int) $data['id_vinc_evaluador'], (int) $evaluado->id_vinculacion);
+        $contador++;
+    }
+
+    $sufijo = $contador === 1 ? '' : 's';
+    return back()->with('success_asignacion', $contador . ' evaluado' . $sufijo . ' asignado' . $sufijo . ' al evaluador correctamente.');
 })->name('admin.asignaciones.store');
 
 // --- S6: GESTIÓN DE TRASLADOS ---
@@ -819,6 +826,7 @@ Route::post('/admin/traslados', function (Request $request) {
         'cargo_nuevo' => ['nullable', 'string', 'max:200'],
         'resolucion' => ['nullable', 'string', 'max:200'],
         'motivo' => ['nullable', 'string', 'max:500'],
+        'referencia' => ['nullable', 'string', 'max:200'],
     ]);
 
     $evaluado = DB::table('vinculacion')
@@ -904,6 +912,7 @@ Route::post('/admin/traslados', function (Request $request) {
                     'estado' => 'EN_PROCESO',
                     'es_parcial' => 1,
                     'dias_laborados' => $diasLaborados,
+                    'referencia' => trim($data['referencia'] ?? '') ?: null,
                 ]);
             }
         }
@@ -964,7 +973,8 @@ Route::get('/admin/traslados', function () {
         ->leftJoin('funcionario as feo', 'feo.id_funcionario', '=', 'veo.id_funcionario')
         ->leftJoin('vinculacion as ven', 'ven.id_vinculacion', '=', 't.id_vinc_evaluador_nuevo')
         ->leftJoin('funcionario as fen', 'fen.id_funcionario', '=', 'ven.id_funcionario')
-        ->select('t.*', 'ff.nombres as funcionario_nombres', 'ff.apellidos as funcionario_apellidos', 'feo.nombres as origen_nombres', 'feo.apellidos as origen_apellidos', 'fen.nombres as nuevo_nombres', 'fen.apellidos as nuevo_apellidos')
+        ->leftJoin('evaluacion as evp', 'evp.id_evaluacion', '=', 't.id_evaluacion_parcial')
+        ->select('t.*', 'evp.referencia', 'ff.nombres as funcionario_nombres', 'ff.apellidos as funcionario_apellidos', 'feo.nombres as origen_nombres', 'feo.apellidos as origen_apellidos', 'fen.nombres as nuevo_nombres', 'fen.apellidos as nuevo_apellidos')
         ->orderByDesc('t.id_traslado')
         ->get();
 })->name('admin.traslados.index');
@@ -1133,6 +1143,19 @@ Route::get('/evaluaciones/{id}/compromisos', function (int $id) {
         ->where('tipo_firma', 'CONCERTACION_EVALUADOR')
         ->first();
 
+    $notificacionFirmada = DB::table('firma')
+        ->where('id_evaluacion', $id)
+        ->where('tipo_firma', 'NOTIFICACION_EVALUADO')
+        ->first();
+
+    $testigosNotificacion = [];
+    if ($notificacionFirmada && $notificacionFirmada->renuencia) {
+        $testigosNotificacion = DB::table('testigo_renuencia')
+            ->where('id_firma', $notificacionFirmada->id_firma)
+            ->select('nombre_testigo', 'cargo_testigo')
+            ->get();
+    }
+
     return response()->json([
         'compromisos' => $compromisos,
         'evidencias' => $evidencias,
@@ -1140,9 +1163,13 @@ Route::get('/evaluaciones/{id}/compromisos', function (int $id) {
         'estado' => [
             'evaluado_firmado' => (bool) $evaluadoFirmado,
             'evaluador_firmado' => (bool) $evaluadorFirmado,
-            'renuencia_evaluador' => (bool) ($evaluadorFirmado->renuencia ?? false),
-            'renuencia_evaluado' => (bool) ($evaluadoFirmado->renuencia ?? false),
+            'renuencia_evaluador' => false,
+            'renuencia_evaluado' => false,
+            'notificacion_firmada' => (bool) $notificacionFirmada,
+            'renuencia_notificacion' => (bool) ($notificacionFirmada->renuencia ?? false),
+            'fecha_notificacion' => $notificacionFirmada->fecha_firma ?? null,
             'testigos' => getTestigosConcertacion($id),
+            'testigos_notificacion' => $testigosNotificacion,
             'congelada' => (bool) $evaluacion->concertacion_firmada,
             'calificada' => $evaluacion->estado === 'CALIFICADA',
             'fase_actual' => $evaluacion->fase_actual,
@@ -1450,25 +1477,7 @@ Route::post('/evaluaciones/{id}/firmar', function (Request $request, int $id) {
     $rolActivo = session('usuario_autenticado.rol_activo');
     $auth = session('usuario_autenticado');
 
-    // S6 — Renuencia: una de las partes se rehúsa a firmar la concertación.
-    // La firma queda registrada con renuencia=1 y se anotan los datos del (los)
-    // testigo(s) en testigo_renuencia para que el flujo no quede bloqueado.
-    $renuncia = filter_var($request->input('renuncia', false), FILTER_VALIDATE_BOOLEAN);
-    $testigos = collect($request->input('testigos', []))
-        ->filter(fn ($t) => is_array($t)
-            && !empty(trim((string) ($t['nombre'] ?? '')))
-            && !empty(trim((string) ($t['cargo'] ?? ''))))
-        ->map(fn ($t) => [
-            'nombre_testigo' => trim((string) ($t['nombre'] ?? '')),
-            'cargo_testigo' => trim((string) ($t['cargo'] ?? '')),
-        ])
-        ->values()
-        ->all();
-
-    if ($renuncia && count($testigos) < 1) {
-        return back()->withErrors(['firma' => 'Debes registrar al menos un testigo (nombre y cargo) cuando renuncias a firmar.']);
-    }
-
+    // S6 — Firma de la concertación de compromisos (sin renuencia, que aplica a la notificación de la nota).
     $tipoFirma = null;
     $idVincFirmante = null;
 
@@ -1523,26 +1532,9 @@ Route::post('/evaluaciones/{id}/firmar', function (Request $request, int $id) {
         [
             'id_vinc_firmante' => $idVincFirmante,
             'fecha_firma' => date('Y-m-d H:i:s'),
-            'renuencia' => $renuncia ? 1 : 0
+            'renuencia' => 0
         ]
     );
-
-    $firmaRegistrada = DB::table('firma')
-        ->where('id_evaluacion', $id)
-        ->where('tipo_firma', $tipoFirma)
-        ->first();
-
-    if ($renuncia && $firmaRegistrada) {
-        DB::table('testigo_renuencia')->where('id_firma', $firmaRegistrada->id_firma)->delete();
-        foreach ($testigos as $testigo) {
-            DB::table('testigo_renuencia')->insert([
-                'id_firma' => $firmaRegistrada->id_firma,
-                'nombre_testigo' => $testigo['nombre_testigo'],
-                'cargo_testigo' => $testigo['cargo_testigo'],
-                'fecha_registro' => date('Y-m-d H:i:s'),
-            ]);
-        }
-    }
 
     $firmasConcertacion = DB::table('firma')
         ->where('id_evaluacion', $id)
@@ -1568,27 +1560,104 @@ Route::post('/evaluaciones/{id}/firmar', function (Request $request, int $id) {
 })->name('evaluaciones.firmar');
 
 
+// --- POST: Firmar notificación de la calificación / registrar renuencia con testigos ---
+Route::post('/evaluaciones/{id}/firmar-notificacion', function (Request $request, int $id) {
+    $auth = session('usuario_autenticado');
+    abort_unless($auth, 403);
+    $rolActivo = session('usuario_autenticado.rol_activo');
+
+    $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
+    abort_unless($evaluacion, 404);
+    abort_unless($evaluacion->estado === 'CALIFICADA', 422, 'La evaluación aún no ha sido calificada.');
+
+    $renuncia = filter_var($request->input('renuencia', false), FILTER_VALIDATE_BOOLEAN);
+    $testigos = collect($request->input('testigos', []))
+        ->filter(fn ($t) => is_array($t)
+            && !empty(trim((string) ($t['nombre'] ?? '')))
+            && !empty(trim((string) ($t['cargo'] ?? ''))))
+        ->map(fn ($t) => [
+            'nombre_testigo' => trim((string) ($t['nombre'] ?? '')),
+            'cargo_testigo' => trim((string) ($t['cargo'] ?? '')),
+        ])
+        ->values()
+        ->all();
+
+    if ($renuncia && count($testigos) < 1) {
+        return response()->json(['error' => 'Debes registrar al menos un testigo (nombre y cargo) cuando renuncias a firmar.'], 422);
+    }
+
+    $puedeFirmar = false;
+    if ($rolActivo === 'evaluado') {
+        $puedeFirmar = DB::table('vinculacion')
+            ->where('id_vinculacion', $evaluacion->id_vinc_evaluado)
+            ->where('id_funcionario', $auth['id_funcionario'] ?? null)
+            ->exists();
+    } elseif (in_array($rolActivo, ['evaluador', 'admin'])) {
+        $puedeFirmar = true;
+    }
+
+    abort_unless($puedeFirmar, 403);
+
+    DB::table('firma')->updateOrInsert(
+        ['id_evaluacion' => $id, 'tipo_firma' => 'NOTIFICACION_EVALUADO'],
+        [
+            'id_vinc_firmante' => (int) $evaluacion->id_vinc_evaluado,
+            'fecha_firma' => date('Y-m-d H:i:s'),
+            'renuencia' => $renuncia ? 1 : 0
+        ]
+    );
+
+    $firmaRegistrada = DB::table('firma')
+        ->where('id_evaluacion', $id)
+        ->where('tipo_firma', 'NOTIFICACION_EVALUADO')
+        ->first();
+
+    if ($firmaRegistrada) {
+        DB::table('testigo_renuencia')->where('id_firma', $firmaRegistrada->id_firma)->delete();
+        if ($renuncia) {
+            foreach ($testigos as $testigo) {
+                DB::table('testigo_renuencia')->insert([
+                    'id_firma' => $firmaRegistrada->id_firma,
+                    'nombre_testigo' => $testigo['nombre_testigo'],
+                    'cargo_testigo' => $testigo['cargo_testigo'],
+                    'fecha_registro' => date('Y-m-d H:i:s'),
+                ]);
+            }
+        }
+    }
+
+    return response()->json([
+        'success' => true,
+        'message' => $renuncia ? 'Renuencia con testigos registrada con éxito.' : 'Notificación de la calificación firmada con éxito.'
+    ]);
+})->name('evaluaciones.firmar-notificacion');
+
+
 
 /**
  * Calcula la nota final de una evaluación según los documentos oficiales de Unitrópico.
  *
+ * Las ponderaciones provienen de la configuración parametrizada
+ * (storage/app/ponderaciones.json o defaultPonderacionesConfig()):
+ *
  * RENDIMIENTO_LABORAL (RL):
- *   - Compromisos:              70 %  (suma ponderada en escala 0-100)
- *   - Competencias comunes:     15 %  (promedio en escala 0-100)
- *   - Competencias nivel jer:   15 %  (promedio en escala 0-100)
+ *   - Compromisos:              80 %  (suma ponderada en escala 0-100)
+ *   - Competencias comunes:     10 %  (promedio en escala 0-100)
+ *   - Competencias nivel jer:   10 %  (promedio en escala 0-100)
  *   Total:                     100 %
  *
  * ACUERDO_GESTION (AG) sin ejes misionales:
- *   - Compromisos:              85 %
- *   - Competencias comunes:      7.5 %
- *   - Competencias nivel jer:    7.5 %
+ *   - Compromisos:              80 %
+ *   - Competencias comunes:     10 %
+ *   - Competencias nivel jer:   10 %
  *   Total:                     100 %
  *
  * ACUERDO_GESTION (AG) con ejes misionales (solo líderes de programa/departamento/escuela):
- *   Cada eje activo (Docencia, Investigación, Proyección Social) toma 10% del peso de compromisos.
- *   - Con 1 eje activo:   compromisos=75%, eje=10%, comun=7.5%, nivel=7.5%  → 100%
- *   - Con 2 ejes activos: compromisos=65%, ejes=10%+10%, comun=7.5%, nivel=7.5% → 100%
- *   - Con 3 ejes activos: compromisos=55%, ejes=10%+10%+10%, comun=7.5%, nivel=7.5% → 100%
+ *   Docencia siempre aplica; investigación y proyección social según el caso.
+ *   Cada eje activo toma su peso (por defecto 10%) de compromisos.
+ *   - Con 1 eje activo:   compromisos=70%, ejes=10%, comun=10%, nivel=10%   → 100%
+ *   - Con 2 ejes activos: compromisos=60%, ejes=20%, comun=10%, nivel=10%   → 100%
+ *   - Con 3 ejes activos: compromisos=50%, ejes=30%, comun=10%, nivel=10%   → 100%
  *
  * Escala individual (0-100):
  *    0-50: Deficiente | 51-70: Bajo | 71-80: Aceptable | 81-90: Alto | 91-100: Muy alto
@@ -1600,7 +1669,7 @@ Route::post('/evaluaciones/{id}/firmar', function (Request $request, int $id) {
  *    0 a 70:        NO_SATISFACTORIO
  *
  * Plan de mejoramiento (1er semestre):
- *   RL: aplica si calificación ∈ [71, 80]  (Aprobado/Susceptible de mejora)
+ *   RL: aplica si calificación ∈ [0, 70]   (No satisfactorio)
  *   AG: aplica si calificación ∈ [0, 70]   (No satisfactorio)
  *
  * Prorrateo RF3:
@@ -1626,11 +1695,24 @@ if (!function_exists('calcularNotaEvaluacion')) {
     $sistema = strtoupper(trim((string) $evaluacion->sistema));
 
     // -------------------------------------------------------
+    // PESOS SEGÚN SISTEMA Y EJES ACTIVOS (ponderación parametrizada)
+    //   RL:                compromisos=80%, comunes=10%, nivel=10%
+    //   AG sin ejes:       compromisos=80%, comunes=10%, nivel=10%
+    //   AG con ejes:       compromisos=50-70%, ejes=10-30%, comunes=10%, nivel=10%
+    // -------------------------------------------------------
+    $ponderaciones = getPonderacionesConfig();
+    $configSistema = $ponderaciones[$sistema] ?? $ponderaciones['RENDIMIENTO_LABORAL'];
+
+    $pesoCompromisos = (float) ($configSistema['peso_compromisos'] ?? 80.0);
+    $pesoCompComun   = (float) ($configSistema['peso_competencias'] ?? 20.0) / 2;
+    $pesoCompNivel   = (float) ($configSistema['peso_competencias'] ?? 20.0) / 2;
+
+    // -------------------------------------------------------
     // EJES MISIONALES ACTIVOS (solo AG con aplica_eje_misional)
     // -------------------------------------------------------
     $ejesActivos   = [];
     $notasPorEje   = [];
-    $numEjesActivos = 0;
+    $ejeCals       = [];
 
     if ($sistema === 'ACUERDO_GESTION' && $evaluacion->aplica_eje_misional) {
         // Leer qué ejes están habilitados desde el JSON (investigacion / proyeccion_social)
@@ -1642,16 +1724,17 @@ if (!function_exists('calcularNotaEvaluacion')) {
         $ejesConfig = $ejesJson[$idEvaluacion] ?? [];
 
         // Docencia SIEMPRE activa si aplica_eje_misional = 1
-        $ejesActivos['DOCENCIA'] = true;
-
+        $pesoEjes = [
+            'DOCENCIA' => (float) ($configSistema['peso_docencia'] ?? 10.0),
+        ];
         if (!empty($ejesConfig['investigacion'])) {
-            $ejesActivos['INVESTIGACION'] = true;
+            $pesoEjes['INVESTIGACION'] = (float) ($configSistema['peso_investigacion'] ?? 10.0);
         }
         if (!empty($ejesConfig['proyeccion_social'])) {
-            $ejesActivos['PROYECCION_SOCIAL'] = true;
+            $pesoEjes['PROYECCION_SOCIAL'] = (float) ($configSistema['peso_proyeccion_social'] ?? 10.0);
         }
 
-        $numEjesActivos = count($ejesActivos);
+        $ejesActivos = array_keys($pesoEjes);
 
         // Obtener calificaciones de cada eje desde la tabla eje_misional_calificacion
         $ejeCals = DB::table('eje_misional_calificacion')
@@ -1660,28 +1743,25 @@ if (!function_exists('calcularNotaEvaluacion')) {
             ->pluck('calificacion', 'eje')
             ->toArray();
 
-        foreach ($ejesActivos as $tipoEje => $activo) {
+        foreach ($ejesActivos as $tipoEje) {
             $notasPorEje[$tipoEje] = isset($ejeCals[$tipoEje]) ? (float)$ejeCals[$tipoEje] : 0.0;
         }
-    }
 
-    // -------------------------------------------------------
-    // PESOS SEGÚN SISTEMA Y EJES ACTIVOS
-    // -------------------------------------------------------
-    if ($sistema === 'RENDIMIENTO_LABORAL') {
-        $pesoCompromisos    = 70.0;
-        $pesoCompComun      = 15.0;
-        $pesoCompNivel      = 15.0;
-        $pesoEjes           = [];
+        // Los ejes que NO aplican devuelven su peso a compromisos
+        $pesoCompromisos += (float) ($configSistema['peso_docencia'] ?? 0.0)
+            + (float) ($configSistema['peso_investigacion'] ?? 0.0)
+            + (float) ($configSistema['peso_proyeccion_social'] ?? 0.0)
+            - array_sum($pesoEjes);
+    } elseif ($sistema === 'ACUERDO_GESTION' && !$evaluacion->aplica_eje_misional) {
+        // El funcionario no tiene eje misional: docencia, investigación y
+        // proyección social no aplican, todo su peso vuelve a compromisos.
+        $pesoCompromisos += (float) ($configSistema['peso_docencia'] ?? 0.0)
+            + (float) ($configSistema['peso_investigacion'] ?? 0.0)
+            + (float) ($configSistema['peso_proyeccion_social'] ?? 0.0);
+        $pesoEjes = [];
     } else {
-        // AG base: 85% compromisos, 7.5% comun, 7.5% nivel
-        // Cada eje activo descuenta 10% de compromisos
-        $pesoCompromisos    = 85.0 - ($numEjesActivos * 10.0);
-        $pesoCompComun      = 7.5;
-        $pesoCompNivel      = 7.5;
-        $pesoEjes           = array_fill_keys(array_keys($ejesActivos), 10.0);
-        // Validar que el peso de compromisos no sea negativo (máximo 3 ejes)
-        $pesoCompromisos    = max($pesoCompromisos, 55.0);
+        // RL: sin ejes misionales
+        $pesoEjes = [];
     }
 
     // -------------------------------------------------------
@@ -1773,10 +1853,7 @@ if (!function_exists('calcularNotaEvaluacion')) {
     $requierePlanMejoramiento = false;
     $tipoEval = $evaluacion->tipo_evaluacion ?? $evaluacion->tipo ?? 'SEMESTRE_1';
     if ($tipoEval === 'SEMESTRE_1') {
-        if ($sistema === 'RENDIMIENTO_LABORAL' && $categoria === 'APROBADO_MEJORA') {
-            $requierePlanMejoramiento = true;
-        }
-        if ($sistema === 'ACUERDO_GESTION' && $categoria === 'NO_SATISFACTORIO') {
+        if (in_array($sistema, ['RENDIMIENTO_LABORAL', 'ACUERDO_GESTION']) && $categoria === 'NO_SATISFACTORIO') {
             $requierePlanMejoramiento = true;
         }
     }
@@ -1808,7 +1885,7 @@ if (!function_exists('calcularNotaEvaluacion')) {
     $nivelFaltantes   = array_values(array_diff($nivelEsperadas, $nivelCalificadas));
 
     $ejesFaltantes = [];
-    foreach (array_keys($ejesActivos) as $tipoEjeActivo) {
+    foreach ($ejesActivos as $tipoEjeActivo) {
         if (!isset($ejeCals[$tipoEjeActivo])) {
             $ejesFaltantes[] = $tipoEjeActivo;
         }
@@ -1835,7 +1912,7 @@ if (!function_exists('calcularNotaEvaluacion')) {
             'nivel_jerarquico'  => $pesoCompNivel,
             'ejes'              => $pesoEjes,
         ],
-        'ejes_activos'              => array_keys($ejesActivos),
+        'ejes_activos'              => $ejesActivos,
         'notas_ejes_raw'            => $notasPorEje,
         'nota_compromisos_raw'      => round($notaCompromisos, 4),
         'nota_comp_comun_raw'       => round($notaCompComun, 4),
@@ -2298,7 +2375,7 @@ if (!function_exists('getTestigosConcertacion')) {
         return DB::table('testigo_renuencia as t')
             ->join('firma as f', 'f.id_firma', '=', 't.id_firma')
             ->where('f.id_evaluacion', $idEvaluacion)
-            ->whereIn('f.tipo_firma', ['CONCERTACION_EVALUADOR', 'CONCERTACION_EVALUADO'])
+            ->whereIn('f.tipo_firma', ['NOTIFICACION_EVALUADO', 'CONCERTACION_EVALUADOR', 'CONCERTACION_EVALUADO'])
             ->select('f.tipo_firma', 't.nombre_testigo', 't.cargo_testigo')
             ->orderBy('f.tipo_firma')
             ->orderBy('t.id_testigo')
@@ -2358,11 +2435,8 @@ if (!function_exists('evaluacionRequierePlanMejoramiento')) {
             return false;
         }
 
-        if ($sistema === 'RENDIMIENTO_LABORAL' && $categoria === 'APROBADO_MEJORA') {
-            return true;
-        }
-
-        if ($sistema === 'ACUERDO_GESTION' && $categoria === 'NO_SATISFACTORIO') {
+        // RL y AG: NO_SATISFACTORIO (0-70) requieren plan de mejoramiento
+        if (in_array($sistema, ['RENDIMIENTO_LABORAL', 'ACUERDO_GESTION']) && $categoria === 'NO_SATISFACTORIO') {
             return true;
         }
 
@@ -2372,7 +2446,7 @@ if (!function_exists('evaluacionRequierePlanMejoramiento')) {
 
 /**
  * S6 — Indica si el evaluado tiene un plan de mejoramiento pendiente de concertar
- * y firmar (RL: APROBADO_MEJORA; AG: NO_SATISFACTORIO, primer semestre) en una
+ * y firmar (RL y AG: NO_SATISFACTORIO, primer semestre) en una
  * evaluación ya calificada. Se usa para bloquear la creación de una nueva
  * evaluación hasta resolver el plan anterior.
  */
@@ -2384,15 +2458,8 @@ if (!function_exists('evaluadoTienePlanMejoramientoPendiente')) {
             ->where('ev.id_vinc_evaluado', $idVincEvaluado)
             ->where('ev.estado', 'CALIFICADA')
             ->where('ev.tipo_evaluacion', 'SEMESTRE_1')
-            ->where(function ($q) {
-                $q->where(function ($q2) {
-                    $q2->where('p.sistema', 'RENDIMIENTO_LABORAL')
-                        ->where('ev.categoria_final', 'APROBADO_MEJORA');
-                })->orWhere(function ($q3) {
-                    $q3->where('p.sistema', 'ACUERDO_GESTION')
-                        ->where('ev.categoria_final', 'NO_SATISFACTORIO');
-                });
-            })
+            ->whereIn('p.sistema', ['RENDIMIENTO_LABORAL', 'ACUERDO_GESTION'])
+            ->where('ev.categoria_final', 'NO_SATISFACTORIO')
             ->where(function ($q) {
                 $q->whereNull('pm.id_plan')->orWhere('pm.estado', '!=', 'CONCERTADO');
             });
@@ -2833,7 +2900,7 @@ Route::get('/renuencias', function () {
         ->join('vinculacion as va', 'va.id_vinculacion', '=', 'ev.id_vinc_evaluador')
         ->join('funcionario as fa', 'fa.id_funcionario', '=', 'va.id_funcionario')
         ->where('f.renuencia', 1)
-        ->whereIn('f.tipo_firma', ['CONCERTACION_EVALUADOR', 'CONCERTACION_EVALUADO'])
+        ->whereIn('f.tipo_firma', ['NOTIFICACION_EVALUADO', 'CONCERTACION_EVALUADOR', 'CONCERTACION_EVALUADO'])
         ->select(
             'f.id_firma',
             'f.id_evaluacion',
@@ -2859,3 +2926,337 @@ Route::get('/renuencias', function () {
 
     return response()->json(['renuencias' => $renuencias]);
 })->name('renuencias.index');
+
+
+// ============================================================================
+// S6 — INFORMES PDF INSTITUCIONALES (SEMESTRAL Y ANUAL)
+// Plantillas base: "Informe evaluacion semestral SERAG ok.docx" y
+// "Informe evaluacion anual SERAG.docx". Los valores en amarillo son dinámicos.
+// Solo el evaluado puede descargar su propio informe.
+// ============================================================================
+
+if (!function_exists('prepararInformeSemestral')) {
+    function prepararInformeSemestral(int $idEvaluacion): array
+    {
+        $evaluacion = DB::table('evaluacion as ev')
+            ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
+            ->join('vinculacion as ve', 've.id_vinculacion', '=', 'ev.id_vinc_evaluado')
+            ->join('funcionario as fe', 'fe.id_funcionario', '=', 've.id_funcionario')
+            ->join('vinculacion as va', 'va.id_vinculacion', '=', 'ev.id_vinc_evaluador')
+            ->join('funcionario as fa', 'fa.id_funcionario', '=', 'va.id_funcionario')
+            ->where('ev.id_evaluacion', $idEvaluacion)
+            ->select('ev.*', 'p.sistema', 'p.fecha_inicio', 'p.fecha_fin', 'p.id_periodo',
+                've.cargo as evaluado_cargo', 've.area as evaluado_area', 've.nivel_jerarquico as evaluado_nivel',
+                'fe.nombres as evaluado_nombres', 'fe.apellidos as evaluado_apellidos', 'fe.numero_doc as evaluado_doc',
+                'va.cargo as evaluador_cargo', 'va.area as evaluador_area', 'va.nivel_jerarquico as evaluador_nivel',
+                'va.codigo_cargo as evaluador_codigo', 'va.grado_cargo as evaluador_grado',
+                'fa.nombres as evaluador_nombres', 'fa.apellidos as evaluador_apellidos')
+            ->first();
+
+        abort_unless($evaluacion, 404);
+
+        $sistema = strtoupper(trim((string) $evaluacion->sistema));
+
+        $evaluador = (object) [
+            'nombres' => $evaluacion->evaluador_nombres,
+            'apellidos' => $evaluacion->evaluador_apellidos,
+            'cargo' => $evaluacion->evaluador_cargo,
+            'area' => $evaluacion->evaluador_area,
+            'nivel_jerarquico' => $evaluacion->evaluador_nivel,
+            'codigo_cargo' => $evaluacion->evaluador_codigo,
+            'grado_cargo' => $evaluacion->evaluador_grado,
+        ];
+
+        $evaluado = (object) [
+            'nombres' => $evaluacion->evaluado_nombres,
+            'apellidos' => $evaluacion->evaluado_apellidos,
+            'cargo' => $evaluacion->evaluado_cargo,
+            'area' => $evaluacion->evaluado_area,
+            'nivel_jerarquico' => $evaluacion->evaluado_nivel,
+            'numero_doc' => $evaluacion->evaluado_doc,
+        ];
+
+        $periodo = (object) [
+            'id_periodo' => $evaluacion->id_periodo,
+            'sistema' => $sistema,
+            'fecha_inicio' => $evaluacion->fecha_inicio,
+            'fecha_fin' => $evaluacion->fecha_fin,
+        ];
+
+        // Catálogo para ordenar competencias y completar afirmaciones
+        $catalogoPath = storage_path('app/competencias_catalogo.json');
+        $catalogo = file_exists($catalogoPath) ? (json_decode(file_get_contents($catalogoPath), true) ?? []) : [];
+        $nivelJerarquico = strtoupper(trim((string) $evaluacion->evaluado_nivel));
+        $catalogoComun = $catalogo[$sistema]['COMUN'] ?? [];
+        $catalogoNivel = $catalogo[$sistema]['NIVEL_JERARQUICO'][$nivelJerarquico] ?? [];
+        $ordenComun = array_flip(array_map(fn ($c) => mb_strtoupper($c['nombre'] ?? ''), $catalogoComun));
+        $ordenNivel = array_flip(array_map(fn ($c) => mb_strtoupper($c['nombre'] ?? ''), $catalogoNivel));
+
+        $afirmacionPorNombre = function (array $catalogoRows) {
+            $map = [];
+            foreach ($catalogoRows as $row) {
+                $map[mb_strtoupper($row['nombre'] ?? '')] = $row['afirmacion'] ?? '';
+            }
+            return $map;
+        };
+        $afirmacionesComun = $afirmacionPorNombre($catalogoComun);
+        $afirmacionesNivel = $afirmacionPorNombre($catalogoNivel);
+
+        $competencias = DB::table('competencia_evaluada')
+            ->where('id_evaluacion', $idEvaluacion)
+            ->orderBy('tipo')
+            ->get(['nombre_competencia', 'tipo', 'calificacion_definitiva']);
+
+        $competenciasComunes = $competencias->filter(fn ($c) => $c->tipo === 'COMUN')->values()
+            ->sortBy(fn ($c) => $ordenComun[mb_strtoupper($c->nombre_competencia)] ?? 999)
+            ->values()
+            ->map(function ($c) use ($afirmacionesComun) {
+                $c->afirmacion = $afirmacionesComun[mb_strtoupper($c->nombre_competencia)] ?? '';
+                return $c;
+            });
+
+        $competenciasNivel = $competencias->filter(fn ($c) => $c->tipo === 'NIVEL_JERARQUICO')->values()
+            ->sortBy(fn ($c) => $ordenNivel[mb_strtoupper($c->nombre_competencia)] ?? 999)
+            ->values()
+            ->map(function ($c) use ($afirmacionesNivel) {
+                $c->afirmacion = $afirmacionesNivel[mb_strtoupper($c->nombre_competencia)] ?? '';
+                return $c;
+            });
+
+        // Compromisos con metas, observaciones y links de evidencias
+        $compromisos = DB::table('compromiso')
+            ->where('id_evaluacion', $idEvaluacion)
+            ->orderBy('numero_orden')
+            ->get(['id_compromiso', 'id_evaluacion', 'numero_orden', 'descripcion', 'porcentaje_peso', 'calificacion_definitiva']);
+
+        $compromisos = $compromisos->map(function ($comp) {
+            $comp->metas = DB::table('compromiso_meta')
+                ->where('id_compromiso', $comp->id_compromiso)
+                ->orderBy('meta')
+                ->pluck('meta')
+                ->all();
+
+            $observacion = DB::table('compromiso_observacion')
+                ->where('id_compromiso', $comp->id_compromiso)
+                ->value('texto');
+            $comp->observacion = $observacion;
+
+            $comp->links = DB::table('evidencia')
+                ->where('id_evaluacion', $comp->id_evaluacion ?? null)
+                ->where('id_compromiso', $comp->id_compromiso)
+                ->whereNotNull('url_o_ubicacion')
+                ->pluck('url_o_ubicacion')
+                ->all();
+
+            return $comp;
+        });
+
+        // Plan de mejoramiento
+        $plan = DB::table('plan_mejoramiento')->where('id_evaluacion', $idEvaluacion)->first();
+
+        // Recursos
+        $recursos = DB::table('recurso as r')
+            ->leftJoin('vinculacion as vr', 'vr.id_vinculacion', '=', 'r.id_vinc_receptor')
+            ->leftJoin('funcionario as fr', 'fr.id_funcionario', '=', 'vr.id_funcionario')
+            ->where('r.id_evaluacion', $idEvaluacion)
+            ->select('r.*', 'vr.cargo as cargo_receptor', 'fr.nombres as receptor_nombres', 'fr.apellidos as receptor_apellidos')
+            ->orderBy('r.fecha_recurso')
+            ->get();
+
+        // Renuencia del evaluado con testigos (en notificación de la nota)
+        $renuencias = DB::table('firma')
+            ->where('id_evaluacion', $idEvaluacion)
+            ->whereIn('tipo_firma', ['NOTIFICACION_EVALUADO', 'CONCERTACION_EVALUADO'])
+            ->where('renuencia', 1)
+            ->get(['id_firma', 'fecha_firma']);
+
+        foreach ($renuencias as $r) {
+            $r->testigos = DB::table('testigo_renuencia')
+                ->where('id_firma', $r->id_firma)
+                ->select('nombre_testigo', 'cargo_testigo')
+                ->get();
+        }
+
+        $calculo = calcularNotaEvaluacion($idEvaluacion);
+
+        return [
+            'tipo_nombre' => $evaluacion->tipo_evaluacion,
+            'sistema' => $sistema,
+            'periodo' => $periodo,
+            'evaluador' => $evaluador,
+            'evaluado' => $evaluado,
+            'competencias_comunes' => $competenciasComunes,
+            'competencias_nivel' => $competenciasNivel,
+            'compromisos' => $compromisos,
+            'calculo' => $calculo,
+            'plan' => $plan,
+            'requiere_plan' => (bool) ($calculo['requiere_plan_mejoramiento'] ?? false),
+            'recursos' => $recursos,
+            'renuencias' => $renuencias,
+            'capacitaciones' => '',
+            'escudo' => 'data:image/png;base64,' . base64_encode(file_get_contents(public_path('escudo-color.png'))),
+            'logo' => 'data:image/png;base64,' . base64_encode(file_get_contents(public_path('logo.png'))),
+        ];
+    }
+}
+
+if (!function_exists('prepararInformeAnual')) {
+    function prepararInformeAnual(int $idEvaluacion): array
+    {
+        $evaluacion = DB::table('evaluacion as ev')
+            ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
+            ->join('vinculacion as ve', 've.id_vinculacion', '=', 'ev.id_vinc_evaluado')
+            ->join('vinculacion as va', 'va.id_vinculacion', '=', 'ev.id_vinc_evaluador')
+            ->join('funcionario as fa', 'fa.id_funcionario', '=', 'va.id_funcionario')
+            ->where('ev.id_evaluacion', $idEvaluacion)
+            ->select('ev.*', 'p.sistema', 'p.fecha_inicio', 'p.fecha_fin', 'p.id_periodo',
+                've.id_vinculacion as id_vinc_evaluado',
+                'va.cargo as evaluador_cargo', 'va.area as evaluador_area', 'va.nivel_jerarquico as evaluador_nivel',
+                'va.codigo_cargo as evaluador_codigo', 'va.grado_cargo as evaluador_grado',
+                'fa.nombres as evaluador_nombres', 'fa.apellidos as evaluador_apellidos')
+            ->first();
+
+        abort_unless($evaluacion, 404);
+
+        $sistema = strtoupper(trim((string) $evaluacion->sistema));
+
+        $evaluadoInfo = DB::table('vinculacion as ve')
+            ->join('funcionario as fe', 'fe.id_funcionario', '=', 've.id_funcionario')
+            ->where('ve.id_vinculacion', $evaluacion->id_vinc_evaluado)
+            ->select('fe.nombres', 'fe.apellidos', 've.cargo', 've.area', 've.nivel_jerarquico')
+            ->first();
+
+        $evaluador = (object) [
+            'nombres' => $evaluacion->evaluador_nombres,
+            'apellidos' => $evaluacion->evaluador_apellidos,
+            'cargo' => $evaluacion->evaluador_cargo,
+            'area' => $evaluacion->evaluador_area,
+            'nivel_jerarquico' => $evaluacion->evaluador_nivel,
+            'codigo_cargo' => $evaluacion->evaluador_codigo,
+            'grado_cargo' => $evaluacion->evaluador_grado,
+        ];
+
+        $evaluado = (object) [
+            'nombres' => $evaluadoInfo->nombres ?? '',
+            'apellidos' => $evaluadoInfo->apellidos ?? '',
+            'cargo' => $evaluadoInfo->cargo ?? '',
+            'area' => $evaluadoInfo->area ?? '',
+            'nivel_jerarquico' => $evaluadoInfo->nivel_jerarquico ?? '',
+        ];
+
+        $periodo = (object) [
+            'id_periodo' => $evaluacion->id_periodo,
+            'sistema' => $sistema,
+            'fecha_inicio' => $evaluacion->fecha_inicio,
+            'fecha_fin' => $evaluacion->fecha_fin,
+        ];
+
+        // Buscar ambos semestres del mismo periodo/evaluado
+        $semestres = DB::table('evaluacion')
+            ->where('id_periodo', $evaluacion->id_periodo)
+            ->where('id_vinc_evaluado', $evaluacion->id_vinc_evaluado)
+            ->whereIn('tipo_evaluacion', ['SEMESTRE_1', 'SEMESTRE_2'])
+            ->where('estado', 'CALIFICADA')
+            ->pluck('id_evaluacion', 'tipo_evaluacion');
+
+        $idSemA = $semestres['SEMESTRE_1'] ?? (($evaluacion->tipo_evaluacion === 'SEMESTRE_1') ? $evaluacion->id_evaluacion : null);
+        $idSemB = $semestres['SEMESTRE_2'] ?? (($evaluacion->tipo_evaluacion === 'SEMESTRE_2') ? $evaluacion->id_evaluacion : null);
+
+        $calcSemA = $idSemA ? calcularNotaEvaluacion((int) $idSemA) : null;
+        $calcSemB = $idSemB ? calcularNotaEvaluacion((int) $idSemB) : null;
+
+        $notaSemA = $calcSemA['nota_definitiva'] ?? null;
+        $notaSemB = $calcSemB['nota_definitiva'] ?? null;
+
+        $notaAnual = null;
+        if ($notaSemA !== null && $notaSemB !== null) {
+            $notaAnual = round(($notaSemA + $notaSemB) / 2, 2);
+        }
+
+        $categoria = match (true) {
+            $notaAnual >= 91 => 'SOBRESALIENTE',
+            $notaAnual >= 81 => 'BUENO',
+            $notaAnual >= 71 => 'APROBADO_MEJORA',
+            $notaAnual !== null => 'NO_SATISFACTORIO',
+            default => '',
+        };
+
+        return [
+            'sistema' => $sistema,
+            'periodo' => $periodo,
+            'evaluador' => $evaluador,
+            'evaluado' => $evaluado,
+            'tiene_semestre_a' => $idSemA !== null,
+            'nota_semestre_a' => $notaSemA,
+            'nota_semestre_b' => $notaSemB,
+            'nota_anual' => $notaAnual,
+            'categoria' => $categoria,
+            'capacitaciones' => '',
+            'escudo' => 'data:image/png;base64,' . base64_encode(file_get_contents(public_path('escudo-color.png'))),
+            'logo' => 'data:image/png;base64,' . base64_encode(file_get_contents(public_path('logo.png'))),
+        ];
+    }
+}
+
+if (!function_exists('descargarInformePdf')) {
+    function descargarInformePdf(string $vista, array $info, string $filename, string $orientacion = 'portrait')
+    {
+        $html = view($vista, compact('info'))->render();
+
+        $options = new \Dompdf\Options();
+        $options->set('isRemoteEnabled', true);
+        $options->set('isHtml5ParserEnabled', true);
+        $options->set('defaultFont', 'DejaVu Sans');
+
+        $dompdf = new \Dompdf\Dompdf($options);
+        $dompdf->loadHtml($html);
+        $dompdf->setPaper('A4', $orientacion);
+        $dompdf->render();
+
+        return response($dompdf->output(), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Cache-Control' => 'no-store',
+        ]);
+    }
+}
+
+// --- GET: Informe semestral en PDF (solo evaluado) ---
+Route::get('/evaluaciones/{id}/informe', function (int $id) {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'evaluado', 403);
+
+    $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
+    abort_unless($evaluacion, 404);
+
+    $auth = session('usuario_autenticado');
+    $esEvaluado = DB::table('vinculacion')
+        ->where('id_vinculacion', $evaluacion->id_vinc_evaluado)
+        ->where('id_funcionario', $auth['id_funcionario'] ?? null)
+        ->exists();
+    abort_unless($esEvaluado, 403);
+
+    $info = prepararInformeSemestral($id);
+    $nombre = 'Informe_Evaluacion_Semestral_' . $id . '.pdf';
+
+    return descargarInformePdf('reportes.informe-semestral', $info, $nombre, 'landscape');
+})->name('evaluaciones.informe');
+
+// --- GET: Informe anual en PDF (solo evaluado, promedia ambos semestres) ---
+Route::get('/evaluaciones/{id}/informe-anual', function (int $id) {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'evaluado', 403);
+
+    $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
+    abort_unless($evaluacion, 404);
+
+    $auth = session('usuario_autenticado');
+    $esEvaluado = DB::table('vinculacion')
+        ->where('id_vinculacion', $evaluacion->id_vinc_evaluado)
+        ->where('id_funcionario', $auth['id_funcionario'] ?? null)
+        ->exists();
+    abort_unless($esEvaluado, 403);
+
+    $info = prepararInformeAnual($id);
+    $nombre = 'Informe_Evaluacion_Anual_' . $id . '.pdf';
+
+    return descargarInformePdf('reportes.informe-anual', $info, $nombre, 'portrait');
+})->name('evaluaciones.informe-anual');
