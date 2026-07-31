@@ -361,6 +361,7 @@ Route::get('/dashboard', function () {
     $evaluacionesEvaluado = collect();
     $evaluadosDisponibles = collect();
     $evaluacionesInstanciaExterna = collect();
+    $planesPendientesEvaluador = collect();
     $miVinculacionEvaluador = null;
 
     // 1. Data for Admin
@@ -423,6 +424,39 @@ Route::get('/dashboard', function () {
                      ->where('f_er.tipo_firma', '=', 'CONCERTACION_EVALUADOR');
             })
             ->select('ev.id_evaluacion', 'ev.estado', 'p.fecha_inicio', 'p.fecha_fin', 'ev.tipo_evaluacion as tipo_nombre', 'fe.nombres as evaluado_nombres', 'fe.apellidos as evaluado_apellidos', 'p.sistema', 've.cargo as evaluado_cargo', 've.area as evaluado_area', 've.nivel_jerarquico as evaluado_nivel_jerarquico', 'ev.fase_actual', 've.aplica_eje_misional', 'ev.concertacion_firmada', DB::raw('IF(f_ev.id_firma IS NOT NULL, 1, 0) as evaluado_firmado'), DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado'))
+            ->orderByDesc('ev.id_evaluacion')
+            ->get();
+
+        $planesPendientesEvaluador = DB::table('evaluacion as ev')
+            ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
+            ->join('vinculacion as va', 'va.id_vinculacion', '=', 'ev.id_vinc_evaluador')
+            ->join('vinculacion as ve', 've.id_vinculacion', '=', 'ev.id_vinc_evaluado')
+            ->join('funcionario as fe', 'fe.id_funcionario', '=', 've.id_funcionario')
+            ->leftJoin('plan_mejoramiento as pm', 'pm.id_evaluacion', '=', 'ev.id_evaluacion')
+            ->where('va.id_funcionario', $usuario['id_funcionario'])
+            ->where('ev.estado', 'CALIFICADA')
+            ->where('ev.tipo_evaluacion', 'SEMESTRE_1')
+            ->where(function ($q) {
+                $q->where(function ($q2) {
+                    $q2->where('p.sistema', 'RENDIMIENTO_LABORAL')
+                        ->where('ev.categoria_final', 'APROBADO_MEJORA');
+                })->orWhere(function ($q3) {
+                    $q3->where('p.sistema', 'ACUERDO_GESTION')
+                        ->where('ev.categoria_final', 'NO_SATISFACTORIO');
+                });
+            })
+            ->where(function ($q) {
+                $q->whereNull('pm.id_plan')->orWhere('pm.estado', '!=', 'CONCERTADO');
+            })
+            ->select(
+                'ev.id_evaluacion',
+                'ev.categoria_final',
+                'p.sistema',
+                'fe.nombres as evaluado_nombres',
+                'fe.apellidos as evaluado_apellidos',
+                'pm.id_plan',
+                'pm.estado as plan_estado'
+            )
             ->orderByDesc('ev.id_evaluacion')
             ->get();
 
@@ -505,7 +539,7 @@ Route::get('/dashboard', function () {
         'usuario', 'rolActivo', 'usuarios', 'empleados', 'evaluaciones',
         'periodos', 'ponderaciones', 'evaluacionesEvaluador', 'evaluacionesEvaluado',
         'evaluadosDisponibles', 'miVinculacionEvaluador', 'acuerdosRL', 'acuerdosAG',
-        'ponderacionesConfig', 'evaluacionesInstanciaExterna'
+        'ponderacionesConfig', 'evaluacionesInstanciaExterna', 'planesPendientesEvaluador'
     ));
 });
 
@@ -607,6 +641,12 @@ Route::post('/evaluador/asignaciones', function (Request $request) {
 
     if ($exists) {
         return back()->withErrors(['asignaciones' => 'Ya existe una evaluacion para este funcionario en este perodo y ciclo.']);
+    }
+
+    // S6 — Bloqueo del flujo del evaluador: no se abre un nuevo ciclo si el
+    // evaluado tiene un plan de mejoramiento pendiente por concertar y firmar.
+    if (evaluadoTienePlanMejoramientoPendiente((int) $data['id_vinc_evaluado'], (int) $periodo->id_periodo)) {
+        return back()->withErrors(['asignaciones' => 'El evaluado tiene un plan de mejoramiento pendiente por concertar y firmar de una evaluación anterior. Debes resolverlo antes de crear una nueva evaluación.']);
     }
 
     $evaluacionId = DB::table('evaluacion')->insertGetId([
@@ -764,6 +804,187 @@ Route::post('/admin/asignaciones', function (Request $request) {
     return back()->with('success_asignacion', 'Evaluado asignado al evaluador correctamente.');
 })->name('admin.asignaciones.store');
 
+// --- S6: GESTIÓN DE TRASLADOS ---
+// Registra el traslado de un funcionario: cambia de evaluador, traslada al
+// nuevo evaluador la evaluación vigente sin concertar y genera una evaluación
+// PARCIAL prorrateada por los días laborados en la dependencia origen (RF3).
+Route::post('/admin/traslados', function (Request $request) {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
+
+    $data = $request->validate([
+        'id_vinc_funcionario' => ['required', 'integer', 'exists:vinculacion,id_vinculacion'],
+        'id_vinc_evaluador_nuevo' => ['required', 'integer', 'exists:vinculacion,id_vinculacion', 'different:id_vinc_funcionario'],
+        'fecha_traslado' => ['required', 'date'],
+        'area_nuevo' => ['nullable', 'string', 'max:250'],
+        'cargo_nuevo' => ['nullable', 'string', 'max:200'],
+        'resolucion' => ['nullable', 'string', 'max:200'],
+        'motivo' => ['nullable', 'string', 'max:500'],
+    ]);
+
+    $evaluado = DB::table('vinculacion')
+        ->where('id_vinculacion', $data['id_vinc_funcionario'])
+        ->where('activa', 1)
+        ->first();
+
+    abort_unless($evaluado, 403);
+
+    $areaOrigen = $evaluado->area;
+    $cargoOrigen = $evaluado->cargo;
+
+    $evaluadorNuevo = DB::table('vinculacion')
+        ->where('id_vinculacion', $data['id_vinc_evaluador_nuevo'])
+        ->where('activa', 1)
+        ->where('es_evaluador', 1)
+        ->first();
+
+    abort_unless($evaluadorNuevo, 403);
+
+    // Evaluador origen: el asignado actualmente al funcionario
+    $evaluadorOrigenId = null;
+    foreach (getEvaluadorAsignaciones() as $asig) {
+        if ((int) $asig['id_vinc_evaluado'] === (int) $data['id_vinc_funcionario']) {
+            $evaluadorOrigenId = (int) $asig['id_vinc_evaluador'];
+            break;
+        }
+    }
+
+    if (! $evaluadorOrigenId) {
+        return back()->withErrors(['traslados' => 'El funcionario no tiene un evaluador asignado. Asigna un evaluador antes de registrar el traslado.']);
+    }
+
+    if ($evaluadorOrigenId === (int) $data['id_vinc_evaluador_nuevo']) {
+        return back()->withErrors(['traslados' => 'El evaluador nuevo no puede ser el mismo que el evaluador actual del funcionario.']);
+    }
+
+    // Evaluación PARCIAL prorrateada por los días trabajados en la dependencia origen
+    $idEvaluacionParcial = null;
+    $diasLaborados = null;
+    $periodo = resolveOpenPeriodForVinculacion((int) $data['id_vinc_funcionario']);
+
+    if ($periodo) {
+        $fechaInicio = new \DateTime($periodo->fecha_inicio);
+        $fechaFin = new \DateTime($periodo->fecha_fin);
+        $diasPeriodo = $fechaInicio->diff($fechaFin)->days + 1;
+        $fechaTraslado = new \DateTime($data['fecha_traslado']);
+
+        if ($fechaTraslado < $fechaInicio) {
+            return back()->withErrors(['traslados' => 'La fecha del traslado no puede ser anterior al inicio del periodo vigente (' . $periodo->fecha_inicio . ').']);
+        }
+
+        if ($fechaTraslado > $fechaFin) {
+            $fechaTraslado = $fechaFin;
+        }
+
+        $diasLaborados = max(1, min($fechaInicio->diff($fechaTraslado)->days + 1, $diasPeriodo));
+
+        // La evaluación vigente del ciclo (SEMESTRE) sin concertar pasa al nuevo evaluador
+        DB::table('evaluacion')
+            ->where('id_periodo', $periodo->id_periodo)
+            ->where('id_vinc_evaluado', $data['id_vinc_funcionario'])
+            ->whereIn('tipo_evaluacion', ['SEMESTRE_1', 'SEMESTRE_2'])
+            ->where('concertacion_firmada', 0)
+            ->where('id_vinc_evaluador', $evaluadorOrigenId)
+            ->update(['id_vinc_evaluador' => $data['id_vinc_evaluador_nuevo']]);
+
+        if ($diasLaborados < $diasPeriodo) {
+            $existeParcial = DB::table('evaluacion')
+                ->where('id_periodo', $periodo->id_periodo)
+                ->where('id_vinc_evaluado', $data['id_vinc_funcionario'])
+                ->where('tipo_evaluacion', 'PARCIAL')
+                ->exists();
+
+            if (! $existeParcial) {
+                $idEvaluacionParcial = DB::table('evaluacion')->insertGetId([
+                    'id_periodo' => $periodo->id_periodo,
+                    'id_vinc_evaluado' => $data['id_vinc_funcionario'],
+                    'id_vinc_evaluador' => $evaluadorOrigenId,
+                    'tipo_evaluacion' => 'PARCIAL',
+                    'fase_actual' => 1,
+                    'concertacion_firmada' => 0,
+                    'estado' => 'EN_PROCESO',
+                    'es_parcial' => 1,
+                    'dias_laborados' => $diasLaborados,
+                ]);
+            }
+        }
+    }
+
+    // Reasignar el funcionario al nuevo evaluador
+    $asignaciones = array_values(array_filter(getEvaluadorAsignaciones(), function ($a) use ($data) {
+        return (int) $a['id_vinc_evaluado'] !== (int) $data['id_vinc_funcionario'];
+    }));
+
+    $asignaciones[] = [
+        'id_vinc_evaluador' => (int) $data['id_vinc_evaluador_nuevo'],
+        'id_vinc_evaluado' => (int) $data['id_vinc_funcionario'],
+        'fecha_asignacion' => date('Y-m-d H:i:s'),
+    ];
+
+    file_put_contents(storage_path('app/evaluador_asignaciones.json'), json_encode($asignaciones, JSON_PRETTY_PRINT));
+
+    // Actualizar dependencia/cargo en la vinculación activa
+    $vinculacionUpdate = [];
+    if (! empty($data['area_nuevo'])) {
+        $vinculacionUpdate['area'] = trim($data['area_nuevo']);
+    }
+    if (! empty($data['cargo_nuevo'])) {
+        $vinculacionUpdate['cargo'] = trim($data['cargo_nuevo']);
+    }
+    if ($vinculacionUpdate) {
+        DB::table('vinculacion')->where('id_vinculacion', $data['id_vinc_funcionario'])->update($vinculacionUpdate);
+    }
+
+    DB::table('traslado')->insert([
+        'id_vinc_funcionario' => (int) $data['id_vinc_funcionario'],
+        'id_vinc_evaluador_origen' => $evaluadorOrigenId,
+        'id_vinc_evaluador_nuevo' => (int) $data['id_vinc_evaluador_nuevo'],
+        'area_origen' => $areaOrigen,
+        'cargo_origen' => $cargoOrigen,
+        'area_nuevo' => $data['area_nuevo'] ?? null,
+        'cargo_nuevo' => $data['cargo_nuevo'] ?? null,
+        'fecha_traslado' => $data['fecha_traslado'],
+        'dias_laborados' => $diasLaborados,
+        'id_evaluacion_parcial' => $idEvaluacionParcial,
+        'resolucion' => $data['resolucion'] ?? null,
+        'motivo' => $data['motivo'] ?? null,
+        'id_usuario_registra' => session('usuario_autenticado.id_usuario') ?? null,
+    ]);
+
+    return back()->with('success_traslado', 'Traslado registrado correctamente.');
+})->name('admin.traslados.store');
+
+// --- GET: Histórico de traslados (admin) ---
+Route::get('/admin/traslados', function () {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
+
+    return DB::table('traslado as t')
+        ->join('vinculacion as vf', 'vf.id_vinculacion', '=', 't.id_vinc_funcionario')
+        ->join('funcionario as ff', 'ff.id_funcionario', '=', 'vf.id_funcionario')
+        ->leftJoin('vinculacion as veo', 'veo.id_vinculacion', '=', 't.id_vinc_evaluador_origen')
+        ->leftJoin('funcionario as feo', 'feo.id_funcionario', '=', 'veo.id_funcionario')
+        ->leftJoin('vinculacion as ven', 'ven.id_vinculacion', '=', 't.id_vinc_evaluador_nuevo')
+        ->leftJoin('funcionario as fen', 'fen.id_funcionario', '=', 'ven.id_funcionario')
+        ->select('t.*', 'ff.nombres as funcionario_nombres', 'ff.apellidos as funcionario_apellidos', 'feo.nombres as origen_nombres', 'feo.apellidos as origen_apellidos', 'fen.nombres as nuevo_nombres', 'fen.apellidos as nuevo_apellidos')
+        ->orderByDesc('t.id_traslado')
+        ->get();
+})->name('admin.traslados.index');
+
+// --- GET: Evaluador actual de un funcionario (admin) ---
+Route::get('/admin/traslados/evaluador-actual/{id_vinc_evaluado}', function (int $idVincEvaluado) {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
+
+    foreach (getEvaluadorAsignaciones() as $asig) {
+        if ((int) $asig['id_vinc_evaluado'] === $idVincEvaluado) {
+            return DB::table('vinculacion as v')
+                ->leftJoin('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
+                ->where('v.id_vinculacion', $asig['id_vinc_evaluador'])
+                ->select('v.id_vinculacion', 'v.cargo', 'v.area', 'f.nombres', 'f.apellidos')
+                ->first();
+        }
+    }
+
+    return response()->json(null);
+})->name('admin.traslados.evaluador-actual');
 
 // --- IMPORTACIN MASIVA DE USUARIOS (EXCEL/CSV) ---
 Route::post('/admin/importar-usuarios', function (Request $request) {
@@ -905,20 +1126,23 @@ Route::get('/evaluaciones/{id}/compromisos', function (int $id) {
     $evaluadoFirmado = DB::table('firma')
         ->where('id_evaluacion', $id)
         ->where('tipo_firma', 'CONCERTACION_EVALUADO')
-        ->exists();
+        ->first();
 
     $evaluadorFirmado = DB::table('firma')
         ->where('id_evaluacion', $id)
         ->where('tipo_firma', 'CONCERTACION_EVALUADOR')
-        ->exists();
+        ->first();
 
     return response()->json([
         'compromisos' => $compromisos,
         'evidencias' => $evidencias,
         'observaciones' => getEvaluacionObservaciones($id),
         'estado' => [
-            'evaluado_firmado' => $evaluadoFirmado,
-            'evaluador_firmado' => $evaluadorFirmado,
+            'evaluado_firmado' => (bool) $evaluadoFirmado,
+            'evaluador_firmado' => (bool) $evaluadorFirmado,
+            'renuencia_evaluador' => (bool) ($evaluadorFirmado->renuencia ?? false),
+            'renuencia_evaluado' => (bool) ($evaluadoFirmado->renuencia ?? false),
+            'testigos' => getTestigosConcertacion($id),
             'congelada' => (bool) $evaluacion->concertacion_firmada,
             'calificada' => $evaluacion->estado === 'CALIFICADA',
             'fase_actual' => $evaluacion->fase_actual,
@@ -1226,8 +1450,35 @@ Route::post('/evaluaciones/{id}/firmar', function (Request $request, int $id) {
     $rolActivo = session('usuario_autenticado.rol_activo');
     $auth = session('usuario_autenticado');
 
+    // S6 — Renuencia: una de las partes se rehúsa a firmar la concertación.
+    // La firma queda registrada con renuencia=1 y se anotan los datos del (los)
+    // testigo(s) en testigo_renuencia para que el flujo no quede bloqueado.
+    $renuncia = filter_var($request->input('renuncia', false), FILTER_VALIDATE_BOOLEAN);
+    $testigos = collect($request->input('testigos', []))
+        ->filter(fn ($t) => is_array($t)
+            && !empty(trim((string) ($t['nombre'] ?? '')))
+            && !empty(trim((string) ($t['cargo'] ?? ''))))
+        ->map(fn ($t) => [
+            'nombre_testigo' => trim((string) ($t['nombre'] ?? '')),
+            'cargo_testigo' => trim((string) ($t['cargo'] ?? '')),
+        ])
+        ->values()
+        ->all();
+
+    if ($renuncia && count($testigos) < 1) {
+        return back()->withErrors(['firma' => 'Debes registrar al menos un testigo (nombre y cargo) cuando renuncias a firmar.']);
+    }
+
+    $tipoFirma = null;
+    $idVincFirmante = null;
+
     if ($rolActivo === 'evaluador') {
-        abort_unless($evaluacion->id_vinc_evaluador == $auth['id_funcionario'], 403);
+        $puedeEvaluador = DB::table('vinculacion')
+            ->where('id_vinculacion', $evaluacion->id_vinc_evaluador)
+            ->where('id_funcionario', $auth['id_funcionario'] ?? null)
+            ->exists();
+
+        abort_unless($puedeEvaluador, 403);
 
         $compromisos = DB::table('compromiso')->where('id_evaluacion', $id)->get();
         $count = $compromisos->count();
@@ -1242,16 +1493,15 @@ Route::post('/evaluaciones/{id}/firmar', function (Request $request, int $id) {
             return back()->withErrors(['firma' => 'La suma de porcentajes de los compromisos debe ser exactamente ' . $targetWeight . '% (actual: ' . $sum . '%).']);
         }
 
-        DB::table('firma')->updateOrInsert(
-            ['id_evaluacion' => $id, 'tipo_firma' => 'CONCERTACION_EVALUADOR'],
-            [
-                'id_vinc_firmante' => $auth['id_funcionario'],
-                'fecha_firma' => date('Y-m-d H:i:s'),
-                'renuencia' => 0
-            ]
-        );
+        $tipoFirma = 'CONCERTACION_EVALUADOR';
+        $idVincFirmante = (int) $evaluacion->id_vinc_evaluador;
     } elseif ($rolActivo === 'evaluado') {
-        abort_unless($evaluacion->id_vinc_evaluado == $auth['id_funcionario'], 403);
+        $puedeEvaluado = DB::table('vinculacion')
+            ->where('id_vinculacion', $evaluacion->id_vinc_evaluado)
+            ->where('id_funcionario', $auth['id_funcionario'] ?? null)
+            ->exists();
+
+        abort_unless($puedeEvaluado, 403);
 
         $evaluadorFirmado = DB::table('firma')
             ->where('id_evaluacion', $id)
@@ -1262,16 +1512,36 @@ Route::post('/evaluaciones/{id}/firmar', function (Request $request, int $id) {
             return back()->withErrors(['firma' => 'El evaluador debe proponer y firmar la concertación antes de que el evaluado pueda revisarla y firmar.']);
         }
 
-        DB::table('firma')->updateOrInsert(
-            ['id_evaluacion' => $id, 'tipo_firma' => 'CONCERTACION_EVALUADO'],
-            [
-                'id_vinc_firmante' => $auth['id_funcionario'],
-                'fecha_firma' => date('Y-m-d H:i:s'),
-                'renuencia' => 0
-            ]
-        );
+        $tipoFirma = 'CONCERTACION_EVALUADO';
+        $idVincFirmante = (int) $evaluacion->id_vinc_evaluado;
     } else {
         abort(403);
+    }
+
+    DB::table('firma')->updateOrInsert(
+        ['id_evaluacion' => $id, 'tipo_firma' => $tipoFirma],
+        [
+            'id_vinc_firmante' => $idVincFirmante,
+            'fecha_firma' => date('Y-m-d H:i:s'),
+            'renuencia' => $renuncia ? 1 : 0
+        ]
+    );
+
+    $firmaRegistrada = DB::table('firma')
+        ->where('id_evaluacion', $id)
+        ->where('tipo_firma', $tipoFirma)
+        ->first();
+
+    if ($renuncia && $firmaRegistrada) {
+        DB::table('testigo_renuencia')->where('id_firma', $firmaRegistrada->id_firma)->delete();
+        foreach ($testigos as $testigo) {
+            DB::table('testigo_renuencia')->insert([
+                'id_firma' => $firmaRegistrada->id_firma,
+                'nombre_testigo' => $testigo['nombre_testigo'],
+                'cargo_testigo' => $testigo['cargo_testigo'],
+                'fecha_registro' => date('Y-m-d H:i:s'),
+            ]);
+        }
     }
 
     $firmasConcertacion = DB::table('firma')
@@ -2012,3 +2282,580 @@ Route::post('/evaluaciones/{id}/ejes-externa', function (Request $request, int $
 
     return response()->json(['success' => true, 'message' => 'Notas de componente académico cargadas correctamente.']);
 })->name('evaluaciones.ejes-externa');
+
+
+// ============================================================================
+// S6 — RECURSOS EN LÍNEA (Reposición / Apelación), RENUENCIA CON TESTIGOS y
+//      PLAN DE MEJORAMIENTO CONDICIONADO
+// ============================================================================
+
+/**
+ * Testigos de la renuencia de las firmas de concertación de una evaluación.
+ * Devuelve una lista de {tipo_firma, nombre_testigo, cargo_testigo}.
+ */
+if (!function_exists('getTestigosConcertacion')) {
+    function getTestigosConcertacion(int $idEvaluacion) {
+        return DB::table('testigo_renuencia as t')
+            ->join('firma as f', 'f.id_firma', '=', 't.id_firma')
+            ->where('f.id_evaluacion', $idEvaluacion)
+            ->whereIn('f.tipo_firma', ['CONCERTACION_EVALUADOR', 'CONCERTACION_EVALUADO'])
+            ->select('f.tipo_firma', 't.nombre_testigo', 't.cargo_testigo')
+            ->orderBy('f.tipo_firma')
+            ->orderBy('t.id_testigo')
+            ->get();
+    }
+}
+
+/**
+ * Devuelve los recursos de una evaluación con nombres de receptor/solicitante.
+ */
+if (!function_exists('getRecursosEvaluacion')) {
+    function getRecursosEvaluacion(int $idEvaluacion) {
+        return DB::table('recurso as r')
+            ->leftJoin('vinculacion as vrec', 'vrec.id_vinculacion', '=', 'r.id_vinc_receptor')
+            ->leftJoin('funcionario as frec', 'frec.id_funcionario', '=', 'vrec.id_funcionario')
+            ->where('r.id_evaluacion', $idEvaluacion)
+            ->select(
+                'r.*',
+                'frec.nombres as receptor_nombres',
+                'frec.apellidos as receptor_apellidos'
+            )
+            ->orderByDesc('r.id_recurso')
+            ->get();
+    }
+}
+
+/**
+ * Evaluación con el sistema del periodo (necesario para evaluar el plan de mejoramiento).
+ */
+if (!function_exists('getEvaluacionConSistema')) {
+    function getEvaluacionConSistema(int $idEvaluacion) {
+        return DB::table('evaluacion as ev')
+            ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
+            ->where('ev.id_evaluacion', $idEvaluacion)
+            ->select('ev.*', 'p.sistema')
+            ->first();
+    }
+}
+
+/**
+ * S6 — Plan de mejoramiento CONDICIONADO (1er semestre):
+ *   RL: calificación final ∈ [71, 80] (APROBADO_MEJORA)
+ *   AG: calificación final ∈ [0, 70]  (NO_SATISFACTORIO)
+ * El bloqueo del flujo del evaluador aplica hasta concertar y firmar el plan.
+ */
+if (!function_exists('evaluacionRequierePlanMejoramiento')) {
+    function evaluacionRequierePlanMejoramiento($evaluacion): bool {
+        if (!$evaluacion || ($evaluacion->estado ?? null) !== 'CALIFICADA') {
+            return false;
+        }
+
+        $sistema = strtoupper(trim((string) ($evaluacion->sistema ?? '')));
+        $tipoEval = $evaluacion->tipo_evaluacion ?? 'SEMESTRE_1';
+        $categoria = strtoupper(trim((string) ($evaluacion->categoria_final ?? '')));
+
+        if ($tipoEval !== 'SEMESTRE_1') {
+            return false;
+        }
+
+        if ($sistema === 'RENDIMIENTO_LABORAL' && $categoria === 'APROBADO_MEJORA') {
+            return true;
+        }
+
+        if ($sistema === 'ACUERDO_GESTION' && $categoria === 'NO_SATISFACTORIO') {
+            return true;
+        }
+
+        return false;
+    }
+}
+
+/**
+ * S6 — Indica si el evaluado tiene un plan de mejoramiento pendiente de concertar
+ * y firmar (RL: APROBADO_MEJORA; AG: NO_SATISFACTORIO, primer semestre) en una
+ * evaluación ya calificada. Se usa para bloquear la creación de una nueva
+ * evaluación hasta resolver el plan anterior.
+ */
+if (!function_exists('evaluadoTienePlanMejoramientoPendiente')) {
+    function evaluadoTienePlanMejoramientoPendiente(int $idVincEvaluado, ?int $idPeriodo = null): bool {
+        $query = DB::table('evaluacion as ev')
+            ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
+            ->leftJoin('plan_mejoramiento as pm', 'pm.id_evaluacion', '=', 'ev.id_evaluacion')
+            ->where('ev.id_vinc_evaluado', $idVincEvaluado)
+            ->where('ev.estado', 'CALIFICADA')
+            ->where('ev.tipo_evaluacion', 'SEMESTRE_1')
+            ->where(function ($q) {
+                $q->where(function ($q2) {
+                    $q2->where('p.sistema', 'RENDIMIENTO_LABORAL')
+                        ->where('ev.categoria_final', 'APROBADO_MEJORA');
+                })->orWhere(function ($q3) {
+                    $q3->where('p.sistema', 'ACUERDO_GESTION')
+                        ->where('ev.categoria_final', 'NO_SATISFACTORIO');
+                });
+            })
+            ->where(function ($q) {
+                $q->whereNull('pm.id_plan')->orWhere('pm.estado', '!=', 'CONCERTADO');
+            });
+
+        if ($idPeriodo !== null) {
+            $query->where('ev.id_periodo', '!=', $idPeriodo);
+        }
+
+        return $query->exists();
+    }
+}
+
+/**
+ * S6 — Vinculación de Talento Humano (receptor de las apelaciones).
+ * Se busca la vinculación activa de un usuario ADMINISTRADOR; si no existe,
+ * se usa la vinculación del evaluador como receptor de respaldo.
+ */
+if (!function_exists('resolverVinculacionReceptorApelacion')) {
+    function resolverVinculacionReceptorApelacion(int $idEvaluacion): int {
+        $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $idEvaluacion)->first();
+
+        // 1) Superior jerárquico del evaluador (vinculacion.id_vinc_jefe).
+        if ($evaluacion) {
+            $jefeEvaluador = DB::table('vinculacion')
+                ->where('id_vinculacion', $evaluacion->id_vinc_evaluador)
+                ->value('id_vinc_jefe');
+
+            if (!empty($jefeEvaluador)) {
+                return (int) $jefeEvaluador;
+            }
+        }
+
+        // 2) Fallback: Talento Humano (rol ADMINISTRADOR).
+        $vinculacionTH = DB::table('usuario as u')
+            ->join('funcionario as f', 'f.id_usuario', '=', 'u.id_usuario')
+            ->join('vinculacion as v', function ($join) {
+                $join->on('v.id_funcionario', '=', 'f.id_funcionario')
+                    ->where('v.activa', '=', 1);
+            })
+            ->where('u.rol', 'ADMINISTRADOR')
+            ->select('v.id_vinculacion')
+            ->orderBy('v.id_vinculacion')
+            ->first();
+
+        if ($vinculacionTH) {
+            return (int) $vinculacionTH->id_vinculacion;
+        }
+
+        // 3) Último respaldo: el propio evaluador.
+        return (int) ($evaluacion->id_vinc_evaluador ?? 0);
+    }
+}
+
+
+// --- GET: Recursos de una evaluación ---
+Route::get('/evaluaciones/{id}/recursos', function (int $id) {
+    abort_unless(session()->has('usuario_autenticado'), 403);
+
+    $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
+    abort_unless($evaluacion, 404);
+
+    $auth = session('usuario_autenticado');
+    $rolActivo = $auth['rol_activo'] ?? null;
+
+    if ($rolActivo !== 'admin') {
+        $puedeVer = DB::table('vinculacion')
+            ->whereIn('id_vinculacion', [$evaluacion->id_vinc_evaluado, $evaluacion->id_vinc_evaluador])
+            ->where('id_funcionario', $auth['id_funcionario'] ?? null)
+            ->exists();
+
+        abort_unless($puedeVer, 403);
+    }
+
+    return response()->json([
+        'recursos' => getRecursosEvaluacion($id),
+        'estado' => $evaluacion->estado,
+    ]);
+})->name('evaluaciones.recursos');
+
+
+// --- POST: Radicar un recurso (solo el evaluado, evaluación calificada) ---
+Route::post('/evaluaciones/{id}/recursos', function (Request $request, int $id) {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'evaluado', 403);
+
+    $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
+    abort_unless($evaluacion, 404);
+    abort_unless($evaluacion->estado === 'CALIFICADA', 422, 'Solo puedes radicar un recurso cuando la evaluación haya sido calificada y calculada.');
+
+    $auth = session('usuario_autenticado');
+    $vinculacionSolicitante = DB::table('vinculacion')
+        ->where('id_vinculacion', $evaluacion->id_vinc_evaluado)
+        ->where('id_funcionario', $auth['id_funcionario'] ?? null)
+        ->where('activa', 1)
+        ->first();
+
+    abort_unless($vinculacionSolicitante, 403);
+
+    $data = $request->validate([
+        'tipo_recurso' => ['required', 'in:REPOSICION,APELACION'],
+        'numero_folios' => ['required', 'integer', 'min:1'],
+        'motivacion' => ['required', 'string', 'max:3000'],
+    ]);
+
+    $yaExistePendiente = DB::table('recurso')
+        ->where('id_evaluacion', $id)
+        ->where('tipo_recurso', $data['tipo_recurso'])
+        ->where('decision', 'PENDIENTE')
+        ->exists();
+
+    abort_if($yaExistePendiente, 422, 'Ya existe un recurso de ' . ($data['tipo_recurso'] === 'REPOSICION' ? 'reposición' : 'apelación') . ' pendiente por decidir para esta evaluación.');
+
+    $idReceptor = $data['tipo_recurso'] === 'REPOSICION'
+        ? (int) $evaluacion->id_vinc_evaluador
+        : resolverVinculacionReceptorApelacion($id);
+
+    $idRecurso = DB::table('recurso')->insertGetId([
+        'id_evaluacion' => $id,
+        'tipo_recurso' => $data['tipo_recurso'],
+        'id_vinc_receptor' => $idReceptor,
+        'numero_folios' => $data['numero_folios'],
+        'fecha_recurso' => date('Y-m-d'),
+        'decision' => 'PENDIENTE',
+        'motivacion' => trim($data['motivacion']),
+    ]);
+
+    $prefijo = $data['tipo_recurso'] === 'REPOSICION' ? 'REP' : 'APL';
+    DB::table('recurso')->where('id_recurso', $idRecurso)->update([
+        'numero_radicado' => sprintf('%s-%s-%04d', $prefijo, date('Y'), $idRecurso),
+    ]);
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Recurso radicado correctamente (radicado ' . sprintf('%s-%s-%04d', $prefijo, date('Y'), $idRecurso) . ').',
+        'recurso' => DB::table('recurso')->where('id_recurso', $idRecurso)->first(),
+    ]);
+})->name('evaluaciones.recursos.store');
+
+
+// --- POST: Decidir un recurso (evaluador para reposición, TH/admin para apelación) ---
+Route::post('/recursos/{id}/decision', function (Request $request, int $id) {
+    abort_unless(session()->has('usuario_autenticado'), 403);
+
+    $recurso = DB::table('recurso')->where('id_recurso', $id)->first();
+    abort_unless($recurso, 404);
+    abort_unless($recurso->decision === 'PENDIENTE', 422, 'Este recurso ya fue decidido.');
+
+    $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $recurso->id_evaluacion)->first();
+    abort_unless($evaluacion, 404);
+
+    $auth = session('usuario_autenticado');
+    $rolActivo = $auth['rol_activo'] ?? null;
+
+    $esAdmin = $rolActivo === 'admin';
+    $esReceptor = $rolActivo === 'evaluador' && DB::table('vinculacion')
+        ->where('id_vinculacion', $recurso->id_vinc_receptor)
+        ->where('id_funcionario', $auth['id_funcionario'] ?? null)
+        ->exists();
+
+    abort_unless($esAdmin || $esReceptor, 403, 'No tienes permisos para decidir este recurso.');
+
+    $data = $request->validate([
+        'decision' => ['required', 'in:APROBADO,NEGADO'],
+        'motivacion' => ['required', 'string', 'max:3000'],
+    ]);
+
+    // Se conserva la motivación del solicitante y se anexa la de la decisión.
+    $motivacionBase = trim((string) ($recurso->motivacion ?? ''));
+    $motivacionDecision = trim($data['motivacion']);
+    $motivacionFinal = $motivacionBase;
+    $motivacionFinal .= ($motivacionFinal ? "\n\n" : '')
+        . 'DECISIÓN (' . ($data['decision'] === 'APROBADO' ? 'Favorable' : 'Desfavorable')
+        . ', ' . date('Y-m-d') . '): ' . $motivacionDecision;
+
+    DB::table('recurso')->where('id_recurso', $id)->update([
+        'decision' => $data['decision'],
+        'motivacion' => $motivacionFinal,
+        'fecha_decision' => date('Y-m-d'),
+    ]);
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Decisión registrada correctamente.',
+        'recurso' => DB::table('recurso')->where('id_recurso', $id)->first(),
+    ]);
+})->name('recursos.decision');
+
+
+// --- GET: Todos los recursos (vista Talento Humano / admin) ---
+Route::get('/recursos', function () {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
+
+    $recursos = DB::table('recurso as r')
+        ->join('evaluacion as ev', 'ev.id_evaluacion', '=', 'r.id_evaluacion')
+        ->join('vinculacion as ve', 've.id_vinculacion', '=', 'ev.id_vinc_evaluado')
+        ->join('funcionario as fe', 'fe.id_funcionario', '=', 've.id_funcionario')
+        ->join('vinculacion as va', 'va.id_vinculacion', '=', 'ev.id_vinc_evaluador')
+        ->join('funcionario as fa', 'fa.id_funcionario', '=', 'va.id_funcionario')
+        ->leftJoin('vinculacion as vrec', 'vrec.id_vinculacion', '=', 'r.id_vinc_receptor')
+        ->leftJoin('funcionario as frec', 'frec.id_funcionario', '=', 'vrec.id_funcionario')
+        ->select(
+            'r.*',
+            'fe.nombres as evaluado_nombres',
+            'fe.apellidos as evaluado_apellidos',
+            'fa.nombres as evaluador_nombres',
+            'fa.apellidos as evaluador_apellidos',
+            'frec.nombres as receptor_nombres',
+            'frec.apellidos as receptor_apellidos'
+        )
+        ->orderByDesc('r.id_recurso')
+        ->get();
+
+    return response()->json(['recursos' => $recursos]);
+})->name('recursos.index');
+
+
+// --- GET: Recursos por decidir asignados a mí (evaluador / superior jerárquico) ---
+Route::get('/recursos/mios', function () {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'evaluador', 403);
+
+    $auth = session('usuario_autenticado');
+
+    $misVinculaciones = DB::table('vinculacion')
+        ->where('id_funcionario', $auth['id_funcionario'] ?? null)
+        ->where('activa', 1)
+        ->where('es_evaluador', 1)
+        ->pluck('id_vinculacion')
+        ->all();
+
+    $recursos = DB::table('recurso as r')
+        ->join('evaluacion as ev', 'ev.id_evaluacion', '=', 'r.id_evaluacion')
+        ->join('vinculacion as ve', 've.id_vinculacion', '=', 'ev.id_vinc_evaluado')
+        ->join('funcionario as fe', 'fe.id_funcionario', '=', 've.id_funcionario')
+        ->join('vinculacion as va', 'va.id_vinculacion', '=', 'ev.id_vinc_evaluador')
+        ->join('funcionario as fa', 'fa.id_funcionario', '=', 'va.id_funcionario')
+        ->leftJoin('vinculacion as vrec', 'vrec.id_vinculacion', '=', 'r.id_vinc_receptor')
+        ->leftJoin('funcionario as frec', 'frec.id_funcionario', '=', 'vrec.id_funcionario')
+        ->whereIn('r.id_vinc_receptor', $misVinculaciones)
+        ->where('r.tipo_recurso', 'APELACION')
+        ->where('r.decision', 'PENDIENTE')
+        ->select(
+            'r.*',
+            've.id_vinculacion as evaluado_id_vinc',
+            've.cargo as evaluado_cargo',
+            'fe.nombres as evaluado_nombres',
+            'fe.apellidos as evaluado_apellidos',
+            'fa.nombres as evaluador_nombres',
+            'fa.apellidos as evaluador_apellidos',
+            'frec.nombres as receptor_nombres',
+            'frec.apellidos as receptor_apellidos'
+        )
+        ->orderBy('r.fecha_recurso')
+        ->orderByDesc('r.id_recurso')
+        ->get();
+
+    return response()->json(['recursos' => $recursos]);
+})->name('recursos.mios');
+
+
+// --- GET: Estado del plan de mejoramiento de una evaluación ---
+Route::get('/evaluaciones/{id}/plan-mejoramiento', function (int $id) {
+    abort_unless(session()->has('usuario_autenticado'), 403);
+
+    $evaluacion = getEvaluacionConSistema($id);
+    abort_unless($evaluacion, 404);
+
+    $auth = session('usuario_autenticado');
+    $rolActivo = $auth['rol_activo'] ?? null;
+
+    if ($rolActivo !== 'admin') {
+        $puedeVer = DB::table('vinculacion')
+            ->whereIn('id_vinculacion', [$evaluacion->id_vinc_evaluado, $evaluacion->id_vinc_evaluador])
+            ->where('id_funcionario', $auth['id_funcionario'] ?? null)
+            ->exists();
+
+        abort_unless($puedeVer, 403);
+    }
+
+    $plan = DB::table('plan_mejoramiento')->where('id_evaluacion', $id)->first();
+    $requiere = evaluacionRequierePlanMejoramiento($evaluacion);
+
+    return response()->json([
+        'plan' => $plan,
+        'requiere_plan' => $requiere,
+        'concertado' => $plan ? ($plan->estado === 'CONCERTADO') : false,
+        'bloqueado' => $requiere && (!$plan || $plan->estado !== 'CONCERTADO'),
+        'sistema' => $evaluacion->sistema,
+        'categoria' => $evaluacion->categoria_final,
+    ]);
+})->name('evaluaciones.plan-mejoramiento');
+
+
+// --- POST: Crear / actualizar plan de mejoramiento (evaluador) ---
+Route::post('/evaluaciones/{id}/plan-mejoramiento', function (Request $request, int $id) {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'evaluador', 403);
+
+    $evaluacion = getEvaluacionConSistema($id);
+    abort_unless($evaluacion, 404);
+    abort_unless(evaluacionRequierePlanMejoramiento($evaluacion), 422, 'Esta evaluación no requiere plan de mejoramiento según la calificación obtenida.');
+
+    $auth = session('usuario_autenticado');
+    $puedeEditar = DB::table('vinculacion')
+        ->where('id_vinculacion', $evaluacion->id_vinc_evaluador)
+        ->where('id_funcionario', $auth['id_funcionario'] ?? null)
+        ->exists();
+
+    abort_unless($puedeEditar, 403);
+
+    $data = $request->validate([
+        'descripcion_temas' => ['required', 'string', 'max:5000'],
+    ]);
+
+    $plan = DB::table('plan_mejoramiento')->where('id_evaluacion', $id)->first();
+
+    if ($plan) {
+        abort_unless(!$plan->firmado_evaluador && $plan->estado === 'PENDIENTE', 422, 'El plan de mejoramiento ya fue firmado; no se puede modificar.');
+
+        DB::table('plan_mejoramiento')->where('id_plan', $plan->id_plan)->update([
+            'descripcion_temas' => trim($data['descripcion_temas']),
+        ]);
+        $idPlan = $plan->id_plan;
+    } else {
+        $idPlan = DB::table('plan_mejoramiento')->insertGetId([
+            'id_evaluacion' => $id,
+            'descripcion_temas' => trim($data['descripcion_temas']),
+            'fecha_creacion' => date('Y-m-d H:i:s'),
+        ]);
+    }
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Plan de mejoramiento guardado correctamente.',
+        'plan' => DB::table('plan_mejoramiento')->where('id_plan', $idPlan)->first(),
+    ]);
+})->name('evaluaciones.plan-mejoramiento.store');
+
+
+// --- POST: Firmar el plan de mejoramiento (evaluador / evaluado) ---
+Route::post('/plan-mejoramiento/{id}/firmar', function (Request $request, int $id) {
+    abort_unless(session()->has('usuario_autenticado'), 403);
+
+    $plan = DB::table('plan_mejoramiento')->where('id_plan', $id)->first();
+    abort_unless($plan, 404);
+
+    $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $plan->id_evaluacion)->first();
+    abort_unless($evaluacion, 404);
+
+    $auth = session('usuario_autenticado');
+    $rolActivo = $auth['rol_activo'] ?? null;
+    $now = date('Y-m-d H:i:s');
+
+    $update = [];
+
+    if ($rolActivo === 'evaluador') {
+        $puede = DB::table('vinculacion')
+            ->where('id_vinculacion', $evaluacion->id_vinc_evaluador)
+            ->where('id_funcionario', $auth['id_funcionario'] ?? null)
+            ->exists();
+
+        abort_unless($puede, 403);
+        abort_unless(!$plan->firmado_evaluador, 422, 'El evaluador ya firmó este plan de mejoramiento.');
+
+        $update = [
+            'firmado_evaluador' => 1,
+            'fecha_firma_evaluador' => $now,
+        ];
+    } elseif ($rolActivo === 'evaluado') {
+        $puede = DB::table('vinculacion')
+            ->where('id_vinculacion', $evaluacion->id_vinc_evaluado)
+            ->where('id_funcionario', $auth['id_funcionario'] ?? null)
+            ->exists();
+
+        abort_unless($puede, 403);
+        abort_unless(!$plan->firmado_evaluado, 422, 'El evaluado ya firmó este plan de mejoramiento.');
+        abort_unless($plan->firmado_evaluador, 422, 'El evaluador debe firmar el plan de mejoramiento antes que el evaluado.');
+
+        $update = [
+            'firmado_evaluado' => 1,
+            'fecha_firma_evaluado' => $now,
+        ];
+    } else {
+        abort(403);
+    }
+
+    DB::table('plan_mejoramiento')->where('id_plan', $id)->update($update);
+
+    $planActualizado = DB::table('plan_mejoramiento')->where('id_plan', $id)->first();
+
+    if ($planActualizado->firmado_evaluador && $planActualizado->firmado_evaluado) {
+        DB::table('plan_mejoramiento')->where('id_plan', $id)->update(['estado' => 'CONCERTADO']);
+        $planActualizado = DB::table('plan_mejoramiento')->where('id_plan', $id)->first();
+    }
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Firma del plan de mejoramiento registrada.',
+        'plan' => $planActualizado,
+    ]);
+})->name('plan-mejoramiento.firmar');
+
+
+// --- GET: Todos los planes de mejoramiento (vista Talento Humano / admin) ---
+Route::get('/planes-mejoramiento', function () {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
+
+    $planes = DB::table('plan_mejoramiento as pm')
+        ->join('evaluacion as ev', 'ev.id_evaluacion', '=', 'pm.id_evaluacion')
+        ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
+        ->join('vinculacion as ve', 've.id_vinculacion', '=', 'ev.id_vinc_evaluado')
+        ->join('funcionario as fe', 'fe.id_funcionario', '=', 've.id_funcionario')
+        ->join('vinculacion as va', 'va.id_vinculacion', '=', 'ev.id_vinc_evaluador')
+        ->join('funcionario as fa', 'fa.id_funcionario', '=', 'va.id_funcionario')
+        ->select(
+            'pm.*',
+            'p.sistema',
+            'ev.categoria_final',
+            'ev.calificacion_final',
+            'fe.nombres as evaluado_nombres',
+            'fe.apellidos as evaluado_apellidos',
+            'fa.nombres as evaluador_nombres',
+            'fa.apellidos as evaluador_apellidos'
+        )
+        ->orderByDesc('pm.id_plan')
+        ->get();
+
+    return response()->json(['planes' => $planes]);
+})->name('planes-mejoramiento.index');
+
+
+// --- GET: Renuncias a la firma de concertación (renuencia) con testigos ---
+Route::get('/renuencias', function () {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
+
+    $renuencias = DB::table('firma as f')
+        ->join('evaluacion as ev', 'ev.id_evaluacion', '=', 'f.id_evaluacion')
+        ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
+        ->join('vinculacion as ve', 've.id_vinculacion', '=', 'ev.id_vinc_evaluado')
+        ->join('funcionario as fe', 'fe.id_funcionario', '=', 've.id_funcionario')
+        ->join('vinculacion as va', 'va.id_vinculacion', '=', 'ev.id_vinc_evaluador')
+        ->join('funcionario as fa', 'fa.id_funcionario', '=', 'va.id_funcionario')
+        ->where('f.renuencia', 1)
+        ->whereIn('f.tipo_firma', ['CONCERTACION_EVALUADOR', 'CONCERTACION_EVALUADO'])
+        ->select(
+            'f.id_firma',
+            'f.id_evaluacion',
+            'f.tipo_firma',
+            'f.fecha_firma',
+            'p.sistema',
+            'ev.tipo_evaluacion',
+            'fe.nombres as evaluado_nombres',
+            'fe.apellidos as evaluado_apellidos',
+            'fa.nombres as evaluador_nombres',
+            'fa.apellidos as evaluador_apellidos'
+        )
+        ->orderByDesc('f.fecha_firma')
+        ->get();
+
+    foreach ($renuencias as $r) {
+        $r->testigos = DB::table('testigo_renuencia')
+            ->where('id_firma', $r->id_firma)
+            ->select('nombre_testigo', 'cargo_testigo')
+            ->orderBy('id_testigo')
+            ->get();
+    }
+
+    return response()->json(['renuencias' => $renuencias]);
+})->name('renuencias.index');

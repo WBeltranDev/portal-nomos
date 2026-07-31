@@ -21,7 +21,7 @@
     .app-header {
         position: relative;
         z-index: 40;
-        background: linear-gradient(135deg, #00352e 0%, #00594E 45%, #B5A160 100%);
+        background: linear-gradient(135deg, #00473d 0%, #00594e 100%);
         color: white;
         box-shadow: 0 10px 30px rgba(0, 89, 78, 0.22);
         border: 0;
@@ -52,6 +52,46 @@
         border-left: 4px solid #B5A160;
     }
 
+    .evaluado-tab-btn,
+    .evaluador-tab-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.375rem;
+        padding: 0.55rem 1.1rem;
+        border-radius: 0.75rem;
+        font-size: 0.78rem;
+        font-weight: 700;
+        color: #64748b;
+        background: #f1f5f9;
+        border: 1px solid transparent;
+        transition: all 0.15s ease;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+
+    .evaluado-tab-btn:hover,
+    .evaluador-tab-btn:hover {
+        color: #00594E;
+        background: #e6f2f0;
+    }
+
+    .evaluado-tab-btn.active,
+    .evaluador-tab-btn.active {
+        background: #00594E;
+        color: white;
+        box-shadow: 0 4px 12px rgba(0, 89, 78, 0.25);
+    }
+
+    .evaluado-tab-panel,
+    .evaluador-tab-panel {
+        animation: fadeIn 0.2s ease;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(4px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
     .panel-card {
         background: rgba(255, 255, 255, 0.85);
         backdrop-filter: blur(12px);
@@ -67,11 +107,12 @@
             <button onclick="toggleSidebar()" class="lg:hidden p-2 rounded-lg hover:bg-white/10">
                 <span class="material-symbols-outlined">menu</span>
             </button>
+            <img src="/logo.png" alt="SERAG" class="h-9 sm:h-10 w-auto object-contain drop-shadow -mt-1" />
             <div class="hidden sm:flex flex-col">
-                <span class="text-[10px] sm:text-xs font-bold uppercase tracking-[0.18em] text-[#B5A160]">Unitrópico</span>
+                <span class="text-[10px] sm:text-xs font-bold uppercase tracking-[0.18em] text-[#B5A160]">SERAG</span>
                 <span class="text-xs sm:text-sm font-semibold text-white/90">Sistema de Evaluación del Desempeño</span>
             </div>
-            <div class="sm:hidden text-xs font-semibold text-white/90">Unitrópico</div>
+            <div class="sm:hidden text-xs font-semibold text-white/90">SERAG</div>
         </div>
 
         <div class="flex items-center gap-3 sm:gap-4">
@@ -139,6 +180,14 @@
                     <span class="material-symbols-outlined">settings</span>
                     Ponderaciones
                 </button>
+                <button class="sidebar-link w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-slate-700 transition" onclick="navegarMenu(this, 'recursos-admin')">
+                    <span class="material-symbols-outlined">gavel</span>
+                    Recursos y planes
+                </button>
+                <button class="sidebar-link w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-slate-700 transition" onclick="navegarMenu(this, 'traslados')">
+                    <span class="material-symbols-outlined">swap_horiz</span>
+                    Traslados
+                </button>
                 @endif
 
                 @if ($rolActivo !== 'instancia_externa')
@@ -171,10 +220,10 @@
 
         <!-- Main Content Grid -->
         <main class="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 overflow-y-auto">
-            @if(session('success_periodo') || session('success_ponderacion') || session('success_asignacion') || session('success_import') || session('success_firma'))
+            @if(session('success_periodo') || session('success_ponderacion') || session('success_asignacion') || session('success_import') || session('success_firma') || session('success_traslado'))
                 <div class="mb-6 p-4 bg-green-50 border border-green-200 text-green-700 rounded-2xl flex items-center gap-3 text-sm">
                     <span class="material-symbols-outlined">check_circle</span>
-                    <p>{{ session('success_periodo') ?? session('success_ponderacion') ?? session('success_asignacion') ?? session('success_import') ?? session('success_firma') }}</p>
+                    <p>{{ session('success_periodo') ?? session('success_ponderacion') ?? session('success_asignacion') ?? session('success_import') ?? session('success_firma') ?? session('success_traslado') }}</p>
                 </div>
             @endif
 
@@ -525,6 +574,130 @@
                     </div>
                 </div>
             </section>
+
+            <!-- SECTION: RECURSOS Y PLANES (Admin / Talento Humano - S6) -->
+            <section id="section-recursos-admin" class="section-content hidden space-y-6">
+                <div class="panel-card rounded-3xl p-6">
+                    <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between mb-6">
+                        <div>
+                            <h2 class="text-2xl sm:text-3xl font-black text-slate-900">Recursos de reposición y apelación</h2>
+                            <p class="text-sm text-slate-500 mt-1">Radicados de los evaluados, decisiones y motivaciones.</p>
+                        </div>
+                        <span id="recursos-admin-contador" class="text-[10px] font-bold uppercase rounded-full px-3 py-1.5 bg-[#EAF2EF] text-[#00594E]">Cargando...</span>
+                    </div>
+                    <div id="recursos-admin-lista" class="grid gap-4 lg:grid-cols-2">
+                        <div class="py-10 text-center text-slate-500 text-xs">Cargando recursos...</div>
+                    </div>
+                </div>
+
+                <div class="panel-card rounded-3xl p-6">
+                    <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between mb-6">
+                        <div>
+                            <p class="text-xs font-bold uppercase tracking-[0.22em] text-[#00594E]">Planes de mejoramiento</p>
+                            <h2 class="text-2xl sm:text-3xl font-black text-slate-900">Planes condicionados a la calificación</h2>
+                            <p class="text-sm text-slate-500 mt-1">RL 71-80 (Susceptible de mejora) y AG 0-70 (No satisfactorio), primer semestre.</p>
+                        </div>
+                    </div>
+                    <div id="planes-admin-lista" class="grid gap-4 lg:grid-cols-2">
+                        <div class="py-10 text-center text-slate-500 text-xs">Cargando planes...</div>
+                    </div>
+                </div>
+
+                <div class="panel-card rounded-3xl p-6">
+                    <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between mb-6">
+                        <div>
+                            <p class="text-xs font-bold uppercase tracking-[0.22em] text-[#00594E]">Renuencia</p>
+                            <h2 class="text-2xl sm:text-3xl font-black text-slate-900">Renuncias a la firma con testigos</h2>
+                            <p class="text-sm text-slate-500 mt-1">Concertaciones firmadas con renuencia y los testigos registrados.</p>
+                        </div>
+                    </div>
+                    <div id="renuencias-admin-lista" class="grid gap-4 lg:grid-cols-2">
+                        <div class="py-10 text-center text-slate-500 text-xs">Cargando renuencias...</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION: TRASLADOS (Admin Only) -->
+            <section id="section-traslados" class="section-content hidden space-y-6">
+                <div class="grid gap-6 lg:grid-cols-[1.1fr_0.9fr] items-start">
+                    <div class="panel-card rounded-3xl p-6">
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="material-symbols-outlined text-[#00594E]">swap_horiz</span>
+                            <h2 class="text-2xl sm:text-3xl font-black text-slate-900">Traslados</h2>
+                        </div>
+                        <p class="text-sm text-slate-500 mb-4">Registra el traslado de un funcionario a otra dependencia con cambio de evaluador. Si hay un periodo abierto se genera automáticamente una evaluación PARCIAL prorrateada por los días laborados en la dependencia origen.</p>
+                        <form method="POST" action="{{ route('admin.traslados.store') }}" class="space-y-3">
+                            @csrf
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Funcionario a trasladar (Vinculación)</label>
+                                <input type="search" id="buscar-funcionario-traslado" oninput="filtrarOpcionesAsignacion('buscar-funcionario-traslado', 'select-funcionario-traslado')" class="mb-2 w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Buscar funcionario por nombre o cargo" />
+                                <select name="id_vinc_funcionario" id="select-funcionario-traslado" onchange="mostrarEvaluadorActualTraslado()" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
+                                    <option value="">Selecciona un funcionario</option>
+                                    @foreach($empleados as $e)
+                                        @if($e->id_vinculacion)
+                                            <option value="{{ $e->id_vinculacion }}">{{ $e->nombres }} {{ $e->apellidos }} - {{ $e->nombre_cargo }}</option>
+                                        @endif
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div id="evaluador-origen-box" class="hidden rounded-xl bg-[#EAF2EF] p-3">
+                                <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-[#00594E]">Evaluador actual</p>
+                                <p id="evaluador-origen-texto" class="text-sm font-semibold text-slate-800 mt-0.5">-</p>
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Nuevo evaluador (Vinculación)</label>
+                                <input type="search" id="buscar-evaluador-traslado" oninput="filtrarOpcionesAsignacion('buscar-evaluador-traslado', 'select-evaluador-traslado')" class="mb-2 w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Buscar evaluador por nombre o cargo" />
+                                <select name="id_vinc_evaluador_nuevo" id="select-evaluador-traslado" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
+                                    <option value="">Selecciona un evaluador</option>
+                                    @foreach($empleados as $e)
+                                        @if($e->id_vinculacion && $e->es_evaluador)
+                                            <option value="{{ $e->id_vinculacion }}">{{ $e->nombres }} {{ $e->apellidos }} - {{ $e->nombre_cargo }}</option>
+                                        @endif
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="grid gap-3 sm:grid-cols-2">
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Fecha del traslado</label>
+                                    <input type="date" name="fecha_traslado" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" required />
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Resolución (opcional)</label>
+                                    <input type="text" name="resolucion" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Ej. RES-2026-0123" />
+                                </div>
+                            </div>
+                            <div class="grid gap-3 sm:grid-cols-2">
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Nueva dependencia (área)</label>
+                                    <input type="text" name="area_nuevo" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Nueva área" />
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Nuevo cargo</label>
+                                    <input type="text" name="cargo_nuevo" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Nuevo cargo" />
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Motivo (opcional)</label>
+                                <input type="text" name="motivo" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Motivo del traslado" />
+                            </div>
+                            <button type="submit" class="w-full bg-[#B5A160] text-white rounded-xl py-2.5 text-xs font-bold hover:brightness-110 transition shadow-md shadow-[#B5A160]/20">Registrar traslado</button>
+                        </form>
+                    </div>
+
+                    <div class="panel-card rounded-3xl p-6">
+                        <div class="flex items-end justify-between gap-4 mb-4">
+                            <div>
+                                <h3 class="text-lg font-bold text-slate-800">Histórico de traslados</h3>
+                                <p class="text-xs text-slate-500 mt-1">Registros de cambio de dependencia y evaluador.</p>
+                            </div>
+                            <span id="traslados-admin-contador" class="text-[10px] font-bold uppercase rounded-full px-3 py-1.5 bg-[#EAF2EF] text-[#00594E]">Cargando...</span>
+                        </div>
+                        <div id="traslados-admin-lista" class="grid gap-3">
+                            <div class="py-10 text-center text-slate-500 text-xs">Cargando traslados...</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
             @endif
             @if ($rolActivo === 'evaluador')
             <section id="section-usuarios-evaluador" class="section-content hidden space-y-6">
@@ -642,6 +815,38 @@
 
             @if ($rolActivo === 'evaluador')
             <section id="section-evaluaciones-evaluador" class="section-content hidden space-y-6">
+                @if($planesPendientesEvaluador->isNotEmpty())
+                <div class="panel-card rounded-3xl p-5 border-amber-200 border">
+                    <div class="flex items-start gap-3">
+                        <span class="material-symbols-outlined text-amber-600 mt-0.5">warning</span>
+                        <div class="min-w-0">
+                            <p class="text-sm font-black text-slate-800">Acción requerida: planes de mejoramiento pendientes</p>
+                            <p class="text-xs text-slate-500 mt-1">Tienes <b>{{ $planesPendientesEvaluador->count() }}</b> evaluación(es) con plan de mejoramiento sin concertar ni firmar. Debes resolverlas antes de cerrar el ciclo:</p>
+                            <div class="mt-2 space-y-1.5">
+                                @foreach($planesPendientesEvaluador as $pp)
+                                <div class="flex items-center justify-between gap-3 rounded-xl border border-amber-100 bg-amber-50/60 px-3 py-2 text-xs">
+                                    <span class="font-bold text-slate-700">{{ $pp->evaluado_nombres }} {{ $pp->evaluado_apellidos }}</span>
+                                    <span class="text-[10px] font-bold uppercase text-amber-700">{{ $pp->sistema === 'RENDIMIENTO_LABORAL' ? 'RL' : 'AG' }} · {{ $pp->categoria_final }}</span>
+                                </div>
+                                @endforeach
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                @endif
+
+                <div id="bloque-recursos-mios-evaluador" class="panel-card rounded-3xl p-6 hidden">
+                    <div class="flex items-center justify-between gap-3 mb-3">
+                        <div>
+                            <p class="text-xs font-bold uppercase tracking-[0.22em] text-[#00594E]">Recursos</p>
+                            <h3 class="text-lg font-black text-slate-900">Apelaciones por decidir</h3>
+                        </div>
+                        <span id="recursos-mios-contador" class="text-[10px] font-bold rounded-full px-2.5 py-1 bg-slate-100 text-slate-500">0</span>
+                    </div>
+                    <p class="text-xs text-slate-500 mb-4">Como superior jerárquico del evaluador, debes decidir las apelaciones radicadas contra las evaluaciones de tu equipo.</p>
+                    <div id="recursos-mios-lista" class="space-y-2"></div>
+                </div>
+
                 <div class="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
                     <div class="panel-card rounded-3xl p-6 h-fit">
                         <div class="flex items-start justify-between gap-4 mb-4">
@@ -697,114 +902,192 @@
                                 </div>
                             </div>
 
-	                            <div class="my-6 space-y-4">
-	                                <div class="flex items-center justify-between gap-4">
-	                                    <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
-	                                        <span class="material-symbols-outlined text-base">format_list_bulleted</span>
-	                                        Compromisos propuestos
-                                    </h4>
-                                    <div class="text-right">
-                                        <div id="compromisos-suma-peso-evaluador" class="text-sm font-black text-[#00594E]">0% / 80%</div>
-                                        <span id="compromisos-contador-evaluador" class="text-[10px] text-slate-400 font-bold">0 compromisos (mín 7, máx 10)</span>
-                                    </div>
-	                                </div>
-	                                <div id="compromisos-lista-contenedor" class="space-y-3"></div>
-	                            </div>
-
-	                            <div class="my-6 pt-4 border-t border-slate-100 space-y-3">
-	                                <div class="flex items-center justify-between gap-3">
-	                                    <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
-	                                        <span class="material-symbols-outlined text-base">link</span>
-	                                        Evidencias por compromiso
-	                                    </h4>
-	                                    <span id="evidencias-contador-evaluador" class="text-[10px] font-bold rounded-full px-2.5 py-1 bg-slate-100 text-slate-500">0 registradas</span>
-	                                </div>
-	                                <div id="evidencias-lista-evaluador" class="space-y-2"></div>
-	                            </div>
-
-	                            <div id="calificacion-bloque-evaluador" class="my-6 pt-4 border-t border-slate-100 space-y-3 hidden">
-	                                <div class="flex items-center justify-between gap-3">
-	                                    <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
-	                                        <span class="material-symbols-outlined text-base">star</span>
-	                                        Calificación de compromisos
-	                                    </h4>
-	                                </div>
-	                                <p class="text-[10px] text-slate-400 font-semibold">Escala 0-100: Deficiente 0-50 · Bajo 51-70 · Aceptable 71-80 · Alto 81-90 · Muy alto 91-100</p>
-	                                <div class="flex items-center justify-between gap-3">
-	                                    <span id="calificacion-mensaje-evaluador" class="hidden text-xs font-semibold"></span>
-	                                    <button type="button" onclick="guardarCalificacionCompromisos()" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition ml-auto">Guardar calificaciones</button>
-	                                </div>
-	                            </div>
-
-	                            <div id="competencias-bloque-evaluador" class="my-6 pt-4 border-t border-slate-100 space-y-3 hidden">
-	                                <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
-	                                    <span class="material-symbols-outlined text-base">psychology</span>
-	                                    Competencias comportamentales
-	                                </h4>
-	                                <div id="competencias-comunes-evaluador" class="space-y-2"></div>
-	                                <div id="competencias-nivel-evaluador" class="space-y-2"></div>
-	                                <div class="flex items-center justify-between gap-3">
-	                                    <span id="competencias-mensaje-evaluador" class="hidden text-xs font-semibold"></span>
-	                                    <button type="button" onclick="guardarCalificacionCompetencias()" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition ml-auto">Guardar competencias</button>
-	                                </div>
-	                            </div>
-
-	                            <div id="ejes-misionales-bloque-evaluador" class="my-6 pt-4 border-t border-slate-100 space-y-3 hidden">
-	                                <div class="flex items-center justify-between gap-3">
-	                                    <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
-	                                        <span class="material-symbols-outlined text-base">school</span>
-	                                        Ejes misionales
-	                                    </h4>
-	                                </div>
-	                                <p class="text-[10px] text-slate-400 font-semibold">El pliego indica que el evaluador consolida estas notas (recibidas de las instancias externas cuando aplique) y las socializa al evaluado.</p>
-	                                <div id="ejes-misionales-inputs-evaluador" class="space-y-3"></div>
-	                                <div class="flex items-center justify-between gap-3">
-	                                    <span id="ejes-misionales-mensaje-evaluador" class="hidden text-xs font-semibold"></span>
-	                                    <button type="button" id="btn-guardar-ejes-evaluador" onclick="guardarEjesMisionalesEvaluador()" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition ml-auto disabled:opacity-50 disabled:cursor-not-allowed">Guardar ejes misionales</button>
-	                                </div>
-	                            </div>
-
-	                            <div id="resultado-bloque-evaluador" class="my-6 pt-4 border-t border-slate-100 space-y-3 hidden">
-	                                <div class="flex items-center justify-between gap-3">
-	                                    <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
-	                                        <span class="material-symbols-outlined text-base">military_tech</span>
-	                                        Resultado de la evaluación
-	                                    </h4>
-	                                    <div class="flex gap-2">
-	                                        <button type="button" onclick="previsualizarCalculoEvaluador()" class="bg-white border border-slate-200 text-slate-700 px-3 py-2 rounded-xl text-xs font-bold hover:border-[#00594E] transition">Ver cálculo</button>
-	                                        <button type="button" id="btn-calcular-nota-final" onclick="calcularNotaFinalEvaluador()" class="bg-[#B5A160] text-white px-3 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition disabled:opacity-50 disabled:cursor-not-allowed">Calcular nota final</button>
-	                                    </div>
-	                                </div>
-	                                <div id="resultado-contenido-evaluador"></div>
-	                            </div>
-
-	                            <div id="compromiso-formulario-evaluador-contenedor" class="bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
-                                <h4 class="text-xs font-bold text-slate-800 uppercase tracking-wide mb-3">Nuevo Compromiso</h4>
-                                <form id="form-nuevo-compromiso-evaluador" onsubmit="agregarCompromisoEvaluador(event)" class="space-y-3">
-                                    <div>
-                                        <label class="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Descripción del Compromiso</label>
-                                        <textarea id="comp-descripcion-evaluador" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" rows="2" placeholder="Describa el compromiso..." required></textarea>
-                                    </div>
-                                    <div class="grid grid-cols-3 gap-2 items-end">
-                                        <div class="col-span-1">
-                                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Peso (1% - 15%)</label>
-                                            <input type="number" id="comp-peso-evaluador" min="1" max="15" step="0.1" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" required />
-                                        </div>
-                                        <div class="col-span-2">
-                                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Metas de Contribución</label>
-                                            <input type="text" id="comp-metas-evaluador" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Separadas por comas (ej: PDI, Manual)" required />
-                                        </div>
-                                    </div>
-                                    <button type="submit" class="w-full bg-[#00594E] text-white py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Agregar Compromiso</button>
-                                </form>
+                            <div class="flex gap-2 flex-wrap mt-4">
+                                <button type="button" id="tabbtn-evaluador-compromisos" onclick="cambiarTabEvaluador('compromisos')" class="evaluador-tab-btn active">Compromisos</button>
+                                <button type="button" id="tabbtn-evaluador-competencias" onclick="cambiarTabEvaluador('competencias')" class="evaluador-tab-btn">Competencias</button>
+                                <button type="button" id="tabbtn-evaluador-ejes" onclick="cambiarTabEvaluador('ejes')" class="evaluador-tab-btn hidden">Ejes misionales</button>
+                                <button type="button" id="tabbtn-evaluador-recursos" onclick="cambiarTabEvaluador('recursos')" class="evaluador-tab-btn">Recursos</button>
                             </div>
 
-                            <div class="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between gap-4">
-                                <div class="text-xs text-slate-500 leading-tight">Podrás firmar cuando tengas de 7 a 10 compromisos que sumen exactamente el porcentaje objetivo.</div>
-                                <form id="form-firmar-evaluacion" method="POST" action="" onsubmit="return confirm('¿Confirmas firmar la concertación? Una vez que ambas partes firmen, los compromisos y sus porcentajes quedarán bloqueados y no se podrán editar.')">
-                                    @csrf
-                                    <button type="submit" id="btn-firmar-evaluador" class="bg-[#00594E] text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:brightness-110 transition disabled:opacity-50" disabled>Firmar concertación</button>
+                            <div id="tab-evaluador-compromisos" class="evaluador-tab-panel">
+                                <div class="my-6 space-y-4">
+                                    <div class="flex items-center justify-between gap-4">
+                                        <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                            <span class="material-symbols-outlined text-base">format_list_bulleted</span>
+                                            Compromisos propuestos
+                                </h4>
+                                <div class="text-right">
+                                <div id="compromisos-suma-peso-evaluador" class="text-sm font-black text-[#00594E]">0% / 80%</div>
+                                <span id="compromisos-contador-evaluador" class="text-[10px] text-slate-400 font-bold">0 compromisos (mín 7, máx 10)</span>
+                                </div>
+                                    </div>
+                                    <div id="compromisos-lista-contenedor" class="space-y-3"></div>
+                                </div>
+
+                                <div class="my-6 pt-4 border-t border-slate-100 space-y-3">
+                                    <div class="flex items-center justify-between gap-3">
+                                        <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                            <span class="material-symbols-outlined text-base">link</span>
+                                            Evidencias por compromiso
+                                        </h4>
+                                        <span id="evidencias-contador-evaluador" class="text-[10px] font-bold rounded-full px-2.5 py-1 bg-slate-100 text-slate-500">0 registradas</span>
+                                    </div>
+                                    <div id="evidencias-lista-evaluador" class="space-y-2"></div>
+                                </div>
+
+                                <div id="calificacion-bloque-evaluador" class="my-6 pt-4 border-t border-slate-100 space-y-3 hidden">
+                                    <div class="flex items-center justify-between gap-3">
+                                        <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                            <span class="material-symbols-outlined text-base">star</span>
+                                            Calificación de compromisos
+                                        </h4>
+                                    </div>
+                                    <p class="text-[10px] text-slate-400 font-semibold">Escala 0-100: Deficiente 0-50 · Bajo 51-70 · Aceptable 71-80 · Alto 81-90 · Muy alto 91-100</p>
+                                    <div class="flex items-center justify-between gap-3">
+                                        <span id="calificacion-mensaje-evaluador" class="hidden text-xs font-semibold"></span>
+                                        <button type="button" onclick="guardarCalificacionCompromisos()" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition ml-auto">Guardar calificaciones</button>
+                                    </div>
+                                </div>
+
+                                <div id="compromiso-formulario-evaluador-contenedor" class="bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
+                                <h4 class="text-xs font-bold text-slate-800 uppercase tracking-wide mb-3">Nuevo Compromiso</h4>
+                                <form id="form-nuevo-compromiso-evaluador" onsubmit="agregarCompromisoEvaluador(event)" class="space-y-3">
+                                <div>
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Descripción del Compromiso</label>
+                                <textarea id="comp-descripcion-evaluador" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" rows="2" placeholder="Describa el compromiso..." required></textarea>
+                                </div>
+                                <div class="grid grid-cols-3 gap-2 items-end">
+                                <div class="col-span-1">
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Peso (1% - 15%)</label>
+                                <input type="number" id="comp-peso-evaluador" min="1" max="15" step="0.1" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" required />
+                                </div>
+                                <div class="col-span-2">
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Metas de Contribución</label>
+                                <input type="text" id="comp-metas-evaluador" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Separadas por comas (ej: PDI, Manual)" required />
+                                </div>
+                                </div>
+                                <button type="submit" class="w-full bg-[#00594E] text-white py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Agregar Compromiso</button>
                                 </form>
+                                </div>
+
+                                <div class="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between gap-4">
+                                <div class="text-xs text-slate-500 leading-tight">Podrás firmar cuando tengas de 7 a 10 compromisos que sumen exactamente el porcentaje objetivo.</div>
+                                <div id="renuencia-seccion-evaluador" class="hidden w-full">
+                                <label class="flex items-center gap-2.5 text-xs text-slate-600 cursor-pointer rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                                <input type="checkbox" id="chk-renuncia-evaluador" onchange="toggleRenuencia('evaluador')" class="rounded border-amber-300 text-amber-600 focus:ring-amber-500" />
+                                <span class="font-semibold">Renuncio a firmar la concertación</span>
+                                </label>
+                                <div id="testigos-evaluador" class="hidden mt-3 rounded-xl border border-slate-100 bg-slate-50/50 p-4 space-y-3">
+                                <p class="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Testigos de la renuencia</p>
+                                <div class="grid grid-cols-2 gap-2">
+                                <input type="text" id="testigo1-nombre-evaluador" placeholder="Nombre del testigo 1" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" />
+                                <input type="text" id="testigo1-cargo-evaluador" placeholder="Cargo del testigo 1" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" />
+                                </div>
+                                <div class="grid grid-cols-2 gap-2">
+                                <input type="text" id="testigo2-nombre-evaluador" placeholder="Nombre del testigo 2 (opcional)" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" />
+                                <input type="text" id="testigo2-cargo-evaluador" placeholder="Cargo del testigo 2 (opcional)" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" />
+                                </div>
+                                </div>
+                                </div>
+                                <form id="form-firmar-evaluacion" method="POST" action="" onsubmit="firmarConcertacion(event, 'evaluador')" class="shrink-0">
+                                @csrf
+                                <button type="submit" id="btn-firmar-evaluador" class="bg-[#00594E] text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:brightness-110 transition disabled:opacity-50" disabled>Firmar concertación</button>
+                                </form>
+                                </div>
+
+                                <div id="firmas-concertacion-evaluador" class="mt-3 hidden"></div>
+                            </div>
+
+                            <div id="tab-evaluador-competencias" class="evaluador-tab-panel hidden">
+                                <p id="aviso-competencias-evaluador" class="mt-4 rounded-xl border border-dashed border-slate-200 bg-white p-4 text-xs text-slate-500 text-center">Las competencias se habilitarán cuando la concertación esté firmada y congelada.</p>
+                                <div id="competencias-bloque-evaluador" class="my-6 pt-4 border-t border-slate-100 space-y-3 hidden">
+                                    <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                        <span class="material-symbols-outlined text-base">psychology</span>
+                                        Competencias comportamentales
+                                    </h4>
+                                    <div id="competencias-comunes-evaluador" class="space-y-2"></div>
+                                    <div id="competencias-nivel-evaluador" class="space-y-2"></div>
+                                    <div class="flex items-center justify-between gap-3">
+                                        <span id="competencias-mensaje-evaluador" class="hidden text-xs font-semibold"></span>
+                                        <button type="button" onclick="guardarCalificacionCompetencias()" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition ml-auto">Guardar competencias</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="tab-evaluador-ejes" class="evaluador-tab-panel hidden">
+                                <p id="aviso-ejes-evaluador" class="mt-4 rounded-xl border border-dashed border-slate-200 bg-white p-4 text-xs text-slate-500 text-center">Los ejes misionales se habilitarán cuando la concertación esté firmada y congelada.</p>
+                                <div id="ejes-misionales-bloque-evaluador" class="my-6 pt-4 border-t border-slate-100 space-y-3 hidden">
+                                    <div class="flex items-center justify-between gap-3">
+                                        <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                            <span class="material-symbols-outlined text-base">school</span>
+                                            Ejes misionales
+                                        </h4>
+                                    </div>
+                                    <p class="text-[10px] text-slate-400 font-semibold">El pliego indica que el evaluador consolida estas notas (recibidas de las instancias externas cuando aplique) y las socializa al evaluado.</p>
+                                    <div id="ejes-misionales-inputs-evaluador" class="space-y-3"></div>
+                                    <div class="flex items-center justify-between gap-3">
+                                        <span id="ejes-misionales-mensaje-evaluador" class="hidden text-xs font-semibold"></span>
+                                        <button type="button" id="btn-guardar-ejes-evaluador" onclick="guardarEjesMisionalesEvaluador()" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition ml-auto disabled:opacity-50 disabled:cursor-not-allowed">Guardar ejes misionales</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="tab-evaluador-recursos" class="evaluador-tab-panel hidden">
+                                <!-- S6: Recursos recibidos (reposición dirigida al evaluador) -->
+                                <div id="bloque-recursos-evaluador" class="my-6 pt-4 border-t border-slate-100 space-y-3 hidden">
+                                    <div class="flex items-center justify-between gap-3">
+                                        <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                            <span class="material-symbols-outlined text-base">gavel</span>
+                                            Recursos recibidos
+                                        </h4>
+                                        <span id="recursos-contador-evaluador" class="text-[10px] font-bold rounded-full px-2.5 py-1 bg-slate-100 text-slate-500">0</span>
+                                    </div>
+                                    <div id="recursos-lista-evaluador" class="space-y-2"></div>
+                                </div>
+                            </div>
+
+                            <div id="resultado-bloque-evaluador" class="my-6 pt-4 border-t border-slate-100 space-y-3 hidden">
+                                <div class="flex items-center justify-between gap-3">
+                                    <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                        <span class="material-symbols-outlined text-base">military_tech</span>
+                                        Resultado de la evaluación
+                                    </h4>
+                                    <div class="flex gap-2">
+                                        <button type="button" onclick="previsualizarCalculoEvaluador()" class="bg-white border border-slate-200 text-slate-700 px-3 py-2 rounded-xl text-xs font-bold hover:border-[#00594E] transition">Ver cálculo</button>
+                                        <button type="button" id="btn-calcular-nota-final" onclick="calcularNotaFinalEvaluador()" class="bg-[#B5A160] text-white px-3 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition disabled:opacity-50 disabled:cursor-not-allowed">Calcular nota final</button>
+                                    </div>
+                                </div>
+                                <div id="resultado-contenido-evaluador"></div>
+                            </div>
+
+                            <!-- S6: Plan de mejoramiento condicionado (evaluador) -->
+                            <div id="bloque-plan-mejoramiento-evaluador" class="my-6 pt-4 border-t border-slate-100 space-y-3 hidden">
+                                <div class="flex items-center justify-between gap-3">
+                                    <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                        <span class="material-symbols-outlined text-base">trending_up</span>
+                                        Plan de mejoramiento
+                                    </h4>
+                                    <span id="plan-estado-evaluador" class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-amber-50 text-amber-700 hidden">Pendiente</span>
+                                </div>
+                                <div id="plan-aviso-evaluador" class="hidden rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] font-semibold text-amber-700 flex items-center gap-2">
+                                    <span class="material-symbols-outlined text-base">warning</span>
+                                    <span>Esta evaluación requiere plan de mejoramiento. Tu flujo queda bloqueado hasta concertarlo y firmarlo.</span>
+                                </div>
+                                <form id="form-plan-mejoramiento-evaluador" onsubmit="guardarPlanMejoramiento(event)" class="grid gap-3 rounded-2xl border border-slate-100 bg-slate-50/50 p-4">
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Temas del plan de mejoramiento</label>
+                                        <textarea id="plan-temas-evaluador" rows="4" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Describe los temas, acciones, metas y plazos del plan de mejoramiento..." required></textarea>
+                                    </div>
+                                    <div class="flex items-center justify-between gap-3">
+                                        <span id="plan-mensaje-evaluador" class="hidden text-xs font-semibold"></span>
+                                        <button type="submit" id="btn-guardar-plan-evaluador" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition ml-auto">Guardar plan</button>
+                                    </div>
+                                </form>
+                                <div class="flex items-center justify-between gap-3">
+                                    <p class="text-xs text-slate-500 leading-tight">Cuando el plan esté guardado, el evaluado podrá revisarlo y firmarlo.</p>
+                                    <button type="button" id="btn-firmar-plan-evaluador" onclick="firmarPlanMejoramiento('evaluador')" class="bg-[#B5A160] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition hidden">Firmar plan de mejoramiento</button>
+                                </div>
+                                <div id="plan-firmas-evaluador" class="grid sm:grid-cols-2 gap-2 text-xs"></div>
                             </div>
                         </div>
 
@@ -853,88 +1136,208 @@
                                 <div id="compromisos-contador-evaluado" class="text-[10px] text-slate-400 font-bold mt-0.5">0 compromisos (mín 7, máx 10)</div>
                             </div>
                         </div>
-                        <div id="ejes-misionales-seleccion-evaluado" class="mt-4 bg-slate-50/50 p-4 rounded-2xl border border-slate-100 hidden">
-                            <h4 class="text-xs font-bold text-slate-800 uppercase tracking-wide mb-2">Ejes misionales adicionales</h4>
-                            <p class="text-[10px] text-slate-500 mb-3">Docencia es el eje base. Estos son los ejes definidos al abrir la evaluación.</p>
-                            <div class="flex flex-col gap-2">
-                                <label class="flex items-center gap-2.5 text-xs text-slate-600 cursor-not-allowed">
-                                    <input type="checkbox" checked disabled class="rounded border-slate-300 text-[#00594E] focus:ring-[#00594E]" />
-                                    <span class="font-semibold text-slate-800">Docencia (eje base)</span>
-                                </label>
-                                <label class="flex items-center gap-2.5 text-xs text-slate-600 cursor-not-allowed">
-                                    <input type="checkbox" id="chk-eje-investigacion" disabled class="rounded border-slate-300 text-[#00594E] focus:ring-[#00594E]" />
-                                    <span class="font-semibold text-slate-800">Horas de investigación</span>
-                                </label>
-                                <label class="flex items-center gap-2.5 text-xs text-slate-600 cursor-not-allowed">
-                                    <input type="checkbox" id="chk-eje-proyeccion" disabled class="rounded border-slate-300 text-[#00594E] focus:ring-[#00594E]" />
-                                    <span class="font-semibold text-slate-800">Proyección social</span>
-                                </label>
+
+                        <!-- S6: Tabs del evaluado -->
+                        <div class="mt-5 flex flex-wrap gap-2">
+                            <button type="button" id="tabbtn-evaluado-compromisos" onclick="cambiarTabEvaluado('compromisos')" class="evaluado-tab-btn active">Compromisos</button>
+                            <button type="button" id="tabbtn-evaluado-competencias" onclick="cambiarTabEvaluado('competencias')" class="evaluado-tab-btn">Competencias</button>
+                            <button type="button" id="tabbtn-evaluado-ejes" onclick="cambiarTabEvaluado('ejes')" class="evaluado-tab-btn hidden">Ejes misionales</button>
+                            <button type="button" id="tabbtn-evaluado-recursos" onclick="cambiarTabEvaluado('recursos')" class="evaluado-tab-btn">Recursos</button>
+                        </div>
+
+                        <!-- Tab: Compromisos -->
+                        <div id="tab-evaluado-compromisos" class="evaluado-tab-panel">
+                            <div id="ejes-misionales-seleccion-evaluado" class="mt-4 bg-slate-50/50 p-4 rounded-2xl border border-slate-100 hidden">
+                                <h4 class="text-xs font-bold text-slate-800 uppercase tracking-wide mb-2">Ejes misionales adicionales</h4>
+                                <p class="text-[10px] text-slate-500 mb-3">Docencia es el eje base. Estos son los ejes definidos al abrir la evaluación.</p>
+                                <div class="flex flex-col gap-2">
+                                    <label class="flex items-center gap-2.5 text-xs text-slate-600 cursor-not-allowed">
+                                        <input type="checkbox" checked disabled class="rounded border-slate-300 text-[#00594E] focus:ring-[#00594E]" />
+                                        <span class="font-semibold text-slate-800">Docencia (eje base)</span>
+                                    </label>
+                                    <label class="flex items-center gap-2.5 text-xs text-slate-600 cursor-not-allowed">
+                                        <input type="checkbox" id="chk-eje-investigacion" disabled class="rounded border-slate-300 text-[#00594E] focus:ring-[#00594E]" />
+                                        <span class="font-semibold text-slate-800">Horas de investigación</span>
+                                    </label>
+                                    <label class="flex items-center gap-2.5 text-xs text-slate-600 cursor-not-allowed">
+                                        <input type="checkbox" id="chk-eje-proyeccion" disabled class="rounded border-slate-300 text-[#00594E] focus:ring-[#00594E]" />
+                                        <span class="font-semibold text-slate-800">Proyección social</span>
+                                    </label>
+                                </div>
                             </div>
-                        </div>
-                        <div class="my-6 space-y-4">
-                            <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
-                                <span class="material-symbols-outlined text-base">format_list_bulleted</span>
-                                Compromisos Propuestos por tu Evaluador
-                            </h4>
-                            <div id="compromisos-lista-evaluado" class="space-y-3"></div>
-                        </div>
-                        <div class="mt-6 pt-4 border-t border-slate-100 space-y-4">
-                            <div class="flex items-center justify-between gap-3">
+                            <div class="my-6 space-y-4">
                                 <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
-                                    <span class="material-symbols-outlined text-base">link</span>
-                                    Evidencias
+                                    <span class="material-symbols-outlined text-base">format_list_bulleted</span>
+                                    Compromisos Propuestos por tu Evaluador
                                 </h4>
-                                <span id="evidencias-contador-evaluado" class="text-[10px] font-bold rounded-full px-2.5 py-1 bg-slate-100 text-slate-500">0 registradas</span>
+                                <div id="compromisos-lista-evaluado" class="space-y-3"></div>
                             </div>
-                            <div id="evidencia-bloqueada-evaluado" class="hidden rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs font-semibold text-amber-700">
-                                Podrás registrar evidencias cuando el evaluador y tú hayan firmado la concertación.
+                            <div class="mt-6 pt-4 border-t border-slate-100 space-y-4">
+                                <div class="flex items-center justify-between gap-3">
+                                    <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                        <span class="material-symbols-outlined text-base">link</span>
+                                        Evidencias
+                                    </h4>
+                                    <span id="evidencias-contador-evaluado" class="text-[10px] font-bold rounded-full px-2.5 py-1 bg-slate-100 text-slate-500">0 registradas</span>
+                                </div>
+                                <div id="evidencia-bloqueada-evaluado" class="hidden rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs font-semibold text-amber-700">
+                                    Podrás registrar evidencias cuando el evaluador y tú hayan firmado la concertación.
+                                </div>
+                                <form id="form-evidencia-evaluado" class="grid gap-3 rounded-2xl border border-slate-100 bg-slate-50/50 p-4" onsubmit="guardarEvidenciaEvaluado(event)">
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Componente</label>
+                                        <select name="componente" id="evidencia-componente-evaluado" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" onchange="toggleEvidenciaCompromisoSelect()">
+                                            <option value="B">B - Compromisos laborales</option>
+                                            <option value="C">C - Competencias comunes</option>
+                                            <option value="D">D - Competencias nivel jerárquico</option>
+                                            <option value="F">F - Plan de formación y capacitación</option>
+                                        </select>
+                                    </div>
+                                    <div id="evidencia-compromiso-contenedor-evaluado">
+                                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Compromiso</label>
+                                        <select name="id_compromiso" id="evidencia-compromiso-evaluado" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" required>
+                                            <option value="">Selecciona un compromiso</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Descripción</label>
+                                        <input type="text" name="descripcion" id="evidencia-descripcion-evaluado" maxlength="500" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Ej: Informe mensual, acta o soporte de actividad">
+                                    </div>
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">URL de evidencia</label>
+                                        <div class="flex flex-col sm:flex-row gap-2">
+                                            <input type="url" name="url" id="evidencia-url-evaluado" maxlength="1000" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="https://..." required>
+                                            <button type="submit" id="btn-guardar-evidencia-evaluado" class="bg-[#00594E] text-white px-4 py-2.5 rounded-xl text-xs font-bold hover:brightness-110 transition whitespace-nowrap">Guardar URL</button>
+                                        </div>
+                                    </div>
+                                    <div id="evidencia-mensaje-evaluado" class="hidden text-xs font-semibold"></div>
+                                </form>
+                                <div id="evidencias-lista-evaluado" class="space-y-2"></div>
                             </div>
-                            <form id="form-evidencia-evaluado" class="grid gap-3 rounded-2xl border border-slate-100 bg-slate-50/50 p-4" onsubmit="guardarEvidenciaEvaluado(event)">
-                                <div>
-                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Componente</label>
-                                    <select name="componente" id="evidencia-componente-evaluado" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" onchange="toggleEvidenciaCompromisoSelect()">
-                                        <option value="B">B - Compromisos laborales</option>
-                                        <option value="C">C - Competencias comunes</option>
-                                        <option value="D">D - Competencias nivel jerárquico</option>
-                                        <option value="F">F - Plan de formación y capacitación</option>
-                                    </select>
+
+                            <div id="resultado-bloque-evaluado" class="mt-6 pt-4 border-t border-slate-100 space-y-3 hidden">
+                                <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                    <span class="material-symbols-outlined text-base">military_tech</span>
+                                    Resultado de la evaluación
+                                </h4>
+                                <div id="resultado-contenido-evaluado"></div>
+                            </div>
+
+                            <div id="firma-evaluado-seccion" class="mt-6 pt-4 border-t border-slate-100 space-y-3">
+                                <div class="flex items-center justify-between gap-4">
+                                    <div class="text-xs text-slate-500 leading-tight">Podrás firmar cuando el evaluador haya firmado la concertación.</div>
+                                    <form id="form-firmar-evaluado" method="POST" action="" onsubmit="firmarConcertacion(event, 'evaluado')" class="shrink-0">
+                                        @csrf
+                                        <button type="submit" id="btn-firmar-evaluado" class="bg-[#00594E] text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:brightness-110 transition disabled:opacity-50" disabled>Firmar Concertación</button>
+                                    </form>
                                 </div>
-                                <div id="evidencia-compromiso-contenedor-evaluado">
-                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Compromiso</label>
-                                    <select name="id_compromiso" id="evidencia-compromiso-evaluado" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" required>
-                                        <option value="">Selecciona un compromiso</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Descripción</label>
-                                    <input type="text" name="descripcion" id="evidencia-descripcion-evaluado" maxlength="500" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Ej: Informe mensual, acta o soporte de actividad">
-                                </div>
-                                <div>
-                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">URL de evidencia</label>
-                                    <div class="flex flex-col sm:flex-row gap-2">
-                                        <input type="url" name="url" id="evidencia-url-evaluado" maxlength="1000" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="https://..." required>
-                                        <button type="submit" id="btn-guardar-evidencia-evaluado" class="bg-[#00594E] text-white px-4 py-2.5 rounded-xl text-xs font-bold hover:brightness-110 transition whitespace-nowrap">Guardar URL</button>
+                                <div id="renuencia-seccion-evaluado" class="hidden">
+                                    <label class="flex items-center gap-2.5 text-xs text-slate-600 cursor-pointer rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                                        <input type="checkbox" id="chk-renuncia-evaluado" onchange="toggleRenuencia('evaluado')" class="rounded border-amber-300 text-amber-600 focus:ring-amber-500" />
+                                        <span class="font-semibold">Renuncio a firmar la concertación</span>
+                                    </label>
+                                    <div id="testigos-evaluado" class="hidden mt-3 rounded-xl border border-slate-100 bg-slate-50/50 p-4 space-y-3">
+                                        <p class="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Testigos de la renuencia</p>
+                                        <div class="grid grid-cols-2 gap-2">
+                                            <input type="text" id="testigo1-nombre-evaluado" placeholder="Nombre del testigo 1" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" />
+                                            <input type="text" id="testigo1-cargo-evaluado" placeholder="Cargo del testigo 1" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" />
+                                        </div>
+                                        <div class="grid grid-cols-2 gap-2">
+                                            <input type="text" id="testigo2-nombre-evaluado" placeholder="Nombre del testigo 2 (opcional)" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" />
+                                            <input type="text" id="testigo2-cargo-evaluado" placeholder="Cargo del testigo 2 (opcional)" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" />
+                                        </div>
                                     </div>
                                 </div>
-                                <div id="evidencia-mensaje-evaluado" class="hidden text-xs font-semibold"></div>
-                            </form>
-                            <div id="evidencias-lista-evaluado" class="space-y-2"></div>
+
+                                <div id="firmas-concertacion-evaluado" class="mt-3 hidden"></div>
+                            </div>
+
+                            <!-- S6: Plan de mejoramiento condicionado - evaluado -->
+                            <div id="bloque-plan-mejoramiento-evaluado" class="mt-6 pt-4 border-t border-slate-100 space-y-3 hidden">
+                                <div class="flex items-center justify-between gap-3">
+                                    <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                        <span class="material-symbols-outlined text-base">trending_up</span>
+                                        Plan de mejoramiento
+                                    </h4>
+                                    <span id="plan-estado-evaluado" class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-amber-50 text-amber-700 hidden">Pendiente</span>
+                                </div>
+                                <div id="plan-aviso-evaluado" class="hidden rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] font-semibold text-amber-700 flex items-center gap-2">
+                                    <span class="material-symbols-outlined text-base">warning</span>
+                                    <span>De acuerdo con tu calificación, debes concertar y firmar un plan de mejoramiento con tu evaluador.</span>
+                                </div>
+                                <div id="plan-contenido-evaluado"></div>
+                                <div class="flex items-center justify-between gap-3">
+                                    <p id="plan-firmas-evaluado" class="text-xs text-slate-500"></p>
+                                    <button type="button" id="btn-firmar-plan-evaluado" onclick="firmarPlanMejoramiento('evaluado')" class="bg-[#B5A160] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition hidden">Firmar plan de mejoramiento</button>
+                                </div>
+                            </div>
                         </div>
 
-                        <div id="resultado-bloque-evaluado" class="mt-6 pt-4 border-t border-slate-100 space-y-3 hidden">
-                            <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
-                                <span class="material-symbols-outlined text-base">military_tech</span>
-                                Resultado de la evaluación
-                            </h4>
-                            <div id="resultado-contenido-evaluado"></div>
+                        <!-- Tab: Competencias -->
+                        <div id="tab-evaluado-competencias" class="evaluado-tab-panel hidden mt-6">
+                            <div class="flex items-center justify-between gap-3">
+                                <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                    <span class="material-symbols-outlined text-base">psychology</span>
+                                    Competencias evaluadas
+                                </h4>
+                            </div>
+                            <p class="text-[10px] text-slate-400 font-semibold mt-1">Calificaciones de las competencias comunes y de nivel jerárquico registradas por tu evaluador.</p>
+                            <div id="competencias-lista-evaluado" class="mt-4 space-y-4"></div>
                         </div>
 
-                        <div id="firma-evaluado-seccion" class="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between gap-4">
-                            <div class="text-xs text-slate-500 leading-tight">Podrás firmar cuando el evaluador haya firmado la concertación.</div>
-                            <form id="form-firmar-evaluado" method="POST" action="" onsubmit="return confirm('¿Confirmas firmar la concertación? Una vez que ambas partes firmen, los compromisos y sus porcentajes quedarán bloqueados y no se podrán editar.')">
-                                @csrf
-                                <button type="submit" id="btn-firmar-evaluado" class="bg-[#00594E] text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:brightness-110 transition disabled:opacity-50" disabled>Firmar Concertación</button>
-                            </form>
+                        <!-- Tab: Ejes misionales -->
+                        <div id="tab-evaluado-ejes" class="evaluado-tab-panel hidden mt-6">
+                            <div class="flex items-center justify-between gap-3">
+                                <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                    <span class="material-symbols-outlined text-base">donut_small</span>
+                                    Calificaciones de ejes misionales
+                                </h4>
+                            </div>
+                            <p class="text-[10px] text-slate-400 font-semibold mt-1">Docencia (eje base), investigación y proyección social registradas por la instancia externa.</p>
+                            <div id="ejes-lista-evaluado" class="mt-4 space-y-3"></div>
+                        </div>
+
+                        <!-- Tab: Recursos -->
+                        <div id="tab-evaluado-recursos" class="evaluado-tab-panel hidden mt-6">
+                            <!-- S6: Recursos en línea (reposición / apelación) - evaluado -->
+                            <div id="bloque-recursos-evaluado" class="space-y-3">
+                                <div class="flex items-center justify-between gap-3">
+                                    <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                        <span class="material-symbols-outlined text-base">gavel</span>
+                                        Recursos: reposición y apelación
+                                    </h4>
+                                    <span id="recursos-contador-evaluado" class="text-[10px] font-bold rounded-full px-2.5 py-1 bg-slate-100 text-slate-500">0</span>
+                                </div>
+                                <p class="text-[10px] text-slate-400 font-semibold">Reposición: revisa el mismo evaluador. Apelación: conoce el superior jerárquico del evaluador (o Talento Humano).</p>
+                                <div id="aviso-recursos-no-calificada" class="hidden rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] font-semibold text-amber-700 flex items-center gap-2">
+                                    <span class="material-symbols-outlined text-base">info</span>
+                                    <span>Podrás radicar recursos cuando la evaluación haya sido calificada.</span>
+                                </div>
+                                <form id="form-recurso-evaluado" onsubmit="radicarRecurso(event)" class="grid gap-3 rounded-2xl border border-slate-100 bg-slate-50/50 p-4">
+                                    <div class="grid sm:grid-cols-2 gap-3">
+                                        <div>
+                                            <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Tipo de recurso</label>
+                                            <select name="tipo_recurso" id="recurso-tipo-evaluado" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]">
+                                                <option value="REPOSICION">Reposición</option>
+                                                <option value="APELACION">Apelación</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Número de folios</label>
+                                            <input type="number" name="numero_folios" id="recurso-folios-evaluado" min="1" max="200" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" required />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Motivación del recurso</label>
+                                        <textarea name="motivacion" id="recurso-motivacion-evaluado" rows="3" maxlength="3000" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Argumentos y hechos que sustentan el recurso..." required></textarea>
+                                    </div>
+                                    <div class="flex items-center justify-between gap-3">
+                                        <span id="recurso-mensaje-evaluado" class="hidden text-xs font-semibold"></span>
+                                        <button type="submit" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition ml-auto">Radicar recurso</button>
+                                    </div>
+                                </form>
+                                <div id="recursos-lista-evaluado" class="space-y-2"></div>
+                            </div>
                         </div>
                     </div>
 
@@ -1034,6 +1437,7 @@
     let selectedEvaluacionId = null;
     let selectedEvaluacionData = null;
     let selectedEvaluacionEjes = {};
+    let selectedPlanData = null;
     const periodosDisponibles = @js($periodos->map(fn ($p) => [
         'id_periodo' => $p->id_periodo,
         'sistema' => $p->sistema,
@@ -1410,6 +1814,11 @@
         if (axesView) axesView.classList.add('hidden');
         if (chkInv) chkInv.checked = false;
         if (chkProj) chkProj.checked = false;
+        const tabBtnEjes = document.getElementById('tabbtn-evaluado-ejes');
+        if (tabBtnEjes) tabBtnEjes.classList.add('hidden');
+        const tabBtnCompromisos = document.getElementById('tabbtn-evaluado-compromisos');
+        if (tabBtnCompromisos) tabBtnCompromisos.classList.add('active');
+        cambiarTabEvaluado('compromisos');
         fetch(`/evaluaciones/${ev.id_evaluacion}/ejes`)
             .then(res => res.json())
             .then(ejes => {
@@ -1419,11 +1828,115 @@
                     if (chkInv) chkInv.checked = !!ejes.investigacion;
                     if (chkProj) chkProj.checked = !!ejes.proyeccion_social;
                 }
+                if (aplica && tabBtnEjes) tabBtnEjes.classList.remove('hidden');
                 cargarCompromisosEvaluado(ev);
             })
             .catch(() => cargarCompromisosEvaluado(ev));
+        cargarCompetenciasEvaluado();
+        cargarEjesEvaluado(ev);
+        reiniciarRenuencia('evaluado');
+        cargarRecursosEvaluado(ev);
+        cargarPlanMejoramientoEvaluado(ev);
         document.querySelectorAll('.evaluacion-card').forEach(el => el.classList.remove('ring-2', 'ring-[#00594E]'));
         if (card) card.classList.add('ring-2', 'ring-[#00594E]');
+    }
+
+    function cambiarTabEvaluado(tab) {
+        const tabs = ['compromisos', 'competencias', 'ejes', 'recursos'];
+        tabs.forEach(t => {
+            const panel = document.getElementById(`tab-evaluado-${t}`);
+            if (panel) panel.classList.toggle('hidden', t !== tab);
+            const btn = document.getElementById(`tabbtn-evaluado-${t}`);
+            if (btn) btn.classList.toggle('active', t === tab);
+        });
+    }
+
+    function cambiarTabEvaluador(tab) {
+        const tabs = ['compromisos', 'competencias', 'ejes', 'recursos'];
+        tabs.forEach(t => {
+            const panel = document.getElementById(`tab-evaluador-${t}`);
+            if (panel) panel.classList.toggle('hidden', t !== tab);
+            const btn = document.getElementById(`tabbtn-evaluador-${t}`);
+            if (btn) btn.classList.toggle('active', t === tab);
+        });
+    }
+
+    function cargarCompetenciasEvaluado() {
+        if (!selectedEvaluacionId) return;
+        const contenedor = document.getElementById('competencias-lista-evaluado');
+        if (!contenedor) return;
+        contenedor.innerHTML = '<div class="text-xs text-slate-400">Cargando competencias...</div>';
+        fetch(`/evaluaciones/${selectedEvaluacionId}/competencias`)
+            .then(res => res.json())
+            .then(payload => {
+                const competencias = payload.competencias || [];
+                if (!competencias.length) {
+                    contenedor.innerHTML = '<div class="rounded-xl border border-dashed border-slate-200 bg-white p-4 text-xs text-slate-500 text-center">El evaluador aún no ha calificado competencias.</div>';
+                    return;
+                }
+                const comun = competencias.filter(c => c.tipo === 'COMUN');
+                const nivel = competencias.filter(c => c.tipo === 'NIVEL_JERARQUICO');
+                const renderGrupo = (titulo, items, color) => {
+                    if (!items.length) return '';
+                    return `
+                        <div class="rounded-2xl border border-slate-100 bg-slate-50/60 p-4 space-y-2">
+                            <p class="text-[10px] font-black uppercase tracking-wide ${color}">${titulo}</p>
+                            ${items.map(c => `
+                                <div class="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-white p-3">
+                                    <div class="min-w-0">
+                                        <p class="text-xs font-bold text-slate-800">${escapeHtml(c.nombre_competencia)}</p>
+                                    </div>
+                                    <span class="text-sm font-black text-[#00594E] shrink-0">${c.calificacion_definitiva ?? '-'}</span>
+                                </div>
+                            `).join('')}
+                        </div>`;
+                };
+                contenedor.innerHTML = renderGrupo('Competencias comunes', comun, 'text-[#00594E]')
+                    + renderGrupo('Competencias de nivel jerárquico', nivel, 'text-[#B5A160]');
+            })
+            .catch(() => {
+                contenedor.innerHTML = '<div class="text-xs text-slate-400">No se pudieron cargar las competencias.</div>';
+            });
+    }
+
+    function cargarEjesEvaluado(ev) {
+        if (!selectedEvaluacionId) return;
+        const contenedor = document.getElementById('ejes-lista-evaluado');
+        if (!contenedor) return;
+        const etiquetas = {
+            DOCENCIA: 'Docencia',
+            INVESTIGACION: 'Horas de investigación',
+            PROYECCION_SOCIAL: 'Proyección social',
+        };
+        fetch(`/evaluaciones/${selectedEvaluacionId}/calculo`)
+            .then(res => res.json())
+            .then(calculo => {
+                const ejesActivos = calculo.ejes_activos || [];
+                const notas = calculo.notas_ejes_raw || {};
+                const pesos = calculo.pesos?.ejes || {};
+                if (!ejesActivos.length) {
+                    contenedor.innerHTML = '<div class="rounded-xl border border-dashed border-slate-200 bg-white p-4 text-xs text-slate-500 text-center">Esta evaluación no tiene ejes misionales activos.</div>';
+                    return;
+                }
+                contenedor.innerHTML = ejesActivos.map(eje => {
+                    const nota = notas[eje];
+                    const peso = pesos[eje];
+                    return `
+                        <div class="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
+                            <div class="flex items-center gap-2.5 min-w-0">
+                                <span class="material-symbols-outlined text-base text-[#00594E]">donut_small</span>
+                                <div class="min-w-0">
+                                    <p class="text-xs font-bold text-slate-800">${etiquetas[eje] || eje}</p>
+                                    <p class="text-[10px] text-slate-400">Peso ${peso ?? '-'}%</p>
+                                </div>
+                            </div>
+                            <span class="text-sm font-black text-[#00594E] shrink-0">${nota !== undefined ? nota : '-'}</span>
+                        </div>`;
+                }).join('');
+            })
+            .catch(() => {
+                contenedor.innerHTML = '<div class="text-xs text-slate-400">No se pudieron cargar los ejes misionales.</div>';
+            });
     }
 
     function abrirConcertacionEvaluador(card, ev) {
@@ -1435,6 +1948,10 @@
         const empty = document.getElementById('panel-concertacion-evaluador-empty');
         if (empty) empty.classList.add('hidden');
         if (panel) panel.classList.remove('hidden');
+
+        const tabBtnEjes = document.getElementById('tabbtn-evaluador-ejes');
+        if (tabBtnEjes) tabBtnEjes.classList.add('hidden');
+        cambiarTabEvaluador('compromisos');
 
         const setText = (id, value) => {
             const node = document.getElementById(id);
@@ -1464,6 +1981,9 @@
                     if (ejeProj && ejes.proyeccion_social) ejeProj.classList.remove('hidden');
                     if (ejeNinguno && !ejes.investigacion && !ejes.proyeccion_social) ejeNinguno.classList.remove('hidden');
                 }
+                if (ev.sistema === 'ACUERDO_GESTION' && ev.aplica_eje_misional && tabBtnEjes) {
+                    tabBtnEjes.classList.remove('hidden');
+                }
                 cargarCompromisosEvaluador(ev, ejes);
             })
             .catch(() => {
@@ -1471,6 +1991,9 @@
                 cargarCompromisosEvaluador(ev, {});
             });
 
+        reiniciarRenuencia('evaluador');
+        cargarRecursosEvaluador(ev);
+        cargarPlanMejoramientoEvaluador(ev);
         document.querySelectorAll('.evaluacion-evaluador-card').forEach(el => el.classList.remove('ring-2', 'ring-[#00594E]'));
         if (card) card.classList.add('ring-2', 'ring-[#00594E]');
     }
@@ -1568,6 +2091,8 @@
                     const bloque = document.getElementById(id);
                     if (bloque) bloque.classList.toggle('hidden', !estado.congelada);
                 });
+                const avisoCompetencias = document.getElementById('aviso-competencias-evaluador');
+                if (avisoCompetencias) avisoCompetencias.classList.toggle('hidden', !!estado.congelada);
                 document.querySelectorAll('#calificacion-bloque-evaluador button, #competencias-bloque-evaluador button, #ejes-misionales-bloque-evaluador button').forEach(btn => {
                     btn.disabled = !!estado.calificada;
                     btn.classList.toggle('opacity-50', !!estado.calificada);
@@ -1585,8 +2110,11 @@
                     btnFirmar.disabled = !okToSign;
                     btnFirmar.innerText = yaFirmado ? 'Firmado' : 'Firmar concertación';
                 }
+                const renSectEvaluador = document.getElementById('renuencia-seccion-evaluador');
+                if (renSectEvaluador) renSectEvaluador.classList.toggle('hidden', !okToSign);
                 const form = document.getElementById('form-firmar-evaluacion');
                 if (form) form.action = `/evaluaciones/${ev.id_evaluacion}/firmar`;
+                renderFirmasConcertacion(estado, 'firmas-concertacion-evaluador');
             })
             .catch(() => {});
     }
@@ -1654,6 +2182,14 @@
             if (Array.isArray(primero) && primero[0]) return primero[0];
         }
         return (payload && payload.message) || fallback;
+    }
+
+    function fetchJson(url, options = {}) {
+        options.headers = Object.assign({}, options.headers, {
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        });
+        return fetch(url, options);
     }
 
     function guardarCalificacionCompromisos() {
@@ -1797,9 +2333,13 @@
         const ejesActivos = calculo?.ejes_activos || [];
         if (!ejesActivos.length) {
             bloque.classList.add('hidden');
+            const avisoEjes = document.getElementById('aviso-ejes-evaluador');
+            if (avisoEjes) avisoEjes.classList.remove('hidden');
             return;
         }
         bloque.classList.remove('hidden');
+        const avisoEjes = document.getElementById('aviso-ejes-evaluador');
+        if (avisoEjes) avisoEjes.classList.add('hidden');
 
         const bloqueada = calculo.estado === 'CALIFICADA';
         const notas = calculo.notas_ejes_raw || {};
@@ -1945,6 +2485,10 @@
                     btnFirmar.disabled = !okToSign;
                     btnFirmar.innerText = locked ? 'Firmado' : 'Firmar Concertación';
                 }
+                const renSectEvaluado = document.getElementById('renuencia-seccion-evaluado');
+                if (renSectEvaluado) renSectEvaluado.classList.toggle('hidden', !okToSign);
+
+                renderFirmasConcertacion(estado, 'firmas-concertacion-evaluado');
 
                 const resultadoBloque = document.getElementById('resultado-bloque-evaluado');
                 if (resultadoBloque) resultadoBloque.classList.toggle('hidden', !concertacionFirmada);
@@ -2385,12 +2929,592 @@
             });
     }
 
+    // --- S6: Renuencia, recursos (reposición/apelación) y plan de mejoramiento ---
+
+    function reiniciarRenuencia(rol) {
+        const chk = document.getElementById(`chk-renuncia-${rol}`);
+        if (chk) chk.checked = false;
+        const testigos = document.getElementById(`testigos-${rol}`);
+        if (testigos) testigos.classList.add('hidden');
+        [`testigo1-nombre-${rol}`, `testigo1-cargo-${rol}`, `testigo2-nombre-${rol}`, `testigo2-cargo-${rol}`].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+    }
+
+    function toggleRenuencia(rol) {
+        const chk = document.getElementById(`chk-renuncia-${rol}`);
+        const testigos = document.getElementById(`testigos-${rol}`);
+        if (chk && testigos) testigos.classList.toggle('hidden', !chk.checked);
+    }
+
+    function firmarConcertacion(e, rol) {
+        const chk = document.getElementById(`chk-renuncia-${rol}`);
+        const renunciando = !!(chk && chk.checked);
+        if (!renunciando) {
+            return confirm('¿Confirmas firmar la concertación? Una vez que ambas partes firmen, los compromisos y sus porcentajes quedarán bloqueados y no se podrán editar.');
+        }
+        e.preventDefault();
+        const nombre = (document.getElementById(`testigo1-nombre-${rol}`)?.value || '').trim();
+        const cargo = (document.getElementById(`testigo1-cargo-${rol}`)?.value || '').trim();
+        const nombre2 = (document.getElementById(`testigo2-nombre-${rol}`)?.value || '').trim();
+        const cargo2 = (document.getElementById(`testigo2-cargo-${rol}`)?.value || '').trim();
+        if (!nombre || !cargo) {
+            alert('Debes registrar al menos un testigo (nombre y cargo) cuando renuncias a firmar.');
+            return;
+        }
+        const form = e.target;
+        form.querySelectorAll('[name^="testigos["], [name="renuncia"]').forEach(el => el.remove());
+        const addHidden = (name, value) => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = name;
+            input.value = value;
+            form.appendChild(input);
+        };
+        addHidden('renuncia', '1');
+        addHidden('testigos[0][nombre]', nombre);
+        addHidden('testigos[0][cargo]', cargo);
+        if (nombre2 || cargo2) {
+            addHidden('testigos[1][nombre]', nombre2);
+            addHidden('testigos[1][cargo]', cargo2);
+        }
+        form.submit();
+    }
+
+    function mostrarMensaje(el, texto, ok) {
+        if (!el) return;
+        el.classList.remove('hidden');
+        el.className = 'text-xs font-semibold ' + (ok ? 'text-[#00594E]' : 'text-red-600');
+        el.innerText = texto;
+    }
+
+    function renderFirmasConcertacion(estado, contenedorId) {
+        const contenedor = document.getElementById(contenedorId);
+        if (!contenedor) return;
+        const testigos = estado.testigos || [];
+        const tarjetaFirma = (rol, label, firmado, renuencia) => {
+            const badge = firmado
+                ? `<span class="text-[10px] font-bold uppercase rounded-full px-2 py-0.5 ${renuencia ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}">${renuencia ? 'Firmó con renuencia' : 'Firmado'}</span>`
+                : `<span class="text-[10px] font-bold uppercase rounded-full px-2 py-0.5 bg-slate-100 text-slate-500">Sin firmar</span>`;
+            const testigosRol = testigos.filter(t => t.tipo_firma === (rol === 'evaluador' ? 'CONCERTACION_EVALUADOR' : 'CONCERTACION_EVALUADO'));
+            const testigosHtml = testigosRol.length
+                ? `<div class="mt-2 pt-2 border-t border-slate-100 space-y-1">
+                     <p class="text-[9px] font-bold uppercase text-slate-400">Testigos</p>
+                     ${testigosRol.map(t => `<p class="text-[10px] text-slate-600">• ${escapeHtml(t.nombre_testigo)} — ${escapeHtml(t.cargo_testigo)}</p>`).join('')}
+                   </div>`
+                : '';
+            return `<div class="rounded-xl border border-slate-100 bg-white p-3">
+                <div class="flex items-center justify-between gap-2">
+                    <p class="text-[10px] font-bold text-slate-500 uppercase">${label}</p>
+                    ${badge}
+                </div>
+                ${testigosHtml}
+            </div>`;
+        };
+        contenedor.innerHTML = `
+            <div class="rounded-2xl border border-slate-100 bg-slate-50/50 p-3 grid sm:grid-cols-2 gap-2">
+                <p class="text-[10px] font-bold uppercase tracking-wide text-slate-500 col-span-full">Estado de la concertación</p>
+                ${tarjetaFirma('evaluador', 'Evaluador', !!estado.evaluador_firmado, !!estado.renuencia_evaluador)}
+                ${tarjetaFirma('evaluado', 'Evaluado', !!estado.evaluado_firmado, !!estado.renuencia_evaluado)}
+            </div>`;
+        contenedor.classList.remove('hidden');
+    }
+
+    function badgeDecisionRecurso(decision) {
+        if (decision === 'PENDIENTE') return '<span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-amber-50 text-amber-700">Pendiente</span>';
+        if (decision === 'APROBADO') return '<span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-emerald-50 text-emerald-700">Aprobado</span>';
+        return '<span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-red-50 text-red-600">Negado</span>';
+    }
+
+    function renderTarjetaRecurso(r, contexto) {
+        const tipo = r.tipo_recurso === 'REPOSICION' ? 'Reposición' : 'Apelación';
+        let acciones = '';
+        if (contexto === 'evaluador' && r.decision === 'PENDIENTE' && (r.tipo_recurso === 'REPOSICION' || r.tipo_recurso === 'APELACION')) {
+            acciones = `
+                <div class="mt-3 grid grid-cols-2 gap-2">
+                    <select id="decision-${r.id_recurso}" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white outline-none focus:border-[#00594E]">
+                        <option value="APROBADO">Aprobado</option>
+                        <option value="NEGADO">Negado</option>
+                    </select>
+                    <button onclick="decidirRecurso(${r.id_recurso})" class="bg-[#00594E] text-white px-3 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Decidir</button>
+                </div>`;
+        }
+        if (contexto === 'admin' && r.decision === 'PENDIENTE') {
+            acciones = `
+                <div class="mt-3 grid grid-cols-2 gap-2">
+                    <select id="decision-admin-${r.id_recurso}" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white outline-none focus:border-[#00594E]">
+                        <option value="APROBADO">Aprobado</option>
+                        <option value="NEGADO">Negado</option>
+                    </select>
+                    <button onclick="decidirRecursoAdmin(${r.id_recurso})" class="bg-[#00594E] text-white px-3 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Decidir</button>
+                </div>`;
+        }
+        return `
+            <div class="rounded-2xl border border-slate-100 bg-white p-4 space-y-2">
+                <div class="flex items-center justify-between gap-3">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <span class="material-symbols-outlined text-base text-[#00594E]">gavel</span>
+                        <div class="min-w-0">
+                            <p class="text-xs font-black text-slate-800 truncate">${escapeHtml(r.numero_radicado || 'Sin radicado')} · ${tipo}</p>
+                            <p class="text-[10px] text-slate-400">Radicado ${escapeHtml(r.fecha_recurso || '')} · ${r.numero_folios || 0} folios</p>
+                        </div>
+                    </div>
+                    ${badgeDecisionRecurso(r.decision)}
+                </div>
+                ${r.receptor_nombres ? `<p class="text-[10px] font-bold text-slate-500 uppercase">Receptor: ${escapeHtml(r.receptor_nombres)} ${escapeHtml(r.receptor_apellidos || '')}</p>` : ''}
+                ${r.evaluado_nombres ? `<p class="text-[10px] font-bold text-slate-500 uppercase">Evaluado: ${escapeHtml(r.evaluado_nombres)} ${escapeHtml(r.evaluado_apellidos || '')}${r.evaluado_cargo ? ' · ' + escapeHtml(r.evaluado_cargo) : ''}</p>` : ''}
+                <p class="text-xs text-slate-600 whitespace-pre-wrap">${escapeHtml(r.motivacion || '')}</p>
+                ${acciones}
+            </div>`;
+    }
+
+    function cargarRecursosEvaluado(ev) {
+        const bloque = document.getElementById('bloque-recursos-evaluado');
+        if (!bloque || !ev) return;
+        fetchJson(`/evaluaciones/${ev.id_evaluacion}/recursos`)
+            .then(res => res.json())
+            .then(payload => {
+                const recursos = payload.recursos || [];
+                const estado = payload.estado;
+                const puedeRadicar = estado === 'CALIFICADA';
+                const tienePendiente = recursos.some(r => r.decision === 'PENDIENTE');
+                const aviso = document.getElementById('aviso-recursos-no-calificada');
+                if (aviso) {
+                    aviso.classList.toggle('hidden', puedeRadicar && !tienePendiente);
+                    aviso.innerHTML = tienePendiente
+                        ? '<span class="material-symbols-outlined text-base">hourglass_top</span><span>Ya tienes un recurso pendiente por decidir. Podrás radicar otro cuando este sea resuelto.</span>'
+                        : '<span class="material-symbols-outlined text-base">info</span><span>Podrás radicar recursos cuando la evaluación haya sido calificada.</span>';
+                }
+                const form = document.getElementById('form-recurso-evaluado');
+                if (form) form.classList.toggle('hidden', !puedeRadicar || tienePendiente);
+                const contador = document.getElementById('recursos-contador-evaluado');
+                if (contador) contador.innerText = String(recursos.length);
+                const lista = document.getElementById('recursos-lista-evaluado');
+                if (lista) {
+                    if (!recursos.length) {
+                        lista.innerHTML = '<div class="rounded-xl border border-dashed border-slate-200 bg-white p-4 text-xs text-slate-500 text-center">Aún no hay recursos radicados contra esta evaluación.</div>';
+                    } else {
+                        lista.innerHTML = recursos.map(r => renderTarjetaRecurso(r, 'evaluado')).join('');
+                    }
+                }
+                const mensaje = document.getElementById('recurso-mensaje-evaluado');
+                if (mensaje) mensaje.classList.add('hidden');
+            })
+            .catch(() => {});
+    }
+
+    function radicarRecurso(e) {
+        e.preventDefault();
+        if (!selectedEvaluacionId) return;
+        const mensaje = document.getElementById('recurso-mensaje-evaluado');
+        const tipo = document.getElementById('recurso-tipo-evaluado')?.value || 'REPOSICION';
+        const folios = parseInt(document.getElementById('recurso-folios-evaluado')?.value || '0', 10);
+        const motivacion = (document.getElementById('recurso-motivacion-evaluado')?.value || '').trim();
+        if (!folios || folios < 1) { mostrarMensaje(mensaje, 'Indica el número de folios del recurso.', false); return; }
+        if (!motivacion) { mostrarMensaje(mensaje, 'Escribe la motivación del recurso.', false); return; }
+        fetchJson(`/evaluaciones/${selectedEvaluacionId}/recursos`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
+            body: JSON.stringify({ tipo_recurso: tipo, numero_folios: folios, motivacion }),
+        })
+            .then(async res => {
+                const payload = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(parseErrorMessage(payload, 'No se pudo radicar el recurso.'));
+                mostrarMensaje(mensaje, payload.message || 'Recurso radicado.', true);
+                e.target.reset();
+                cargarRecursosEvaluado(selectedEvaluacionData);
+            })
+            .catch(error => mostrarMensaje(mensaje, error.message, false));
+    }
+
+    function cargarRecursosEvaluador(ev) {
+        const bloque = document.getElementById('bloque-recursos-evaluador');
+        if (!bloque || !ev) return;
+        fetchJson(`/evaluaciones/${ev.id_evaluacion}/recursos`)
+            .then(res => res.json())
+            .then(payload => {
+                const recursos = (payload.recursos || []).filter(r => r.tipo_recurso === 'REPOSICION');
+                const contador = document.getElementById('recursos-contador-evaluador');
+                if (contador) contador.innerText = String(recursos.length);
+                const lista = document.getElementById('recursos-lista-evaluador');
+                if (lista) {
+                    if (!recursos.length) {
+                        lista.innerHTML = '<div class="rounded-xl border border-dashed border-slate-200 bg-white p-4 text-xs text-slate-500 text-center">No hay recursos de reposición radicados contra esta evaluación.</div>';
+                    } else {
+                        lista.innerHTML = recursos.map(r => renderTarjetaRecurso(r, 'evaluador')).join('');
+                    }
+                }
+                bloque.classList.remove('hidden');
+            })
+            .catch(() => {});
+    }
+
+    function cargarRecursosMiosEvaluador() {
+        const bloque = document.getElementById('bloque-recursos-mios-evaluador');
+        if (!bloque) return;
+        fetchJson('/recursos/mios')
+            .then(res => res.json())
+            .then(payload => {
+                const recursos = payload.recursos || [];
+                const contador = document.getElementById('recursos-mios-contador');
+                if (contador) contador.innerText = String(recursos.length);
+                const lista = document.getElementById('recursos-mios-lista');
+                if (lista) {
+                    if (!recursos.length) {
+                        lista.innerHTML = '<div class="rounded-xl border border-dashed border-slate-200 bg-white p-4 text-xs text-slate-500 text-center">No tienes apelaciones pendientes por decidir.</div>';
+                    } else {
+                        lista.innerHTML = recursos.map(r => renderTarjetaRecurso(r, 'evaluador')).join('');
+                    }
+                }
+                bloque.classList.toggle('hidden', !recursos.length);
+            })
+            .catch(() => {});
+    }
+
+    function enviarDecisionRecurso(id, decision, motivacion) {
+        fetchJson(`/recursos/${id}/decision`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
+            body: JSON.stringify({ decision, motivacion }),
+        })
+            .then(async res => {
+                const payload = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(parseErrorMessage(payload, 'No se pudo registrar la decisión.'));
+                alert(payload.message || 'Decisión registrada.');
+                if (selectedEvaluacionData) {
+                    cargarRecursosEvaluado(selectedEvaluacionData);
+                    cargarRecursosEvaluador(selectedEvaluacionData);
+                }
+                cargarRecursosAdmin();
+                cargarRecursosMiosEvaluador();
+            })
+            .catch(error => alert(error.message));
+    }
+
+    function decidirRecurso(id) {
+        const decision = document.getElementById(`decision-${id}`)?.value;
+        const motivacion = prompt('Escribe la motivación de tu decisión sobre el recurso:');
+        if (motivacion === null) return;
+        if (!motivacion.trim()) { alert('La motivación es obligatoria para decidir el recurso.'); return; }
+        enviarDecisionRecurso(id, decision, motivacion);
+    }
+
+    function decidirRecursoAdmin(id) {
+        const decision = document.getElementById(`decision-admin-${id}`)?.value;
+        const motivacion = prompt('Escribe la motivación de la decisión (Talento Humano) sobre el recurso:');
+        if (motivacion === null) return;
+        if (!motivacion.trim()) { alert('La motivación es obligatoria para decidir el recurso.'); return; }
+        enviarDecisionRecurso(id, decision, motivacion);
+    }
+
+    function renderFirmasPlan(plan) {
+        if (!plan) return '<span class="text-[10px] text-slate-400">El plan aún no ha sido creado.</span>';
+        const row = (label, firmado, fecha) => `
+            <div class="rounded-xl border border-slate-100 bg-white p-3">
+                <p class="text-[10px] font-bold text-slate-500 uppercase">${label}</p>
+                <p class="text-xs font-bold mt-1 ${firmado ? 'text-emerald-700' : 'text-amber-700'}">${firmado ? 'Firmado' : 'Sin firmar'}${fecha ? ` · ${escapeHtml(fecha)}` : ''}</p>
+            </div>`;
+        return row('Evaluador', !!plan.firmado_evaluador, plan.fecha_firma_evaluador)
+            + row('Evaluado', !!plan.firmado_evaluado, plan.fecha_firma_evaluado);
+    }
+
+    function estadoPlanClass(plan) {
+        const concertado = plan && plan.firmado_evaluador && plan.firmado_evaluado;
+        return 'text-[10px] font-bold uppercase rounded-full px-2.5 py-1 '
+            + (concertado ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700');
+    }
+
+    function cargarPlanMejoramientoEvaluador(ev) {
+        const bloque = document.getElementById('bloque-plan-mejoramiento-evaluador');
+        if (!bloque || !ev) return;
+        fetchJson(`/evaluaciones/${ev.id_evaluacion}/plan-mejoramiento`)
+            .then(res => res.json())
+            .then(payload => {
+                const requiere = !!payload.requiere_plan;
+                bloque.classList.toggle('hidden', !requiere);
+                if (!requiere) return;
+                const plan = payload.plan;
+                selectedPlanData = plan;
+                const aviso = document.getElementById('plan-aviso-evaluador');
+                if (aviso) aviso.classList.toggle('hidden', !payload.bloqueado);
+                const estado = document.getElementById('plan-estado-evaluador');
+                if (estado) {
+                    estado.classList.remove('hidden');
+                    estado.innerText = plan && plan.firmado_evaluador && plan.firmado_evaluado ? 'CONCERTADO' : (plan ? (plan.estado || 'PENDIENTE') : 'PENDIENTE');
+                    estado.className = estadoPlanClass(plan);
+                }
+                const textarea = document.getElementById('plan-temas-evaluador');
+                if (textarea && plan) textarea.value = plan.descripcion_temas || '';
+                const editable = !plan || !plan.firmado_evaluador;
+                const form = document.getElementById('form-plan-mejoramiento-evaluador');
+                if (form) form.classList.toggle('hidden', !editable);
+                const btnFirmar = document.getElementById('btn-firmar-plan-evaluador');
+                if (btnFirmar) {
+                    btnFirmar.classList.toggle('hidden', !(plan && !plan.firmado_evaluador));
+                    btnFirmar.classList.toggle('opacity-50', !(plan && !plan.firmado_evaluador));
+                }
+                const firmas = document.getElementById('plan-firmas-evaluador');
+                if (firmas) firmas.innerHTML = renderFirmasPlan(plan);
+            })
+            .catch(() => {});
+    }
+
+    function guardarPlanMejoramiento(e) {
+        e.preventDefault();
+        if (!selectedEvaluacionId) return;
+        const mensaje = document.getElementById('plan-mensaje-evaluador');
+        const temas = (document.getElementById('plan-temas-evaluador')?.value || '').trim();
+        if (!temas) { mostrarMensaje(mensaje, 'Describe los temas del plan de mejoramiento.', false); return; }
+        fetchJson(`/evaluaciones/${selectedEvaluacionId}/plan-mejoramiento`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
+            body: JSON.stringify({ descripcion_temas: temas }),
+        })
+            .then(async res => {
+                const payload = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(parseErrorMessage(payload, 'No se pudo guardar el plan.'));
+                mostrarMensaje(mensaje, payload.message || 'Plan guardado.', true);
+                cargarPlanMejoramientoEvaluador(selectedEvaluacionData);
+                setTimeout(() => { if (mensaje) mensaje.classList.add('hidden'); }, 4000);
+            })
+            .catch(error => mostrarMensaje(mensaje, error.message, false));
+    }
+
+    function cargarPlanMejoramientoEvaluado(ev) {
+        const bloque = document.getElementById('bloque-plan-mejoramiento-evaluado');
+        if (!bloque || !ev) return;
+        fetchJson(`/evaluaciones/${ev.id_evaluacion}/plan-mejoramiento`)
+            .then(res => res.json())
+            .then(payload => {
+                const requiere = !!payload.requiere_plan;
+                bloque.classList.toggle('hidden', !requiere);
+                if (!requiere) return;
+                const plan = payload.plan;
+                selectedPlanData = plan;
+                const estado = document.getElementById('plan-estado-evaluado');
+                if (estado) {
+                    estado.classList.remove('hidden');
+                    estado.innerText = plan && plan.firmado_evaluador && plan.firmado_evaluado ? 'CONCERTADO' : (plan ? (plan.estado || 'PENDIENTE') : 'PENDIENTE');
+                    estado.className = estadoPlanClass(plan);
+                }
+                const contenido = document.getElementById('plan-contenido-evaluado');
+                if (contenido) {
+                    contenido.innerHTML = plan
+                        ? `<div class="rounded-2xl border border-slate-100 bg-slate-50/50 p-4">
+                            <p class="text-[10px] font-bold text-slate-500 uppercase mb-2">Temas del plan</p>
+                            <p class="text-xs text-slate-700 whitespace-pre-wrap">${escapeHtml(plan.descripcion_temas || '')}</p>
+                           </div>`
+                        : '<div class="rounded-xl border border-dashed border-slate-200 bg-white p-4 text-xs text-slate-500 text-center">Tu evaluador aún no ha creado el plan de mejoramiento. Se habilitará la firma cuando esté listo.</div>';
+                }
+                const puedeFirmar = plan && !!plan.firmado_evaluador && !plan.firmado_evaluado;
+                const btnFirmar = document.getElementById('btn-firmar-plan-evaluado');
+                if (btnFirmar) {
+                    btnFirmar.classList.toggle('hidden', !puedeFirmar);
+                    btnFirmar.classList.toggle('opacity-50', !puedeFirmar);
+                }
+                const firmas = document.getElementById('plan-firmas-evaluado');
+                if (firmas) firmas.innerHTML = renderFirmasPlan(plan);
+            })
+            .catch(() => {});
+    }
+
+    function firmarPlanMejoramiento(rol) {
+        if (!selectedPlanData || !selectedPlanData.id_plan) return;
+        if (!confirm('¿Confirmas firmar el plan de mejoramiento?')) return;
+        fetchJson(`/plan-mejoramiento/${selectedPlanData.id_plan}/firmar`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
+            body: '{}',
+        })
+            .then(async res => {
+                const payload = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(parseErrorMessage(payload, 'No se pudo firmar el plan.'));
+                alert(payload.message || 'Firma registrada.');
+                if (rol === 'evaluador') cargarPlanMejoramientoEvaluador(selectedEvaluacionData);
+                if (rol === 'evaluado') cargarPlanMejoramientoEvaluado(selectedEvaluacionData);
+            })
+            .catch(error => alert(error.message));
+    }
+
+    function cargarRecursosAdmin() {
+        const lista = document.getElementById('recursos-admin-lista');
+        const contador = document.getElementById('recursos-admin-contador');
+        if (!lista) return;
+        fetchJson('/recursos')
+            .then(res => res.json())
+            .then(payload => {
+                const recursos = payload.recursos || [];
+                if (contador) contador.innerText = recursos.length + (recursos.length === 1 ? ' recurso' : ' recursos');
+                if (!recursos.length) {
+                    lista.innerHTML = '<div class="col-span-full rounded-xl border border-dashed border-slate-200 bg-white p-8 text-xs text-slate-500 text-center">No hay recursos radicados.</div>';
+                    return;
+                }
+                lista.innerHTML = recursos.map(r => `
+                    <div class="rounded-2xl border border-slate-100 bg-white p-4 space-y-2">
+                        <div class="flex items-center justify-between gap-3">
+                            <div class="flex items-center gap-2 min-w-0">
+                                <span class="material-symbols-outlined text-base text-[#00594E]">gavel</span>
+                                <div class="min-w-0">
+                                    <p class="text-xs font-black text-slate-800 truncate">${escapeHtml(r.numero_radicado || 'Sin radicado')} · ${r.tipo_recurso === 'REPOSICION' ? 'Reposición' : 'Apelación'}</p>
+                                    <p class="text-[10px] text-slate-400">${escapeHtml(r.evaluado_nombres || '')} ${escapeHtml(r.evaluado_apellidos || '')} vs. ${escapeHtml(r.evaluador_nombres || '')} ${escapeHtml(r.evaluador_apellidos || '')}</p>
+                                </div>
+                            </div>
+                            ${badgeDecisionRecurso(r.decision)}
+                        </div>
+                        <p class="text-xs text-slate-600 whitespace-pre-wrap">${escapeHtml(r.motivacion || '')}</p>
+                        ${r.decision === 'PENDIENTE' ? `
+                        <div class="pt-2 border-t border-slate-100 grid sm:grid-cols-2 gap-2">
+                            <select id="decision-admin-${r.id_recurso}" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white outline-none focus:border-[#00594E]">
+                                <option value="APROBADO">Aprobado</option>
+                                <option value="NEGADO">Negado</option>
+                            </select>
+                            <button onclick="decidirRecursoAdmin(${r.id_recurso})" class="bg-[#00594E] text-white px-3 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Registrar decisión</button>
+                        </div>` : ''}
+                    </div>`).join('');
+            })
+            .catch(() => {});
+    }
+
+    function cargarPlanesAdmin() {
+        const lista = document.getElementById('planes-admin-lista');
+        if (!lista) return;
+        fetchJson('/planes-mejoramiento')
+            .then(res => res.json())
+            .then(payload => {
+                const planes = payload.planes || [];
+                if (!planes.length) {
+                    lista.innerHTML = '<div class="col-span-full rounded-xl border border-dashed border-slate-200 bg-white p-8 text-xs text-slate-500 text-center">No hay planes de mejoramiento registrados.</div>';
+                    return;
+                }
+                lista.innerHTML = planes.map(p => `
+                    <div class="rounded-2xl border border-slate-100 bg-white p-4 space-y-2">
+                        <div class="flex items-center justify-between gap-3">
+                            <div class="min-w-0">
+                                <p class="text-xs font-black text-slate-800 truncate">${escapeHtml(p.evaluado_nombres || '')} ${escapeHtml(p.evaluado_apellidos || '')}</p>
+                                <p class="text-[10px] text-slate-400">Evaluador: ${escapeHtml(p.evaluador_nombres || '')} ${escapeHtml(p.evaluador_apellidos || '')} · ${p.sistema === 'RENDIMIENTO_LABORAL' ? 'RL' : 'AG'}</p>
+                            </div>
+                            <span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 ${p.firmado_evaluador && p.firmado_evaluado ? 'bg-emerald-50 text-emerald-700' : p.firmado_evaluador ? 'bg-[#EAF2EF] text-[#00594E]' : 'bg-amber-50 text-amber-700'}">${p.firmado_evaluador && p.firmado_evaluado ? 'Concertado' : p.firmado_evaluador ? 'Firmado evaluador' : 'Pendiente'}</span>
+                        </div>
+                        <p class="text-xs text-slate-600">Nota final: <b>${escapeHtml(String(p.calificacion_final ?? ''))}</b> · ${escapeHtml(p.categoria_final || '')}</p>
+                        <p class="text-xs text-slate-600 whitespace-pre-wrap">${escapeHtml(p.descripcion_temas || '')}</p>
+                        <div class="grid sm:grid-cols-2 gap-2">${renderFirmasPlan(p)}</div>
+                    </div>`).join('');
+            })
+            .catch(() => {});
+    }
+
+    function cargarRenuenciasAdmin() {
+        const lista = document.getElementById('renuencias-admin-lista');
+        if (!lista) return;
+        fetchJson('/renuencias')
+            .then(res => res.json())
+            .then(payload => {
+                const renuencias = payload.renuencias || [];
+                if (!renuencias.length) {
+                    lista.innerHTML = '<div class="col-span-full rounded-xl border border-dashed border-slate-200 bg-white p-8 text-xs text-slate-500 text-center">No hay renuncias a la firma de concertación registradas.</div>';
+                    return;
+                }
+                lista.innerHTML = renuencias.map(r => `
+                    <div class="rounded-2xl border border-slate-100 bg-white p-4 space-y-2">
+                        <div class="flex items-center justify-between gap-3">
+                            <div class="min-w-0">
+                                <p class="text-xs font-black text-slate-800 truncate">${escapeHtml(r.evaluado_nombres || '')} ${escapeHtml(r.evaluado_apellidos || '')}</p>
+                                <p class="text-[10px] text-slate-400">Evaluador: ${escapeHtml(r.evaluador_nombres || '')} ${escapeHtml(r.evaluador_apellidos || '')} · ${r.sistema === 'RENDIMIENTO_LABORAL' ? 'RL' : 'AG'} · ${r.tipo_evaluacion === 'SEMESTRE_1' ? 'Semestre 1' : 'Otro'}</p>
+                            </div>
+                            <span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-amber-50 text-amber-700">${r.tipo_firma === 'CONCERTACION_EVALUADOR' ? 'Evaluador renunció' : 'Evaluado renunció'}</span>
+                        </div>
+                        <p class="text-[10px] text-slate-400">Firma registrada: ${escapeHtml(r.fecha_firma || '')}</p>
+                        <div class="rounded-xl border border-slate-100 bg-slate-50/50 p-3 space-y-1">
+                            <p class="text-[9px] font-bold uppercase text-slate-400">Testigos</p>
+                            ${(r.testigos || []).map(t => `<p class="text-xs text-slate-700">• ${escapeHtml(t.nombre_testigo)} — ${escapeHtml(t.cargo_testigo)}</p>`).join('')}
+                        </div>
+                    </div>`).join('');
+            })
+            .catch(() => {});
+    }
+
+    function mostrarEvaluadorActualTraslado() {
+        const select = document.getElementById('select-funcionario-traslado');
+        const box = document.getElementById('evaluador-origen-box');
+        const texto = document.getElementById('evaluador-origen-texto');
+        if (!select || !box || !texto) return;
+        const idVinc = select.value;
+        if (!idVinc) {
+            box.classList.add('hidden');
+            texto.innerText = '-';
+            return;
+        }
+        fetchJson(`/admin/traslados/evaluador-actual/${idVinc}`)
+            .then(res => res.json())
+            .then(ev => {
+                if (!ev) {
+                    box.classList.remove('hidden');
+                    texto.innerText = 'Sin evaluador asignado';
+                    return;
+                }
+                box.classList.remove('hidden');
+                texto.innerText = `${ev.nombres || ''} ${ev.apellidos || ''} — ${ev.cargo || 'Sin cargo'} (${ev.area || 'Sin área'})`;
+            })
+            .catch(() => {
+                box.classList.remove('hidden');
+                texto.innerText = 'Sin evaluador asignado';
+            });
+    }
+
+    function cargarTrasladosAdmin() {
+        const lista = document.getElementById('traslados-admin-lista');
+        const contador = document.getElementById('traslados-admin-contador');
+        if (!lista) return;
+        fetchJson('/admin/traslados')
+            .then(res => res.json())
+            .then(traslados => {
+                const items = Array.isArray(traslados) ? traslados : [];
+                if (contador) contador.innerText = `${items.length} registro${items.length === 1 ? '' : 's'}`;
+                if (!items.length) {
+                    lista.innerHTML = '<div class="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-xs text-slate-500 text-center">No hay traslados registrados.</div>';
+                    return;
+                }
+                lista.innerHTML = items.map(t => `
+                    <div class="rounded-2xl border border-slate-100 bg-white p-4 space-y-2">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <p class="text-xs font-black text-slate-800 truncate">${escapeHtml(t.funcionario_nombres || '')} ${escapeHtml(t.funcionario_apellidos || '')}</p>
+                                <p class="text-[10px] text-slate-400">Fecha: ${escapeHtml(t.fecha_traslado || '')}${t.resolucion ? ` · ${escapeHtml(t.resolucion)}` : ''}</p>
+                            </div>
+                            <span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-[#EAF2EF] text-[#00594E]">${t.dias_laborados ? t.dias_laborados + ' días' : 'Sin parcial'}</span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 rounded-xl border border-slate-100 bg-slate-50/50 p-3">
+                            <div>
+                                <p class="text-[9px] font-bold uppercase text-slate-400">Origen</p>
+                                <p class="text-xs text-slate-700 truncate">${escapeHtml(t.area_origen || '—')}${t.cargo_origen ? ` · ${escapeHtml(t.cargo_origen)}` : ''}</p>
+                                <p class="text-[10px] text-slate-500 truncate">Evaluador: ${escapeHtml(t.origen_nombres || '')} ${escapeHtml(t.origen_apellidos || '')}</p>
+                            </div>
+                            <div>
+                                <p class="text-[9px] font-bold uppercase text-slate-400">Nuevo</p>
+                                <p class="text-xs text-slate-700 truncate">${escapeHtml(t.area_nuevo || '—')}${t.cargo_nuevo ? ` · ${escapeHtml(t.cargo_nuevo)}` : ''}</p>
+                                <p class="text-[10px] text-slate-500 truncate">Evaluador: ${escapeHtml(t.nuevo_nombres || '')} ${escapeHtml(t.nuevo_apellidos || '')}</p>
+                            </div>
+                        </div>
+                        ${t.motivo ? `<p class="text-[10px] text-slate-400 italic">${escapeHtml(t.motivo)}</p>` : ''}
+                    </div>`).join('');
+            })
+            .catch(() => {
+                if (contador) contador.innerText = 'Error';
+            });
+    }
+
     window.addEventListener('DOMContentLoaded', () => {
         const activeRole = "{{ $rolActivo }}";
         if (activeRole === 'admin') {
             navegarMenu(null, 'usuarios');
+            cargarRecursosAdmin();
+            cargarPlanesAdmin();
+            cargarRenuenciasAdmin();
+            cargarTrasladosAdmin();
         } else if (activeRole === 'evaluador') {
             navegarMenu(null, 'evaluaciones-evaluador');
+            cargarRecursosMiosEvaluador();
         } else if (activeRole === 'instancia_externa') {
             navegarMenu(null, 'instancia-externa');
         } else {
