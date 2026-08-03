@@ -63,6 +63,7 @@
 
 <h2 class="titulo">Evaluación {{ $sistema }} — {{ $info['tipo_nombre'] }}</h2>
 <div class="subinfo">Periodo: {{ \Carbon\Carbon::parse($info['periodo']->fecha_inicio)->format('d/m/Y') }} al {{ \Carbon\Carbon::parse($info['periodo']->fecha_fin)->format('d/m/Y') }}</div>
+<div class="subinfo" style="color:#64748b; font-style:italic;">Documento generado el {{ $generadoEn->format('d/m/Y') }} a las {{ $generadoEn->format('H:i') }}</div>
 
 {{-- ============ INFORMACIÓN EVALUADOR ============ --}}
 <table>
@@ -246,14 +247,15 @@
 
 {{-- ============ RECURSOS ============ --}}
 <table>
-    <tr><th colspan="6" class="cab">Recursos</th></tr>
+    <tr><th colspan="7" class="cab">Recursos</th></tr>
     <tr>
-        <th style="width:12%;">Tipo de recurso</th>
-        <th style="width:20%;">Cargo de quien recibe el recurso</th>
-        <th style="width:8%;">No. folios</th>
-        <th style="width:15%;">Fecha de interposición</th>
-        <th style="width:12%;">Decisión</th>
-        <th style="width:33%;">Motivación de la decisión</th>
+        <th style="width:10%;">Tipo de recurso</th>
+        <th style="width:18%;">Cargo de quien recibe el recurso</th>
+        <th style="width:7%;">No. folios</th>
+        <th style="width:13%;">Fecha de interposición</th>
+        <th style="width:10%;">Decisión</th>
+        <th style="width:27%;">Motivación de la decisión</th>
+        <th style="width:15%;">Evidencias (links)</th>
     </tr>
     @forelse($info['recursos'] as $rec)
         <tr>
@@ -263,9 +265,18 @@
             <td class="centro">{{ \Carbon\Carbon::parse($rec->fecha_recurso)->format('d/m/Y') }}</td>
             <td class="centro">{{ $rec->decision }}</td>
             <td style="font-size:7.5px;">{{ $rec->motivacion }}</td>
+            <td style="font-size:7.5px;">
+                @if(($rec->evidencias ?? null) && $rec->evidencias->isNotEmpty())
+                    @foreach($rec->evidencias as $ev)
+                        {{ $ev->descripcion ? $ev->descripcion . ': ' : '' }}{{ $ev->url }}<br>
+                    @endforeach
+                @else
+                    —
+                @endif
+            </td>
         </tr>
     @empty
-        <tr><td colspan="6" class="centro">Sin recursos radicados.</td></tr>
+        <tr><td colspan="7" class="centro">Sin recursos radicados.</td></tr>
     @endforelse
 </table>
 
