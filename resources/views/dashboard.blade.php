@@ -69,6 +69,11 @@
         white-space: nowrap;
     }
 
+    .evaluado-tab-btn.hidden,
+    .evaluador-tab-btn.hidden {
+        display: none;
+    }
+
     .evaluado-tab-btn:hover,
     .evaluador-tab-btn:hover {
         color: #00594E;
@@ -471,6 +476,89 @@
                         </form>
                     </div>
                 </div>
+
+                <div class="panel-card rounded-3xl p-6">
+                    <div>
+                        <h3 class="text-lg font-bold text-slate-800">Crear Periodo Parcial</h3>
+                        <p class="text-xs text-slate-500 mt-1 mb-4">Registra un periodo parcial para un funcionario que no estuvo desde el inicio del semestre (ingreso o traslado). Su evaluador podrá abrir una evaluación PARCIAL solo con un periodo parcial abierto.</p>
+                    </div>
+                    @error('periodo_parcial')
+                        <p class="text-xs text-red-600 mb-3">{{ $message }}</p>
+                    @enderror
+                    <form method="POST" action="{{ route('admin.periodos-parciales.store') }}" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-12">
+                        @csrf
+                        <div class="lg:col-span-3">
+                            <label class="block text-xs font-bold text-slate-600 mb-1">Funcionario</label>
+                            <select name="id_vinc_funcionario" class="w-full text-sm rounded-xl border border-slate-200 p-3 bg-white" required>
+                                <option value="">Seleccione...</option>
+                                @foreach($funcionariosParaPeriodoParcial as $fp)
+                                    <option value="{{ $fp->id_vinculacion }}">{{ $fp->nombres }} {{ $fp->apellidos }} — {{ $fp->sistema_evaluacion }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="lg:col-span-2">
+                            <label class="block text-xs font-bold text-slate-600 mb-1">Periodo base</label>
+                            <select name="id_periodo" class="w-full text-sm rounded-xl border border-slate-200 p-3 bg-white" required>
+                                @foreach($periodos->where('estado', 'ABIERTO') as $p)
+                                    <option value="{{ $p->id_periodo }}">{{ $p->sistema }} {{ $p->anio }}-{{ str_pad($p->semestre, 2, '0', STR_PAD_LEFT) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="lg:col-span-2">
+                            <label class="block text-xs font-bold text-slate-600 mb-1">Fecha inicio</label>
+                            <input type="date" name="fecha_inicio" class="w-full text-sm rounded-xl border border-slate-200 p-3 bg-white" required />
+                        </div>
+                        <div class="lg:col-span-2">
+                            <label class="block text-xs font-bold text-slate-600 mb-1">Fecha fin</label>
+                            <input type="date" name="fecha_fin" class="w-full text-sm rounded-xl border border-slate-200 p-3 bg-white" required />
+                        </div>
+                        <div class="lg:col-span-3">
+                            <label class="block text-xs font-bold text-slate-600 mb-1">Nombre o referencia</label>
+                            <input type="text" name="referencia" maxlength="200" class="w-full text-sm rounded-xl border border-slate-200 p-3 bg-white" placeholder="Identifica el funcionario asociado" />
+                        </div>
+                        <div class="sm:col-span-2 lg:col-span-12">
+                            <button type="submit" class="w-full bg-[#B5A160] text-white rounded-xl py-3 font-bold hover:brightness-110 transition shadow-lg shadow-[#B5A160]/25">Crear Periodo Parcial</button>
+                        </div>
+                    </form>
+
+                    @if($periodosParciales->isNotEmpty())
+                    <div class="mt-6 overflow-x-auto">
+                        <table class="w-full text-sm text-left text-slate-500">
+                            <thead class="text-xs uppercase bg-[#EAF2EF] text-[#00594E] font-bold">
+                                <tr>
+                                    <th class="px-4 py-3">Funcionario</th>
+                                    <th class="px-4 py-3">Referencia</th>
+                                    <th class="px-4 py-3">Periodo</th>
+                                    <th class="px-4 py-3">Inicio</th>
+                                    <th class="px-4 py-3">Fin</th>
+                                    <th class="px-4 py-3">Estado</th>
+                                    <th class="px-4 py-3 text-right">Acción</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                @foreach($periodosParciales as $pp)
+                                <tr>
+                                    <td class="px-4 py-3 font-semibold text-slate-800">{{ $pp->funcionario_nombres }} {{ $pp->funcionario_apellidos }}<div class="text-[11px] font-normal text-slate-400">{{ $pp->funcionario_cargo }} - {{ $pp->funcionario_area }}</div></td>
+                                    <td class="px-4 py-3">{{ $pp->referencia ?? '-' }}</td>
+                                    <td class="px-4 py-3">{{ $pp->sistema }} {{ $pp->anio }}-{{ str_pad($pp->semestre, 2, '0', STR_PAD_LEFT) }}</td>
+                                    <td class="px-4 py-3 text-xs">{{ $pp->fecha_inicio }}</td>
+                                    <td class="px-4 py-3 text-xs">{{ $pp->fecha_fin }}</td>
+                                    <td class="px-4 py-3">
+                                        <span class="px-2.5 py-1 text-[10px] font-bold uppercase rounded-full @if($pp->estado === 'ABIERTO') bg-green-50 text-green-700 @else bg-gray-100 text-gray-500 @endif">{{ $pp->estado }}</span>
+                                    </td>
+                                    <td class="px-4 py-3 text-right">
+                                        <form method="POST" action="{{ route('admin.periodos-parciales.toggle', $pp->id_periodo_parcial) }}">
+                                            @csrf
+                                            <button type="submit" class="px-3 py-1.5 rounded-lg border text-xs font-bold hover:bg-slate-50 transition">{{ $pp->estado === 'ABIERTO' ? 'Cerrar' : 'Abrir' }}</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                    @endif
+                </div>
             </section>
 
             <!-- SECTION: PONDERACIONES (Admin Only) -->
@@ -794,12 +882,16 @@
                                     <select name="tipo_evaluacion" id="apertura-ciclo-select" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
                                         <option value="SEMESTRE_1">Primer Semestre</option>
                                         <option value="SEMESTRE_2">Segundo Semestre</option>
-                                        <option value="PARCIAL">Parcial</option>
+                                        <option value="PARCIAL" id="apertura-opcion-parcial">Parcial</option>
                                     </select>
                                 </div>
-                                <div>
+                                <div id="apertura-dias-laborados-wrap" class="hidden">
                                     <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">D�as laborados</label>
                                     <input type="number" name="dias_laborados" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" placeholder="Opcional" />
+                                </div>
+                                <div id="apertura-referencia-wrap" class="hidden">
+                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Nombre o referencia</label>
+                                    <input type="text" name="referencia" id="apertura-referencia-input" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" placeholder="Identifica el funcionario asociado al periodo parcial" />
                                 </div>
                                 <div id="apertura-ejes-misionales" class="hidden rounded-2xl border border-slate-100 bg-slate-50/50 p-4">
                                     <h4 class="text-xs font-bold text-slate-800 uppercase tracking-wide mb-2">Ejes misionales adicionales</h4>
@@ -877,7 +969,12 @@
                                 <button type="button" class="evaluacion-evaluador-card w-full text-left p-4 rounded-2xl border border-slate-200 bg-white cursor-pointer hover:border-[#00594E] transition" onclick="abrirConcertacionEvaluador(this, @js($ev))">
                                     <div class="flex items-start justify-between gap-3">
                                         <div class="min-w-0">
-                                            <h4 class="font-bold text-slate-900 text-sm leading-snug">{{ $ev->evaluado_nombres }} {{ $ev->evaluado_apellidos }}</h4>
+                                            <div class="flex items-center gap-2">
+                                                <h4 class="font-bold text-slate-900 text-sm leading-snug">{{ $ev->evaluado_nombres }} {{ $ev->evaluado_apellidos }}</h4>
+                                                @if($ev->es_traslado)
+                                                    <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-200 text-slate-600">Traslado</span>
+                                                @endif
+                                            </div>
                                             <p class="text-xs text-slate-500 mt-0.5">{{ $ev->evaluado_cargo }} - {{ $ev->evaluado_area }}</p>
                                             @if($ev->tipo_nombre === 'PARCIAL' && $ev->referencia)
                                                 <p class="text-[10px] font-semibold text-[#00594E] mt-1">{{ $ev->referencia }}</p>
@@ -913,6 +1010,11 @@
                                     <p id="concertacion-detalle" class="text-xs text-slate-500">Aquí verás las tareas y el estado de la firma del evaluado.</p>
                                 </div>
                                 <span id="concertacion-sistema" class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-[#EAF2EF] text-[#00594E]">-</span>
+                            </div>
+
+                            <div id="aviso-traslado-evaluador" class="hidden mt-4 flex items-start gap-2 rounded-2xl border border-slate-200 bg-slate-100 p-3 text-xs font-semibold text-slate-600">
+                                <span class="material-symbols-outlined text-base shrink-0">lock</span>
+                                <span>Esta evaluación quedó bloqueada por traslado. Solo puedes consultarla; no se puede modificar ni calificar.</span>
                             </div>
 
                             <div id="ejes-misionales-vista-evaluador" class="mt-4 bg-slate-50/50 p-4 rounded-2xl border border-slate-100 hidden">
@@ -1114,11 +1216,16 @@
                         <div class="space-y-3">
                             @forelse($evaluacionesEvaluado as $ev)
                                 <div class="evaluacion-card p-4 rounded-2xl border border-slate-200 bg-white cursor-pointer hover:border-[#00594E] transition" onclick="abrirConcertacionEvaluado(this, @js($ev))">
-                                    <h4 class="font-bold text-slate-900 text-sm leading-snug">{{ $ev->tipo_nombre }}</h4>
+                                    <div class="flex items-center gap-2">
+                                        <h4 class="font-bold text-slate-900 text-sm leading-snug">{{ $ev->tipo_nombre }}</h4>
+                                        @if($ev->es_traslado)
+                                            <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-200 text-slate-600">Traslado</span>
+                                        @endif
+                                    </div>
                                     @if($ev->tipo_nombre === 'PARCIAL' && $ev->referencia)
                                         <p class="text-[10px] font-semibold text-[#00594E] mt-1">{{ $ev->referencia }}</p>
                                     @endif
-                                    <p class="text-xs text-slate-500 mt-0.5">Evaluador: {{ $ev->evalador_nombres ?? 'Mi Evaluador' }} {{ $ev->evalador_apellidos ?? '' }}</p>
+                                    <p class="text-xs text-slate-500 mt-0.5">Quién lo evaluó: {{ $ev->evaluador_nombres ?? 'Mi Evaluador' }} {{ $ev->evaluador_apellidos ?? '' }}</p>
                                     <div class="mt-2 space-y-0.5 text-[10px] text-slate-500">
                                         <p><span class="font-semibold text-slate-600">Período de evaluación:</span> {{ $ev->anio }} · Semestre {{ $ev->semestre }}</p>
                                         <p><span class="font-semibold text-slate-600">Fechas de calificación:</span> {{ \Carbon\Carbon::parse($ev->fecha_inicio)->format('d/m/Y') }} al {{ \Carbon\Carbon::parse($ev->fecha_fin)->format('d/m/Y') }}</p>
@@ -1141,7 +1248,7 @@
                             <div>
                                 <span class="text-[9px] font-bold uppercase rounded bg-[#B5A160] text-white px-2 py-0.5">Concertación de Compromisos</span>
                                 <h3 id="concertacion-evaluado-tipo" class="text-xl font-black text-slate-900 mt-1 leading-snug">Tipo de Evaluación</h3>
-                                <p id="concertacion-evaluado-evaluador" class="text-xs text-slate-500">Evaluador: -</p>
+                                <p id="concertacion-evaluado-evaluador" class="text-xs text-slate-500">Quién lo evaluó: -</p>
                             </div>
                             <div class="text-right flex flex-col items-end">
                                 <div class="text-xs text-slate-500">Progreso Ponderación</div>
@@ -1150,12 +1257,17 @@
                             </div>
                         </div>
 
+                        <div id="aviso-traslado-evaluado" class="hidden mt-4 flex items-start gap-2 rounded-2xl border border-slate-200 bg-slate-100 p-3 text-xs font-semibold text-slate-600">
+                            <span class="material-symbols-outlined text-base shrink-0">lock</span>
+                            <span>Esta evaluación quedó bloqueada por traslado. Solo puedes consultarla; no se puede modificar.</span>
+                        </div>
+
                         <!-- S6: Tabs del evaluado -->
                         <div class="mt-5 flex flex-wrap gap-2">
                             <button type="button" id="tabbtn-evaluado-compromisos" onclick="cambiarTabEvaluado('compromisos')" class="evaluado-tab-btn active">Compromisos</button>
                             <button type="button" id="tabbtn-evaluado-competencias" onclick="cambiarTabEvaluado('competencias')" class="evaluado-tab-btn">Competencias</button>
                             <button type="button" id="tabbtn-evaluado-ejes" onclick="cambiarTabEvaluado('ejes')" class="evaluado-tab-btn hidden">Ejes misionales</button>
-                            <button type="button" id="tabbtn-evaluado-recursos" onclick="cambiarTabEvaluado('recursos')" class="evaluado-tab-btn">Recursos</button>
+                            <button type="button" id="tabbtn-evaluado-recursos" onclick="cambiarTabEvaluado('recursos')" class="evaluado-tab-btn hidden">Recursos</button>
                         </div>
 
                         <!-- Tab: Compromisos -->
@@ -1327,6 +1439,13 @@
                                     <div>
                                         <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Motivación del recurso</label>
                                         <textarea name="motivacion" id="recurso-motivacion-evaluado" rows="3" maxlength="3000" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Argumentos y hechos que sustentan el recurso..." required></textarea>
+                                    </div>
+                                    <div id="recurso-evidencias-bloque-evaluado">
+                                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Evidencias (links)</label>
+                                        <div id="recurso-evidencias-lista-evaluado" class="space-y-2"></div>
+                                        <button type="button" onclick="agregarEvidenciaRecurso()" class="mt-2 text-[11px] font-bold text-[#00594E] hover:underline flex items-center gap-1">
+                                            <span class="material-symbols-outlined text-sm">add_link</span> Agregar evidencia
+                                        </button>
                                     </div>
                                     <div class="flex items-center justify-between gap-3">
                                         <span id="recurso-mensaje-evaluado" class="hidden text-xs font-semibold"></span>
@@ -1842,6 +1961,11 @@
         const aperturaEjeProy = document.getElementById('apertura-eje-proyeccion');
         if (aperturaIdVinc) aperturaIdVinc.value = persona.id_vinculacion || '';
         if (cicloSelect) cicloSelect.value = 'SEMESTRE_1';
+        const aperturaRef = document.getElementById('apertura-referencia-input');
+        if (aperturaRef) aperturaRef.value = '';
+        const aperturaOpcionParcial = document.getElementById('apertura-opcion-parcial');
+        if (aperturaOpcionParcial) aperturaOpcionParcial.classList.toggle('hidden', !persona.tiene_periodo_parcial);
+        toggleAperturaDiasLaborados();
         if (aperturaEjeInv) aperturaEjeInv.checked = false;
         if (aperturaEjeProy) aperturaEjeProy.checked = false;
         if (aperturaEjes) {
@@ -1864,6 +1988,19 @@
         if (card) card.classList.add('ring-2', 'ring-[#00594E]');
     }
 
+    function toggleAperturaDiasLaborados() {
+        const select = document.getElementById('apertura-ciclo-select');
+        const wrap = document.getElementById('apertura-dias-laborados-wrap');
+        const refWrap = document.getElementById('apertura-referencia-wrap');
+        if (select && wrap) wrap.classList.toggle('hidden', select.value !== 'PARCIAL');
+        if (select && refWrap) refWrap.classList.toggle('hidden', select.value !== 'PARCIAL');
+    }
+
+    (function bindAperturaCiclo() {
+        const select = document.getElementById('apertura-ciclo-select');
+        if (select) select.addEventListener('change', toggleAperturaDiasLaborados);
+    })();
+
     function abrirConcertacionEvaluado(card, ev) {
         selectedEvaluacionId = ev.id_evaluacion;
         selectedEvaluacionData = ev;
@@ -1877,7 +2014,7 @@
         const evidenciaForm = document.getElementById('form-evidencia-evaluado');
         const evidenciaMensaje = document.getElementById('evidencia-mensaje-evaluado');
         if (tipo) tipo.innerText = ev.tipo_nombre || 'Tipo de evaluacion';
-        if (evaluador) evaluador.innerText = `Evaluador: ${ev.evalador_nombres || 'Mi Evaluador'} ${ev.evalador_apellidos || ''}`.trim();
+        if (evaluador) evaluador.innerText = `Quién lo evaluó: ${ev.evaluador_nombres || 'Mi Evaluador'} ${ev.evaluador_apellidos || ''}`.trim();
         if (form) form.action = `/evaluaciones/${ev.id_evaluacion}/firmar`;
         if (evidenciaForm) evidenciaForm.reset();
         if (evidenciaMensaje) {
@@ -1892,6 +2029,11 @@
         if (chkProj) chkProj.checked = false;
         const tabBtnEjes = document.getElementById('tabbtn-evaluado-ejes');
         if (tabBtnEjes) tabBtnEjes.classList.add('hidden');
+        const tabBtnRecursos = document.getElementById('tabbtn-evaluado-recursos');
+        if (tabBtnRecursos) {
+            const puedeRecursos = ev.estado === 'CALIFICADA' && ev.categoria_final === 'NO_SATISFACTORIO';
+            tabBtnRecursos.classList.toggle('hidden', !puedeRecursos);
+        }
         const tabBtnCompromisos = document.getElementById('tabbtn-evaluado-compromisos');
         if (tabBtnCompromisos) tabBtnCompromisos.classList.add('active');
         cambiarTabEvaluado('compromisos');
@@ -2081,6 +2223,7 @@
 	                const evidencias = payload.evidencias || [];
 	                const observaciones = payload.observaciones || [];
 	                const estado = payload.estado || {};
+	                const traslado = !!estado.traslado;
 	                selectedEstadoEvaluacion = estado;
 	                const contenedor = document.getElementById('compromisos-lista-contenedor');
 	                const badge = document.getElementById('concertacion-sistema');
@@ -2097,7 +2240,10 @@
                 }
 
                 if (badge) {
-                    if (estado.congelada) {
+                    if (traslado) {
+                        badge.innerText = 'Traslado';
+                        badge.className = 'text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-slate-200 text-slate-700';
+                    } else if (estado.congelada) {
                         badge.innerText = 'Cerrada';
                         badge.className = 'text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-slate-200 text-slate-700';
                     } else if (estado.evaluador_firmado) {
@@ -2110,7 +2256,8 @@
                 }
 
                 let sumaPesos = 0;
-                const yaFirmado = !!estado.congelada || !!estado.evaluador_firmado;
+                const yaFirmado = !!estado.congelada || !!estado.evaluador_firmado || traslado;
+                const bloqueado = traslado || !!estado.calificada;
                 const evidenciasPorCompromiso = agruparEvidenciasPorCompromiso(evidencias);
                 const observacionesPorCompromiso = agruparObservacionesPorCompromiso(observaciones);
                 compromisos.forEach(c => {
@@ -2119,12 +2266,12 @@
                     div.className = 'p-4 rounded-xl border bg-white';
                     const metasHtml = (c.metas || []).map(m => `<span class="bg-[#EAF2EF] text-[#00594E] text-[10px] font-bold px-2 py-0.5 rounded-full">${escapeHtml(m)}</span>`).join(' ');
                     const deleteBtn = yaFirmado ? '' : `<button type="button" class="text-red-500 hover:text-red-700 mt-1 flex items-center justify-center" onclick="eliminarCompromisoEvaluador(${c.id_compromiso})"><span class="material-symbols-outlined text-lg">delete</span></button>`;
-                    const evidenciasHtml = renderEvidenciasEvaluadorAccion(evidenciasPorCompromiso[String(c.id_compromiso)] || [], estado.calificada);
+                    const evidenciasHtml = renderEvidenciasEvaluadorAccion(evidenciasPorCompromiso[String(c.id_compromiso)] || [], bloqueado);
                     const observacionHtml = renderObservacionEvaluador(c, observacionesPorCompromiso[String(c.id_compromiso)], !estado.congelada);
                     const calificacionHtml = estado.congelada ? `
                         <div class="mt-4 pt-3 border-t border-slate-100 flex items-center gap-2">
                             <label class="text-[10px] font-bold text-slate-500 uppercase">Calificación (0-100)</label>
-                            <input type="number" min="0" max="100" step="0.01" class="calificacion-compromiso-input w-24 text-xs rounded-lg border border-slate-200 p-1.5 disabled:bg-slate-100 disabled:text-slate-500" data-id-compromiso="${c.id_compromiso}" value="${c.calificacion_definitiva ?? ''}" onblur="clampCalificacion(this)" ${estado.calificada ? 'disabled' : ''} />
+                            <input type="number" min="0" max="100" step="0.01" class="calificacion-compromiso-input w-24 text-xs rounded-lg border border-slate-200 p-1.5 disabled:bg-slate-100 disabled:text-slate-500" data-id-compromiso="${c.id_compromiso}" value="${c.calificacion_definitiva ?? ''}" onblur="clampCalificacion(this)" ${bloqueado ? 'disabled' : ''} />
                         </div>` : '';
                     div.innerHTML = `
                         <div class="flex justify-between items-start gap-4">
@@ -2162,6 +2309,10 @@
 	                const formContainer = document.getElementById('compromiso-formulario-evaluador-contenedor');
 	                if (formContainer) formContainer.classList.toggle('hidden', yaFirmado);
 
+                const avisoTrasladoEvaluador = document.getElementById('aviso-traslado-evaluador');
+                if (avisoTrasladoEvaluador) avisoTrasladoEvaluador.classList.toggle('hidden', !traslado);
+                if (traslado) cambiarTabEvaluador('compromisos');
+
                 ['calificacion-bloque-evaluador', 'competencias-bloque-evaluador', 'resultado-bloque-evaluador'].forEach(id => {
                     const bloque = document.getElementById(id);
                     if (bloque) bloque.classList.toggle('hidden', !estado.congelada);
@@ -2169,14 +2320,14 @@
                 const avisoCompetencias = document.getElementById('aviso-competencias-evaluador');
                 if (avisoCompetencias) avisoCompetencias.classList.toggle('hidden', !!estado.congelada);
                 document.querySelectorAll('#calificacion-bloque-evaluador button, #competencias-bloque-evaluador button, #ejes-misionales-bloque-evaluador button').forEach(btn => {
-                    btn.disabled = !!estado.calificada;
-                    btn.classList.toggle('opacity-50', !!estado.calificada);
-                    btn.classList.toggle('cursor-not-allowed', !!estado.calificada);
+                    btn.disabled = bloqueado;
+                    btn.classList.toggle('opacity-50', bloqueado);
+                    btn.classList.toggle('cursor-not-allowed', bloqueado);
                 });
                 const btnCalcularFinal = document.getElementById('btn-calcular-nota-final');
-                if (btnCalcularFinal) btnCalcularFinal.disabled = !!estado.calificada;
+                if (btnCalcularFinal) btnCalcularFinal.disabled = bloqueado;
                 if (estado.congelada) {
-                    cargarCalificacionYResultado(ev, !!estado.calificada);
+                    cargarCalificacionYResultado(ev, bloqueado);
                 }
 
                 const seccionFirmarEvaluador = document.getElementById('seccion-firmar-evaluador');
@@ -2215,7 +2366,7 @@
             })
             .catch(() => {});
 
-        previsualizarCalculoEvaluador();
+        previsualizarCalculoEvaluador(bloqueada);
     }
 
     function renderCompetenciasEvaluador(catalogo, existentes = [], bloqueada = false) {
@@ -2235,7 +2386,7 @@
                     <p class="text-[10px] text-slate-500 mt-0.5">${escapeHtml(item.afirmacion || '')}</p>
                     <div class="mt-2 flex items-center gap-2">
                         <label class="text-[10px] font-bold text-slate-500 uppercase">Calificación (0-100)</label>
-                        <input type="number" min="0" max="100" step="0.01" class="competencia-input w-24 text-xs rounded-lg border border-slate-200 p-1.5 disabled:bg-slate-100 disabled:text-slate-500" data-tipo="${tipo}" data-nombre="${escapeHtml(item.nombre)}" value="${valor}" onblur="clampCalificacion(this)" ${bloqueada ? 'disabled' : ''} />
+                        <input type="number" min="0" max="100" step="0.01" class="competencia-input w-24 text-xs rounded-lg border border-slate-200 p-1.5 disabled:bg-slate-100 disabled:text-slate-500" data-id="${item.id_competencia}" data-tipo="${tipo}" data-nombre="${escapeHtml(item.nombre)}" value="${valor}" onblur="clampCalificacion(this)" ${bloqueada ? 'disabled' : ''} />
                     </div>
                 </div>`;
         }).join('');
@@ -2298,7 +2449,7 @@
         if (!selectedEvaluacionId) return;
         const competencias = Array.from(document.querySelectorAll('.competencia-input'))
             .filter(input => input.value !== '')
-            .map(input => ({ nombre_competencia: input.dataset.nombre, tipo: input.dataset.tipo, calificacion_definitiva: parseFloat(input.value) }));
+            .map(input => ({ id_competencia: parseInt(input.dataset.id, 10), calificacion_definitiva: parseFloat(input.value) }));
 
         const msg = document.getElementById('competencias-mensaje-evaluador');
         fetch(`/evaluaciones/${selectedEvaluacionId}/calificar-competencias`, {
@@ -2362,9 +2513,9 @@
             NO_SATISFACTORIO: 'bg-red-50 text-red-600',
         }[calculo.categoria] || 'bg-slate-100 text-slate-600';
 
-        const ejesHtml = calculo.subtotal_ejes_total ? `
-            <div class="flex justify-between text-xs text-slate-600"><span>Ejes misionales</span><span class="font-bold">${calculo.subtotal_ejes_total}</span></div>
-        ` : '';
+        const ejeMisionalHtml = `
+            <div class="flex justify-between text-xs text-slate-600"><span>Eje misional</span><span class="font-bold">${calculo.subtotal_ejes_total ?? 0}</span></div>
+        `;
 
         const prorrateoHtml = (calculo.nota_prorrateo !== null && calculo.nota_prorrateo !== undefined) ? `
             <div class="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-600">
@@ -2385,60 +2536,6 @@
             </div>
         ` : '';
 
-        let notificacionHtml = '';
-        if (calculo.estado === 'CALIFICADA') {
-            const estadoNotif = selectedEstadoEvaluacion || {};
-            if (estadoNotif.notificacion_firmada) {
-                if (estadoNotif.renuencia_notificacion) {
-                    const tList = (estadoNotif.testigos_notificacion || []).map(t => `<p class="text-[11px] text-amber-800 font-medium">• <b>${escapeHtml(t.nombre_testigo || t.nombre)}</b> (${escapeHtml(t.cargo_testigo || t.cargo)})</p>`).join('');
-                    notificacionHtml = `
-                        <div class="mt-4 p-4 rounded-2xl border border-amber-200 bg-amber-50/70 space-y-2">
-                            <div class="flex items-center gap-2">
-                                <span class="material-symbols-outlined text-amber-600">verified_user</span>
-                                <p class="text-xs font-bold text-amber-900">Notificación registrada con renuencia del evaluado</p>
-                            </div>
-                            <p class="text-[11px] text-amber-700">El evaluado se rehusó a firmar la notificación de su calificación. Se registraron los siguientes testigos:</p>
-                            <div class="pt-1 space-y-1">
-                                ${tList}
-                            </div>
-                        </div>
-                    `;
-                } else {
-                    notificacionHtml = `
-                        <div class="mt-4 p-4 rounded-2xl border border-emerald-200 bg-emerald-50/70 flex items-center justify-between gap-3">
-                            <div class="flex items-center gap-2">
-                                <span class="material-symbols-outlined text-emerald-600">check_circle</span>
-                                <div>
-                                    <p class="text-xs font-bold text-emerald-900">Notificación de la calificación firmada por el evaluado</p>
-                                    <p class="text-[10px] text-emerald-700">Fecha: ${escapeHtml(estadoNotif.fecha_notificacion || 'Registrada')}</p>
-                                </div>
-                            </div>
-                            <span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-emerald-100 text-emerald-800">Firmada</span>
-                        </div>
-                    `;
-                }
-            } else {
-                notificacionHtml = `
-                    <div class="mt-4 p-4 rounded-2xl border border-slate-200 bg-white space-y-3 shadow-sm">
-                        <div class="flex items-center justify-between">
-                            <h5 class="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
-                                <span class="material-symbols-outlined text-base text-[#00594E]">draw</span>
-                                Notificación de la Calificación (Nota)
-                            </h5>
-                            <span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-amber-50 text-amber-700">Pendiente de firma</span>
-                        </div>
-                        <p class="text-xs text-slate-600 leading-snug">El evaluado debe firmar la notificación de su calificación.</p>
-
-                        <div class="flex items-center justify-between gap-3 pt-1">
-                            <span id="msg-notif-calificacion" class="hidden text-xs font-semibold"></span>
-                            <button type="button" id="btn-notif-calificacion" onclick="firmarNotificacionCalificacion()" class="ml-auto bg-[#00594E] text-white px-5 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">
-                                Firmar notificación
-                            </button>
-                        </div>
-                    </div>
-                `;
-            }
-        }
 
         cont.innerHTML = `
             ${bloqueadaHtml}
@@ -2451,27 +2548,26 @@
                     <div class="flex justify-between text-xs text-slate-600"><span>Compromisos (${calculo.pesos?.compromisos ?? '-'}%)</span><span class="font-bold">${calculo.subtotal_compromisos ?? '-'}</span></div>
                     <div class="flex justify-between text-xs text-slate-600"><span>Competencias comunes (${calculo.pesos?.comun ?? '-'}%)</span><span class="font-bold">${calculo.subtotal_comun ?? '-'}</span></div>
                     <div class="flex justify-between text-xs text-slate-600"><span>Competencias nivel jerárquico (${calculo.pesos?.nivel_jerarquico ?? '-'}%)</span><span class="font-bold">${calculo.subtotal_nivel ?? '-'}</span></div>
-                    ${ejesHtml}
+                    ${ejeMisionalHtml}
                 </div>
                 ${prorrateoHtml}
             </div>
             ${pdfHtml}
-            ${notificacionHtml}
         `;
     }
 
-    function previsualizarCalculoEvaluador() {
+    function previsualizarCalculoEvaluador(bloqueada = false) {
         if (!selectedEvaluacionId) return;
         fetch(`/evaluaciones/${selectedEvaluacionId}/calculo`)
             .then(res => res.json())
             .then(calculo => {
                 renderResultado(calculo, 'resultado-contenido-evaluador');
-                renderEjesMisionalesEvaluador(calculo);
+                renderEjesMisionalesEvaluador(calculo, bloqueada);
             })
             .catch(() => {});
     }
 
-    function renderEjesMisionalesEvaluador(calculo) {
+    function renderEjesMisionalesEvaluador(calculo, bloqueada = false) {
         const bloque = document.getElementById('ejes-misionales-bloque-evaluador');
         const contenedor = document.getElementById('ejes-misionales-inputs-evaluador');
         const btn = document.getElementById('btn-guardar-ejes-evaluador');
@@ -2488,7 +2584,7 @@
         const avisoEjes = document.getElementById('aviso-ejes-evaluador');
         if (avisoEjes) avisoEjes.classList.add('hidden');
 
-        const bloqueada = calculo.estado === 'CALIFICADA';
+        const esBloqueada = bloqueada || calculo.estado === 'CALIFICADA';
         const notas = calculo.notas_ejes_raw || {};
 
         contenedor.innerHTML = ejesActivos.map(eje => `
@@ -2496,12 +2592,12 @@
                 <p class="text-xs font-bold text-slate-800">${EJE_LABELS[eje] || eje}</p>
                 <div class="mt-2 flex items-center gap-2">
                     <label class="text-[10px] font-bold text-slate-500 uppercase">Calificación (0-100)</label>
-                    <input type="number" min="0" max="100" step="0.01" class="eje-misional-evaluador-input w-24 text-xs rounded-lg border border-slate-200 p-1.5 disabled:bg-slate-100 disabled:text-slate-500" data-eje="${eje}" value="${notas[eje] ?? ''}" onblur="clampCalificacion(this)" ${bloqueada ? 'disabled' : ''} />
+                    <input type="number" min="0" max="100" step="0.01" class="eje-misional-evaluador-input w-24 text-xs rounded-lg border border-slate-200 p-1.5 disabled:bg-slate-100 disabled:text-slate-500" data-eje="${eje}" value="${notas[eje] ?? ''}" onblur="clampCalificacion(this)" ${esBloqueada ? 'disabled' : ''} />
                 </div>
             </div>
         `).join('');
 
-        if (btn) btn.disabled = bloqueada;
+        if (btn) btn.disabled = esBloqueada;
     }
 
     function guardarEjesMisionalesEvaluador() {
@@ -2575,6 +2671,7 @@
                 const evidencias = payload.evidencias || [];
                 const observaciones = payload.observaciones || [];
                 const estado = payload.estado || {};
+                const traslado = !!estado.traslado;
                 const contenedor = document.getElementById('compromisos-lista-evaluado');
                 if (!contenedor) return;
                 contenedor.innerHTML = '';
@@ -2618,15 +2715,18 @@
                 if (contadorNode) contadorNode.innerText = `${contador} compromisos (mín 7, máx 10)`;
 
                 const concertacionFirmada = !!estado.congelada;
+                const avisoTrasladoEvaluado = document.getElementById('aviso-traslado-evaluado');
+                if (avisoTrasladoEvaluado) avisoTrasladoEvaluado.classList.toggle('hidden', !traslado);
+                if (traslado) cambiarTabEvaluado('compromisos');
                 const formEvidencia = document.getElementById('form-evidencia-evaluado');
                 const avisoEvidenciaBloqueada = document.getElementById('evidencia-bloqueada-evaluado');
-                if (formEvidencia) formEvidencia.classList.toggle('hidden', !concertacionFirmada);
-                if (avisoEvidenciaBloqueada) avisoEvidenciaBloqueada.classList.toggle('hidden', concertacionFirmada);
+                if (formEvidencia) formEvidencia.classList.toggle('hidden', !concertacionFirmada || traslado);
+                if (avisoEvidenciaBloqueada) avisoEvidenciaBloqueada.classList.toggle('hidden', concertacionFirmada || traslado);
 
                 renderEvidenciasEvaluado(evidencias);
 
                 const btnFirmar = document.getElementById('btn-firmar-evaluado');
-                const locked = !!estado.congelada || !!estado.evaluado_firmado;
+                const locked = !!estado.congelada || !!estado.evaluado_firmado || traslado;
                 const okToSign = !!estado.evaluador_firmado && !locked;
                 if (btnFirmar) {
                     btnFirmar.disabled = !okToSign;
@@ -3080,41 +3180,7 @@
             });
     }
 
-    // --- S6: Renuencia, recursos (reposición/apelación) y plan de mejoramiento ---
-
-    function toggleRenuenciaNotificacion() {}
-
-    function firmarNotificacionCalificacion() {
-        if (!selectedEvaluacionId) return;
-        const msg = document.getElementById('msg-notif-calificacion');
-        const btn = document.getElementById('btn-notif-calificacion');
-
-        if (!confirm('¿Confirmas firmar la notificación de la calificación recibida?')) {
-            return;
-        }
-
-        if (btn) btn.disabled = true;
-
-        fetchJson(`/evaluaciones/${selectedEvaluacionId}/firmar-notificacion`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
-            },
-            body: JSON.stringify({ renuencia, testigos })
-        })
-        .then(payload => {
-            mostrarMensaje(msg, payload.message || 'Procesado con éxito.', true);
-            if (selectedEvaluacionData) {
-                if (typeof cargarCompromisosEvaluado === 'function') cargarCompromisosEvaluado(selectedEvaluacionData);
-                if (typeof cargarCompromisosEvaluador === 'function') cargarCompromisosEvaluador(selectedEvaluacionData);
-            }
-        })
-        .catch(err => {
-            mostrarMensaje(msg, err.message || 'Ocurrió un error al registrar.', false);
-            if (btn) btn.disabled = false;
-        });
-    }
+    // --- S6: Recursos (reposición/apelación) y plan de mejoramiento ---
 
     function firmarConcertacion(e, rol) {
         if (!confirm('¿Confirmas firmar la concertación? Una vez que ambas partes firmen, los compromisos y sus porcentajes quedarán bloqueados y no se podrán editar.')) {
@@ -3183,6 +3249,16 @@
                     <button onclick="decidirRecursoAdmin(${r.id_recurso})" class="bg-[#00594E] text-white px-3 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Decidir</button>
                 </div>`;
         }
+        const evidencias = Array.isArray(r.evidencias) && r.evidencias.length
+            ? `<div class="pt-2 border-t border-slate-100 space-y-1.5">
+                <p class="text-[10px] font-bold uppercase text-slate-500 flex items-center gap-1"><span class="material-symbols-outlined text-xs">link</span> Evidencias</p>
+                ${r.evidencias.map(ev => `
+                    <a href="${escapeHtml(ev.url)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 text-xs text-[#00594E] hover:underline min-w-0">
+                        <span class="material-symbols-outlined text-sm shrink-0">open_in_new</span>
+                        <span class="truncate">${escapeHtml(ev.descripcion || ev.url)}</span>
+                    </a>`).join('')}
+            </div>`
+            : '';
         return `
             <div class="rounded-2xl border border-slate-100 bg-white p-4 space-y-2">
                 <div class="flex items-center justify-between gap-3">
@@ -3198,6 +3274,7 @@
                 ${r.receptor_nombres ? `<p class="text-[10px] font-bold text-slate-500 uppercase">Receptor: ${escapeHtml(r.receptor_nombres)} ${escapeHtml(r.receptor_apellidos || '')}</p>` : ''}
                 ${r.evaluado_nombres ? `<p class="text-[10px] font-bold text-slate-500 uppercase">Evaluado: ${escapeHtml(r.evaluado_nombres)} ${escapeHtml(r.evaluado_apellidos || '')}${r.evaluado_cargo ? ' · ' + escapeHtml(r.evaluado_cargo) : ''}</p>` : ''}
                 <p class="text-xs text-slate-600 whitespace-pre-wrap">${escapeHtml(r.motivacion || '')}</p>
+                ${evidencias}
                 ${acciones}
             </div>`;
     }
@@ -3210,7 +3287,15 @@
             .then(payload => {
                 const recursos = payload.recursos || [];
                 const estado = payload.estado;
-                const puedeRadicar = estado === 'CALIFICADA';
+                const categoria = payload.categoria_final;
+                const esNoSatisfactorio = estado === 'CALIFICADA' && categoria === 'NO_SATISFACTORIO';
+                const tabBtnRecursos = document.getElementById('tabbtn-evaluado-recursos');
+                if (tabBtnRecursos) tabBtnRecursos.classList.toggle('hidden', !esNoSatisfactorio);
+                if (!esNoSatisfactorio) {
+                    if (tabBtnRecursos && tabBtnRecursos.classList.contains('active')) cambiarTabEvaluado('compromisos');
+                    return;
+                }
+                const puedeRadicar = true;
                 const tienePendiente = recursos.some(r => r.decision === 'PENDIENTE');
                 const aviso = document.getElementById('aviso-recursos-no-calificada');
                 if (aviso) {
@@ -3246,19 +3331,52 @@
         const motivacion = (document.getElementById('recurso-motivacion-evaluado')?.value || '').trim();
         if (!folios || folios < 1) { mostrarMensaje(mensaje, 'Indica el número de folios del recurso.', false); return; }
         if (!motivacion) { mostrarMensaje(mensaje, 'Escribe la motivación del recurso.', false); return; }
+        const evidencias = Array.from(document.querySelectorAll('#recurso-evidencias-lista-evaluado .recurso-evidencia-url'))
+            .map(input => {
+                const url = (input.value || '').trim();
+                if (!url) return null;
+                const row = input.closest('div');
+                const descripcion = (row?.querySelector('.recurso-evidencia-desc')?.value || '').trim();
+                return { url, descripcion };
+            })
+            .filter(Boolean);
         fetchJson(`/evaluaciones/${selectedEvaluacionId}/recursos`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
-            body: JSON.stringify({ tipo_recurso: tipo, numero_folios: folios, motivacion }),
+            body: JSON.stringify({ tipo_recurso: tipo, numero_folios: folios, motivacion, evidencias }),
         })
             .then(async res => {
                 const payload = await res.json().catch(() => ({}));
                 if (!res.ok) throw new Error(parseErrorMessage(payload, 'No se pudo radicar el recurso.'));
                 mostrarMensaje(mensaje, payload.message || 'Recurso radicado.', true);
                 e.target.reset();
+                const listaEvidencias = document.getElementById('recurso-evidencias-lista-evaluado');
+                if (listaEvidencias) listaEvidencias.innerHTML = '';
                 cargarRecursosEvaluado(selectedEvaluacionData);
             })
             .catch(error => mostrarMensaje(mensaje, error.message, false));
+    }
+
+    function agregarEvidenciaRecurso() {
+        const contenedor = document.getElementById('recurso-evidencias-lista-evaluado');
+        if (!contenedor) return;
+        const fila = document.createElement('div');
+        fila.className = 'flex items-start gap-2';
+        fila.innerHTML = `
+            <div class="grid gap-1.5 flex-1">
+                <input type="url" class="recurso-evidencia-url w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="https://ejemplo.com/evidencia" />
+                <input type="text" class="recurso-evidencia-desc w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Descripción (opcional)" maxlength="200" />
+            </div>
+            <button type="button" onclick="eliminarEvidenciaRecurso(this)" class="mt-1 text-red-400 hover:text-red-600 shrink-0" title="Quitar evidencia">
+                <span class="material-symbols-outlined text-base">close</span>
+            </button>`;
+        contenedor.appendChild(fila);
+        fila.querySelector('.recurso-evidencia-url')?.focus();
+    }
+
+    function eliminarEvidenciaRecurso(btn) {
+        const fila = btn.closest('div');
+        if (fila) fila.remove();
     }
 
     function cargarRecursosEvaluador(ev) {
@@ -3523,6 +3641,15 @@
                             ${badgeDecisionRecurso(r.decision)}
                         </div>
                         <p class="text-xs text-slate-600 whitespace-pre-wrap">${escapeHtml(r.motivacion || '')}</p>
+                        ${Array.isArray(r.evidencias) && r.evidencias.length ? `
+                        <div class="pt-2 border-t border-slate-100 space-y-1.5">
+                            <p class="text-[10px] font-bold uppercase text-slate-500 flex items-center gap-1"><span class="material-symbols-outlined text-xs">link</span> Evidencias</p>
+                            ${r.evidencias.map(ev => `
+                                <a href="${escapeHtml(ev.url)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 text-xs text-[#00594E] hover:underline min-w-0">
+                                    <span class="material-symbols-outlined text-sm shrink-0">open_in_new</span>
+                                    <span class="truncate">${escapeHtml(ev.descripcion || ev.url)}</span>
+                                </a>`).join('')}
+                        </div>` : ''}
                         ${r.decision === 'PENDIENTE' ? `
                         <div class="pt-2 border-t border-slate-100 grid sm:grid-cols-2 gap-2">
                             <select id="decision-admin-${r.id_recurso}" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white outline-none focus:border-[#00594E]">
