@@ -55,6 +55,7 @@
 
 <h2 class="titulo">Evaluación anual {{ $sistema }}</h2>
 <div class="subinfo">Periodo: {{ \Carbon\Carbon::parse($info['periodo']->fecha_inicio)->format('d/m/Y') }} al {{ \Carbon\Carbon::parse($info['periodo']->fecha_fin)->format('d/m/Y') }}</div>
+<div class="subinfo" style="color:#64748b; font-style:italic;">Documento generado el {{ $generadoEn->format('d/m/Y') }} a las {{ $generadoEn->format('H:i') }}</div>
 
 {{-- ============ INFORMACIÓN EVALUADOR ============ --}}
 <table>
