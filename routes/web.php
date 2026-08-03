@@ -31,21 +31,19 @@ if (!function_exists('defaultPonderacionesConfig')) {
 if (!function_exists('getPonderacionesConfig')) {
     function getPonderacionesConfig() {
         $configData = defaultPonderacionesConfig();
-        $jsonPath = storage_path('app/ponderaciones.json');
 
-        if (file_exists($jsonPath)) {
-            $storedData = json_decode(file_get_contents($jsonPath), true) ?? [];
-            foreach ($storedData as $sistema => $vals) {
-                if (!isset($configData[$sistema]) || !is_array($vals)) {
+        if (Schema::hasTable('ponderacion')) {
+            foreach (DB::table('ponderacion')->get() as $row) {
+                if (!isset($configData[$row->sistema])) {
                     continue;
                 }
 
-                $configData[$sistema] = array_merge($configData[$sistema], [
-                    'peso_compromisos' => (float) ($vals['peso_compromisos'] ?? $configData[$sistema]['peso_compromisos']),
-                    'peso_competencias' => (float) ($vals['peso_competencias'] ?? $configData[$sistema]['peso_competencias']),
-                    'peso_docencia' => (float) ($vals['peso_docencia'] ?? $configData[$sistema]['peso_docencia']),
-                    'peso_investigacion' => (float) ($vals['peso_investigacion'] ?? $configData[$sistema]['peso_investigacion']),
-                    'peso_proyeccion_social' => (float) ($vals['peso_proyeccion_social'] ?? $configData[$sistema]['peso_proyeccion_social']),
+                $configData[$row->sistema] = array_merge($configData[$row->sistema], [
+                    'peso_compromisos' => (float) $row->peso_compromisos,
+                    'peso_competencias' => (float) $row->peso_competencias,
+                    'peso_docencia' => (float) $row->peso_docencia,
+                    'peso_investigacion' => (float) $row->peso_investigacion,
+                    'peso_proyeccion_social' => (float) $row->peso_proyeccion_social,
                 ]);
             }
         }
@@ -75,16 +73,7 @@ function getTargetCompromisosWeight($id_evaluacion) {
     $target = (float) $configSistema['peso_compromisos'];
 
     if ($sistema === 'ACUERDO_GESTION' && $evaluacion->aplica_eje_misional) {
-        $jsonPath = storage_path('app/evaluacion_ejes.json');
-        $ejesData = [];
-        if (file_exists($jsonPath)) {
-            $ejesData = json_decode(file_get_contents($jsonPath), true) ?? [];
-        }
-
-        $ejes = $ejesData[$id_evaluacion] ?? [
-            'investigacion' => false,
-            'proyeccion_social' => false
-        ];
+        $ejes = getEvaluacionEjes($id_evaluacion);
 
         // Docencia es el eje base y siempre aplica; los ejes que NO apliquen
         // devuelven su porcentaje a compromisos.
@@ -105,7 +94,7 @@ function getTargetCompromisosWeight($id_evaluacion) {
     return max(0.0, $target);
 }
 
-function resolveOpenPeriodForVinculacion(int $idVinculacion, ?int $idPeriodo = null) {
+function resolveOpenPeriodForVinculacion(int $idVinculacion, ?int $idPeriodo = null, ?string $tipoEvaluacion = null) {
     $query = DB::table('periodo as p')
         ->join('vinculacion as v', function ($join) {
             $join->on(DB::raw('UPPER(TRIM(v.sistema_evaluacion))'), '=', DB::raw('UPPER(TRIM(p.sistema))'));
@@ -117,48 +106,77 @@ function resolveOpenPeriodForVinculacion(int $idVinculacion, ?int $idPeriodo = n
         $query->where('p.id_periodo', $idPeriodo);
     }
 
+    if (in_array($tipoEvaluacion, ['SEMESTRE_1', 'SEMESTRE_2'], true)) {
+        $query->where('p.semestre', $tipoEvaluacion === 'SEMESTRE_1' ? 1 : 2);
+    }
+
     return $query->select('p.*')->orderByDesc('p.id_periodo')->first();
 }
 
 function getEvaluadorAsignaciones(): array {
-    $jsonPath = storage_path('app/evaluador_asignaciones.json');
-    if (!file_exists($jsonPath)) {
+    if (!Schema::hasTable('evaluador_asignacion')) {
         return [];
     }
 
-    $data = json_decode(file_get_contents($jsonPath), true);
-    if (!is_array($data)) {
-        return [];
-    }
-
-    return array_values(array_filter($data, function ($row) {
-        return isset($row['id_vinc_evaluador'], $row['id_vinc_evaluado']);
-    }));
+    return DB::table('evaluador_asignacion')
+        ->orderBy('id_asignacion')
+        ->get()
+        ->map(fn ($a) => [
+            'id_vinc_evaluador' => (int) $a->id_vinc_evaluador,
+            'id_vinc_evaluado' => (int) $a->id_vinc_evaluado,
+            'fecha_asignacion' => $a->fecha_asignacion,
+        ])
+        ->all();
 }
 
 function evaluadorTieneEvaluadoAsignado(int $idVincEvaluador, int $idVincEvaluado): bool {
-    foreach (getEvaluadorAsignaciones() as $asignacion) {
-        if ((int) $asignacion['id_vinc_evaluador'] === $idVincEvaluador
-            && (int) $asignacion['id_vinc_evaluado'] === $idVincEvaluado) {
-            return true;
-        }
+    if (!Schema::hasTable('evaluador_asignacion')) {
+        return false;
     }
 
-    return false;
+    return DB::table('evaluador_asignacion')
+        ->where('id_vinc_evaluador', $idVincEvaluador)
+        ->where('id_vinc_evaluado', $idVincEvaluado)
+        ->exists();
 }
 
 function guardarEvaluadorAsignacion(int $idVincEvaluador, int $idVincEvaluado): void {
-    $asignaciones = getEvaluadorAsignaciones();
-
-    if (!evaluadorTieneEvaluadoAsignado($idVincEvaluador, $idVincEvaluado)) {
-        $asignaciones[] = [
-            'id_vinc_evaluador' => $idVincEvaluador,
-            'id_vinc_evaluado' => $idVincEvaluado,
-            'fecha_asignacion' => date('Y-m-d H:i:s'),
-        ];
+    if (!Schema::hasTable('evaluador_asignacion')) {
+        return;
     }
 
-    file_put_contents(storage_path('app/evaluador_asignaciones.json'), json_encode($asignaciones, JSON_PRETTY_PRINT));
+    DB::table('evaluador_asignacion')->insertOrIgnore([
+        'id_vinc_evaluador' => $idVincEvaluador,
+        'id_vinc_evaluado' => $idVincEvaluado,
+        'fecha_asignacion' => now(),
+    ]);
+}
+
+function getEvaluacionEjes(int $idEvaluacion): array {
+    if (!Schema::hasTable('evaluacion_eje')) {
+        return ['investigacion' => false, 'proyeccion_social' => false];
+    }
+
+    $row = DB::table('evaluacion_eje')->where('id_evaluacion', $idEvaluacion)->first();
+
+    return [
+        'investigacion' => (bool) ($row->investigacion ?? false),
+        'proyeccion_social' => (bool) ($row->proyeccion_social ?? false),
+    ];
+}
+
+function guardarEvaluacionEjes(int $idEvaluacion, bool $investigacion, bool $proyeccionSocial): void {
+    if (!Schema::hasTable('evaluacion_eje')) {
+        return;
+    }
+
+    DB::table('evaluacion_eje')->updateOrInsert(
+        ['id_evaluacion' => $idEvaluacion],
+        [
+            'investigacion' => (int) $investigacion,
+            'proyeccion_social' => (int) $proyeccionSocial,
+        ]
+    );
 }
 
 function getEvaluacionObservaciones(int $idEvaluacion): array {
@@ -357,6 +375,8 @@ Route::get('/dashboard', function () {
     $evaluaciones = collect();
     $periodos = collect();
     $ponderaciones = collect();
+    $periodosParciales = collect();
+    $funcionariosParaPeriodoParcial = collect();
     $evaluacionesEvaluador = collect();
     $evaluacionesEvaluado = collect();
     $evaluadosDisponibles = collect();
@@ -386,11 +406,37 @@ Route::get('/dashboard', function () {
             ->join('vinculacion as va', 'va.id_vinculacion', '=', 'ev.id_vinc_evaluador')
             ->join('funcionario as fa', 'fa.id_funcionario', '=', 'va.id_funcionario')
             ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
-            ->select('ev.id_evaluacion', 'ev.estado', 'p.anio', 'p.semestre', 'p.fecha_inicio', 'p.fecha_fin', 'ev.tipo_evaluacion as tipo_nombre', 'fe.nombres as evaluado_nombres', 'fe.apellidos as evaluado_apellidos', 'fa.nombres as evaluador_nombres', 'fa.apellidos as evaluador_apellidos', 'p.sistema')
+            ->select('ev.id_evaluacion', 'ev.estado', 'p.anio', 'p.semestre', 'p.fecha_inicio', 'p.fecha_fin', 'ev.tipo_evaluacion as tipo_nombre', 'ev.es_traslado', 'fe.nombres as evaluado_nombres', 'fe.apellidos as evaluado_apellidos', 'fa.nombres as evaluador_nombres', 'fa.apellidos as evaluador_apellidos', 'p.sistema')
             ->orderByDesc('ev.id_evaluacion')
             ->get();
 
         $periodos = DB::table('periodo')->orderByDesc('id_periodo')->get();
+
+        $periodosParciales = DB::table('periodo_parcial as pp')
+            ->join('periodo as p', 'p.id_periodo', '=', 'pp.id_periodo')
+            ->join('vinculacion as vf', 'vf.id_vinculacion', '=', 'pp.id_vinc_funcionario')
+            ->join('funcionario as ff', 'ff.id_funcionario', '=', 'vf.id_funcionario')
+            ->select(
+                'pp.*',
+                'p.sistema',
+                'p.anio',
+                'p.semestre',
+                'p.fecha_inicio as periodo_inicio',
+                'p.fecha_fin as periodo_fin',
+                'ff.nombres as funcionario_nombres',
+                'ff.apellidos as funcionario_apellidos',
+                'vf.cargo as funcionario_cargo',
+                'vf.area as funcionario_area'
+            )
+            ->orderByDesc('pp.id_periodo_parcial')
+            ->get();
+
+        $funcionariosParaPeriodoParcial = DB::table('vinculacion as v')
+            ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
+            ->where('v.activa', 1)
+            ->select('v.id_vinculacion', 'v.cargo', 'v.area', 'v.sistema_evaluacion', 'f.nombres', 'f.apellidos')
+            ->orderBy('f.apellidos')
+            ->get();
 
         $configData = getPonderacionesConfig();
         $ponderacionesList = [];
@@ -423,7 +469,7 @@ Route::get('/dashboard', function () {
                 $join->on('f_er.id_evaluacion', '=', 'ev.id_evaluacion')
                      ->where('f_er.tipo_firma', '=', 'CONCERTACION_EVALUADOR');
             })
-            ->select('ev.id_evaluacion', 'ev.estado', 'p.anio', 'p.semestre', 'p.fecha_inicio', 'p.fecha_fin', 'ev.tipo_evaluacion as tipo_nombre', 'ev.referencia', 'fe.nombres as evaluado_nombres', 'fe.apellidos as evaluado_apellidos', 'p.sistema', 've.cargo as evaluado_cargo', 've.area as evaluado_area', 've.nivel_jerarquico as evaluado_nivel_jerarquico', 'ev.fase_actual', 've.aplica_eje_misional', 'ev.concertacion_firmada', DB::raw('IF(f_ev.id_firma IS NOT NULL, 1, 0) as evaluado_firmado'), DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado'))
+            ->select('ev.id_evaluacion', 'ev.estado', 'p.anio', 'p.semestre', 'p.fecha_inicio', 'p.fecha_fin', 'ev.tipo_evaluacion as tipo_nombre', 'ev.referencia', 'ev.es_traslado', 'fe.nombres as evaluado_nombres', 'fe.apellidos as evaluado_apellidos', 'p.sistema', 've.cargo as evaluado_cargo', 've.area as evaluado_area', 've.nivel_jerarquico as evaluado_nivel_jerarquico', 'ev.fase_actual', 've.aplica_eje_misional', 'ev.concertacion_firmada', DB::raw('IF(f_ev.id_firma IS NOT NULL, 1, 0) as evaluado_firmado'), DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado'))
             ->orderByDesc('ev.id_evaluacion')
             ->get();
 
@@ -488,6 +534,16 @@ Route::get('/dashboard', function () {
                     ->orderBy('v.area')
                     ->orderBy('f.apellidos')
                     ->get();
+
+                $idsConPeriodoParcialAbierto = DB::table('periodo_parcial')
+                    ->where('estado', 'ABIERTO')
+                    ->pluck('id_vinc_funcionario')
+                    ->map(fn ($id) => (int) $id)
+                    ->all();
+
+                foreach ($evaluadosDisponibles as $evaluado) {
+                    $evaluado->tiene_periodo_parcial = in_array((int) $evaluado->id_vinculacion, $idsConPeriodoParcialAbierto);
+                }
             }
         }
     }
@@ -508,7 +564,7 @@ Route::get('/dashboard', function () {
                 $join->on('f_er.id_evaluacion', '=', 'ev.id_evaluacion')
                     ->where('f_er.tipo_firma', '=', 'CONCERTACION_EVALUADOR');
             })
-            ->select('ev.id_evaluacion', 'ev.estado', 'p.anio', 'p.semestre', 'p.fecha_inicio', 'p.fecha_fin', 'ev.tipo_evaluacion as tipo_nombre', 'ev.referencia', 'fa.nombres as evaluador_nombres', 'fa.apellidos as evaluador_apellidos', 'p.sistema', 've.cargo as evaluado_cargo', 've.area as evaluado_area', 've.nivel_jerarquico as evaluado_nivel_jerarquico', 'ev.concertacion_firmada', 'ev.fase_actual', 've.aplica_eje_misional', DB::raw('IF(f_ev.id_firma IS NOT NULL, 1, 0) as evaluado_firmado'), DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado'))
+            ->select('ev.id_evaluacion', 'ev.estado', 'ev.categoria_final', 'ev.calificacion_final', 'p.anio', 'p.semestre', 'p.fecha_inicio', 'p.fecha_fin', 'ev.tipo_evaluacion as tipo_nombre', 'ev.referencia', 'ev.es_traslado', 'fa.nombres as evaluador_nombres', 'fa.apellidos as evaluador_apellidos', 'p.sistema', 've.cargo as evaluado_cargo', 've.area as evaluado_area', 've.nivel_jerarquico as evaluado_nivel_jerarquico', 'ev.concertacion_firmada', 'ev.fase_actual', 've.aplica_eje_misional', DB::raw('IF(f_ev.id_firma IS NOT NULL, 1, 0) as evaluado_firmado'), DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado'))
             ->orderByDesc('ev.id_evaluacion')
             ->get();
     }
@@ -532,7 +588,8 @@ Route::get('/dashboard', function () {
         'usuario', 'rolActivo', 'usuarios', 'empleados', 'evaluaciones',
         'periodos', 'ponderaciones', 'evaluacionesEvaluador', 'evaluacionesEvaluado',
         'evaluadosDisponibles', 'miVinculacionEvaluador', 'acuerdosRL', 'acuerdosAG',
-        'ponderacionesConfig', 'evaluacionesInstanciaExterna', 'planesPendientesEvaluador'
+        'ponderacionesConfig', 'evaluacionesInstanciaExterna', 'planesPendientesEvaluador',
+        'periodosParciales', 'funcionariosParaPeriodoParcial'
     ));
 });
 
@@ -595,6 +652,7 @@ Route::post('/evaluador/asignaciones', function (Request $request) {
         'id_vinc_evaluado' => ['required', 'integer', 'exists:vinculacion,id_vinculacion'],
         'tipo_evaluacion' => ['required', 'in:SEMESTRE_1,SEMESTRE_2,PARCIAL'],
         'dias_laborados' => ['nullable', 'integer', 'min:1'],
+        'referencia' => ['nullable', 'string', 'max:200'],
         'investigacion' => ['nullable', 'boolean'],
         'proyeccion_social' => ['nullable', 'boolean'],
     ]);
@@ -617,7 +675,7 @@ Route::post('/evaluador/asignaciones', function (Request $request) {
 
     abort_unless(evaluadorTieneEvaluadoAsignado($miVinc->id_vinculacion, (int) $data['id_vinc_evaluado']), 403);
 
-    $periodo = resolveOpenPeriodForVinculacion($data['id_vinc_evaluado'], $data['id_periodo'] ?? null);
+    $periodo = resolveOpenPeriodForVinculacion($data['id_vinc_evaluado'], $data['id_periodo'] ?? null, $data['tipo_evaluacion']);
 
     abort_unless($periodo, 403);
 
@@ -642,6 +700,28 @@ Route::post('/evaluador/asignaciones', function (Request $request) {
         return back()->withErrors(['asignaciones' => 'El evaluado tiene un plan de mejoramiento pendiente por concertar y firmar de una evaluación anterior. Debes resolverlo antes de crear una nueva evaluación.']);
     }
 
+    $referenciaEvaluacion = trim($data['referencia'] ?? '') ?: null;
+    $diasLaborados = $data['dias_laborados'] ?? null;
+
+    if ($data['tipo_evaluacion'] === 'PARCIAL') {
+        $periodoParcial = DB::table('periodo_parcial')
+            ->where('id_periodo', $periodo->id_periodo)
+            ->where('id_vinc_funcionario', $data['id_vinc_evaluado'])
+            ->where('estado', 'ABIERTO')
+            ->first();
+
+        if (! $periodoParcial) {
+            return back()->withErrors(['asignaciones' => 'El funcionario no tiene un periodo parcial abierto. Debe crearlo el administrador en la sección de periodos.']);
+        }
+
+        if (! $referenciaEvaluacion) {
+            $referenciaEvaluacion = $periodoParcial->referencia;
+        }
+        if ($diasLaborados === null && $periodoParcial->fecha_inicio && $periodoParcial->fecha_fin) {
+            $diasLaborados = max(1, \Carbon\Carbon::parse($periodoParcial->fecha_inicio)->diffInDays(\Carbon\Carbon::parse($periodoParcial->fecha_fin)) + 1);
+        }
+    }
+
     $evaluacionId = DB::table('evaluacion')->insertGetId([
         'id_periodo' => $periodo->id_periodo,
         'id_vinc_evaluado' => $data['id_vinc_evaluado'],
@@ -650,22 +730,12 @@ Route::post('/evaluador/asignaciones', function (Request $request) {
         'fase_actual' => 1,
         'concertacion_firmada' => 0,
         'estado' => 'EN_PROCESO',
-        'dias_laborados' => $data['dias_laborados'],
+        'dias_laborados' => $diasLaborados,
+        'referencia' => $referenciaEvaluacion,
     ]);
 
     if (strtoupper(trim((string) $periodo->sistema)) === 'ACUERDO_GESTION' && $evaluadoVinc->aplica_eje_misional) {
-        $jsonPath = storage_path('app/evaluacion_ejes.json');
-        $ejesData = [];
-        if (file_exists($jsonPath)) {
-            $ejesData = json_decode(file_get_contents($jsonPath), true) ?? [];
-        }
-
-        $ejesData[$evaluacionId] = [
-            'investigacion' => (bool) ($data['investigacion'] ?? false),
-            'proyeccion_social' => (bool) ($data['proyeccion_social'] ?? false),
-        ];
-
-        file_put_contents($jsonPath, json_encode($ejesData, JSON_PRETTY_PRINT));
+        guardarEvaluacionEjes((int) $evaluacionId, (bool) ($data['investigacion'] ?? false), (bool) ($data['proyeccion_social'] ?? false));
     }
 
     return back()->with('success_asignacion', 'evaluacion creada para iniciar la concertacin.');
@@ -722,6 +792,70 @@ Route::post('/admin/periodos/{id}/toggle', function (int $id) {
     return back()->with('success_periodo', 'Estado de perodo actualizado.');
 })->name('admin.periodos.toggle');
 
+// --- PERIODOS PARCIALES ---
+// Crea un periodo PARCIAL para un funcionario que no estuvo desde el inicio
+// del semestre (ingreso a mitad de periodo o traslado). Su evaluador podrá
+// abrir una evaluación PARCIAL solo si existe un periodo parcial abierto.
+Route::post('/admin/periodos-parciales', function (Request $request) {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
+
+    $data = $request->validate([
+        'id_periodo' => ['required', 'integer', 'exists:periodo,id_periodo'],
+        'id_vinc_funcionario' => ['required', 'integer', 'exists:vinculacion,id_vinculacion'],
+        'fecha_inicio' => ['required', 'date'],
+        'fecha_fin' => ['required', 'date', 'after_or_equal:fecha_inicio'],
+        'referencia' => ['nullable', 'string', 'max:200'],
+    ]);
+
+    $periodo = DB::table('periodo')->where('id_periodo', $data['id_periodo'])->first();
+    abort_unless($periodo, 404);
+
+    $funcionario = DB::table('vinculacion')
+        ->where('id_vinculacion', $data['id_vinc_funcionario'])
+        ->where('activa', 1)
+        ->first();
+    abort_unless($funcionario, 403);
+
+    if (strtoupper(trim((string) $funcionario->sistema_evaluacion)) !== strtoupper(trim((string) $periodo->sistema))) {
+        return back()->withErrors(['periodo_parcial' => 'El sistema de evaluación del funcionario no coincide con el del periodo base seleccionado.']);
+    }
+
+    $existe = DB::table('periodo_parcial')
+        ->where('id_periodo', $data['id_periodo'])
+        ->where('id_vinc_funcionario', $data['id_vinc_funcionario'])
+        ->where('estado', 'ABIERTO')
+        ->exists();
+
+    if ($existe) {
+        return back()->withErrors(['periodo_parcial' => 'El funcionario ya tiene un periodo parcial abierto en este semestre.']);
+    }
+
+    DB::table('periodo_parcial')->insert([
+        'id_periodo' => (int) $data['id_periodo'],
+        'id_vinc_funcionario' => (int) $data['id_vinc_funcionario'],
+        'fecha_inicio' => $data['fecha_inicio'],
+        'fecha_fin' => $data['fecha_fin'],
+        'referencia' => trim($data['referencia'] ?? '') ?: null,
+        'estado' => 'ABIERTO',
+        'id_usuario_apertura' => session('usuario_autenticado.id_usuario') ?? null,
+    ]);
+
+    return back()->with('success_periodo', 'Periodo parcial creado exitosamente.');
+})->name('admin.periodos-parciales.store');
+
+Route::post('/admin/periodos-parciales/{id}/toggle', function (int $id) {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
+
+    $pp = DB::table('periodo_parcial')->where('id_periodo_parcial', $id)->first();
+    abort_unless($pp, 404);
+
+    $nuevoEstado = $pp->estado === 'ABIERTO' ? 'CERRADO' : 'ABIERTO';
+
+    DB::table('periodo_parcial')->where('id_periodo_parcial', $id)->update(['estado' => $nuevoEstado]);
+
+    return back()->with('success_periodo', 'Estado del periodo parcial actualizado.');
+})->name('admin.periodos-parciales.toggle');
+
 
 // --- PONDERACIONES DE SISTEMAS ---
 Route::post('/admin/ponderaciones', function (Request $request) {
@@ -753,18 +887,16 @@ Route::post('/admin/ponderaciones', function (Request $request) {
         return back()->withErrors(['ponderaciones' => 'La suma de las ponderaciones debe ser exactamente 100%.']);
     }
 
-    $jsonPath = storage_path('app/ponderaciones.json');
-    $configData = getPonderacionesConfig();
-
-    $configData[$data['sistema']] = [
-        'peso_compromisos' => (float)$data['peso_compromisos'],
-        'peso_competencias' => (float)$data['peso_competencias'],
-        'peso_docencia' => (float)$data['peso_docencia'],
-        'peso_investigacion' => (float)$data['peso_investigacion'],
-        'peso_proyeccion_social' => (float)$data['peso_proyeccion_social'],
-    ];
-
-    file_put_contents($jsonPath, json_encode($configData, JSON_PRETTY_PRINT));
+    DB::table('ponderacion')->updateOrInsert(
+        ['sistema' => $data['sistema']],
+        [
+            'peso_compromisos' => (float) $data['peso_compromisos'],
+            'peso_competencias' => (float) $data['peso_competencias'],
+            'peso_docencia' => (float) $data['peso_docencia'],
+            'peso_investigacion' => (float) $data['peso_investigacion'],
+            'peso_proyeccion_social' => (float) $data['peso_proyeccion_social'],
+        ]
+    );
 
     return back()->with('success_ponderacion', 'Ponderaciones actualizadas correctamente.');
 })->name('admin.ponderaciones.update');
@@ -867,7 +999,18 @@ Route::post('/admin/traslados', function (Request $request) {
     // Evaluación PARCIAL prorrateada por los días trabajados en la dependencia origen
     $idEvaluacionParcial = null;
     $diasLaborados = null;
-    $periodo = resolveOpenPeriodForVinculacion((int) $data['id_vinc_funcionario']);
+    $periodo = DB::table('evaluacion as ev')
+        ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
+        ->where('ev.id_vinc_evaluado', $data['id_vinc_funcionario'])
+        ->whereIn('ev.tipo_evaluacion', ['SEMESTRE_1', 'SEMESTRE_2'])
+        ->where('p.estado', 'ABIERTO')
+        ->orderByDesc('p.id_periodo')
+        ->select('p.*')
+        ->first();
+
+    if (! $periodo) {
+        $periodo = resolveOpenPeriodForVinculacion((int) $data['id_vinc_funcionario']);
+    }
 
     if ($periodo) {
         $fechaInicio = new \DateTime($periodo->fecha_inicio);
@@ -894,6 +1037,15 @@ Route::post('/admin/traslados', function (Request $request) {
             ->where('id_vinc_evaluador', $evaluadorOrigenId)
             ->update(['id_vinc_evaluador' => $data['id_vinc_evaluador_nuevo']]);
 
+        // La evaluación SEMESTRE ya concertada y firmada queda bloqueada por
+        // traslado: se etiqueta y solo se puede consultar.
+        DB::table('evaluacion')
+            ->where('id_periodo', $periodo->id_periodo)
+            ->where('id_vinc_evaluado', $data['id_vinc_funcionario'])
+            ->whereIn('tipo_evaluacion', ['SEMESTRE_1', 'SEMESTRE_2'])
+            ->where('concertacion_firmada', 1)
+            ->update(['es_traslado' => 1]);
+
         if ($diasLaborados < $diasPeriodo) {
             $existeParcial = DB::table('evaluacion')
                 ->where('id_periodo', $periodo->id_periodo)
@@ -919,17 +1071,15 @@ Route::post('/admin/traslados', function (Request $request) {
     }
 
     // Reasignar el funcionario al nuevo evaluador
-    $asignaciones = array_values(array_filter(getEvaluadorAsignaciones(), function ($a) use ($data) {
-        return (int) $a['id_vinc_evaluado'] !== (int) $data['id_vinc_funcionario'];
-    }));
+    DB::table('evaluador_asignacion')
+        ->where('id_vinc_evaluado', $data['id_vinc_funcionario'])
+        ->delete();
 
-    $asignaciones[] = [
+    DB::table('evaluador_asignacion')->insert([
         'id_vinc_evaluador' => (int) $data['id_vinc_evaluador_nuevo'],
         'id_vinc_evaluado' => (int) $data['id_vinc_funcionario'],
-        'fecha_asignacion' => date('Y-m-d H:i:s'),
-    ];
-
-    file_put_contents(storage_path('app/evaluador_asignaciones.json'), json_encode($asignaciones, JSON_PRETTY_PRINT));
+        'fecha_asignacion' => now(),
+    ]);
 
     // Actualizar dependencia/cargo en la vinculación activa
     $vinculacionUpdate = [];
@@ -1171,6 +1321,7 @@ Route::get('/evaluaciones/{id}/compromisos', function (int $id) {
             'testigos' => getTestigosConcertacion($id),
             'testigos_notificacion' => $testigosNotificacion,
             'congelada' => (bool) $evaluacion->concertacion_firmada,
+            'traslado' => (bool) $evaluacion->es_traslado,
             'calificada' => $evaluacion->estado === 'CALIFICADA',
             'fase_actual' => $evaluacion->fase_actual,
         ],
@@ -1179,19 +1330,8 @@ Route::get('/evaluaciones/{id}/compromisos', function (int $id) {
 
 Route::get('/evaluaciones/{id}/ejes', function (int $id) {
     abort_unless(session()->has('usuario_autenticado'), 403);
-    
-    $jsonPath = storage_path('app/evaluacion_ejes.json');
-    $ejesData = [];
-    if (file_exists($jsonPath)) {
-        $ejesData = json_decode(file_get_contents($jsonPath), true) ?? [];
-    }
 
-    $ejes = $ejesData[$id] ?? [
-        'investigacion' => false,
-        'proyeccion_social' => false
-    ];
-
-    return response()->json($ejes);
+    return response()->json(getEvaluacionEjes($id));
 });
 
 Route::post('/evaluaciones/{id}/ejes', function (Request $request, int $id) {
@@ -1208,23 +1348,14 @@ Route::post('/evaluaciones/{id}/ejes', function (Request $request, int $id) {
 
     abort_unless($puedeEditar, 403);
 
+    abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
+
     $data = $request->validate([
         'investigacion' => ['required', 'boolean'],
         'proyeccion_social' => ['required', 'boolean'],
     ]);
 
-    $jsonPath = storage_path('app/evaluacion_ejes.json');
-    $ejesData = [];
-    if (file_exists($jsonPath)) {
-        $ejesData = json_decode(file_get_contents($jsonPath), true) ?? [];
-    }
-
-    $ejesData[$id] = [
-        'investigacion' => (bool)$data['investigacion'],
-        'proyeccion_social' => (bool)$data['proyeccion_social'],
-    ];
-
-    file_put_contents($jsonPath, json_encode($ejesData, JSON_PRETTY_PRINT));
+    guardarEvaluacionEjes((int) $id, (bool) $data['investigacion'], (bool) $data['proyeccion_social']);
 
     return response()->json(['success' => true]);
 });
@@ -1257,6 +1388,7 @@ Route::post('/evaluaciones/{id}/observaciones', function (Request $request, int 
 
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
+    abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
     abort_unless($evaluacion->concertacion_firmada, 403, 'La concertación debe estar firmada por ambas partes antes de registrar observaciones.');
 
     $auth = session('usuario_autenticado');
@@ -1305,6 +1437,8 @@ Route::post('/evaluaciones/{id}/evidencias', function (Request $request, int $id
         ->first();
 
     abort_unless($vinculacionRegistra, 403);
+
+    abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
 
     if (!$evaluacion->concertacion_firmada) {
         return response()->json(['message' => 'Debes esperar a que el evaluador y el evaluado firmen la concertación antes de registrar evidencias.'], 422);
@@ -1363,6 +1497,8 @@ Route::post('/evaluaciones/{id}/evidencias/{idEvidencia}/aprobar', function (Req
 
     abort_unless($vinculacionEvaluador, 403);
 
+    abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
+
     abort_if($evaluacion->estado === 'CALIFICADA', 422, 'Esta evaluación ya fue calificada y calculada; las evidencias quedaron congeladas y no se pueden modificar.');
 
     $evidencia = DB::table('evidencia')
@@ -1392,6 +1528,7 @@ Route::post('/evaluaciones/{id}/compromisos', function (Request $request, int $i
 
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
+    abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
 
     if ($evaluacion->concertacion_firmada) {
         return response()->json(['error' => 'La concertación ya está firmada y congelada.'], 422);
@@ -1442,6 +1579,8 @@ Route::delete('/compromisos/{id}', function (int $id) {
 
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $compromiso->id_evaluacion)->first();
 
+    abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
+
     if ($evaluacion->concertacion_firmada) {
         return response()->json(['error' => 'La concertación ya está firmada y congelada.'], 422);
     }
@@ -1469,6 +1608,7 @@ Route::post('/evaluaciones/{id}/firmar', function (Request $request, int $id) {
 
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
+    abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
 
     if ($evaluacion->concertacion_firmada) {
         return back()->withErrors(['firma' => 'Esta concertación ya se encuentra firmada.']);
@@ -1568,6 +1708,7 @@ Route::post('/evaluaciones/{id}/firmar-notificacion', function (Request $request
 
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
+    abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
     abort_unless($evaluacion->estado === 'CALIFICADA', 422, 'La evaluación aún no ha sido calificada.');
 
     $renuncia = filter_var($request->input('renuencia', false), FILTER_VALIDATE_BOOLEAN);
@@ -1638,7 +1779,7 @@ Route::post('/evaluaciones/{id}/firmar-notificacion', function (Request $request
  * Calcula la nota final de una evaluación según los documentos oficiales de Unitrópico.
  *
  * Las ponderaciones provienen de la configuración parametrizada
- * (storage/app/ponderaciones.json o defaultPonderacionesConfig()):
+ * (tabla `ponderacion` o defaultPonderacionesConfig()):
  *
  * RENDIMIENTO_LABORAL (RL):
  *   - Compromisos:              80 %  (suma ponderada en escala 0-100)
@@ -1715,13 +1856,8 @@ if (!function_exists('calcularNotaEvaluacion')) {
     $ejeCals       = [];
 
     if ($sistema === 'ACUERDO_GESTION' && $evaluacion->aplica_eje_misional) {
-        // Leer qué ejes están habilitados desde el JSON (investigacion / proyeccion_social)
-        $jsonPath = storage_path('app/evaluacion_ejes.json');
-        $ejesJson = [];
-        if (file_exists($jsonPath)) {
-            $ejesJson = json_decode(file_get_contents($jsonPath), true) ?? [];
-        }
-        $ejesConfig = $ejesJson[$idEvaluacion] ?? [];
+        // Leer qué ejes están habilitados desde la tabla evaluacion_eje (investigacion / proyeccion_social)
+        $ejesConfig = getEvaluacionEjes($idEvaluacion);
 
         // Docencia SIEMPRE activa si aplica_eje_misional = 1
         $pesoEjes = [
@@ -1787,21 +1923,23 @@ if (!function_exists('calcularNotaEvaluacion')) {
     // -------------------------------------------------------
     // 2. NOTA COMPETENCIAS COMUNES (promedio escala 0-100)
     // -------------------------------------------------------
-    $compComun = DB::table('competencia_evaluada')
-        ->where('id_evaluacion', $idEvaluacion)
-        ->where('tipo', 'COMUN')
-        ->whereNotNull('calificacion_definitiva')
-        ->avg('calificacion_definitiva');
+    $compComun = DB::table('competencia_evaluada as ce')
+        ->join('competencia_catalogo as cc', 'cc.id_competencia', '=', 'ce.id_competencia')
+        ->where('ce.id_evaluacion', $idEvaluacion)
+        ->where('cc.tipo', 'COMUN')
+        ->whereNotNull('ce.calificacion_definitiva')
+        ->avg('ce.calificacion_definitiva');
     $notaCompComun = $compComun ? (float)$compComun : 0.0;
 
     // -------------------------------------------------------
     // 3. NOTA COMPETENCIAS NIVEL JERÁRQUICO (promedio 0-100)
     // -------------------------------------------------------
-    $compNivel = DB::table('competencia_evaluada')
-        ->where('id_evaluacion', $idEvaluacion)
-        ->where('tipo', 'NIVEL_JERARQUICO')
-        ->whereNotNull('calificacion_definitiva')
-        ->avg('calificacion_definitiva');
+    $compNivel = DB::table('competencia_evaluada as ce')
+        ->join('competencia_catalogo as cc', 'cc.id_competencia', '=', 'ce.id_competencia')
+        ->where('ce.id_evaluacion', $idEvaluacion)
+        ->where('cc.tipo', 'NIVEL_JERARQUICO')
+        ->whereNotNull('ce.calificacion_definitiva')
+        ->avg('ce.calificacion_definitiva');
     $notaCompNivel = $compNivel ? (float)$compNivel : 0.0;
 
     // -------------------------------------------------------
@@ -1874,12 +2012,14 @@ if (!function_exists('calcularNotaEvaluacion')) {
     $comunesEsperadas = collect($catalogo[$sistema]['COMUN'] ?? [])->pluck('nombre')->all();
     $nivelEsperadas   = collect($catalogo[$sistema]['NIVEL_JERARQUICO'][$nivelJerarquico] ?? [])->pluck('nombre')->all();
 
-    $comunesCalificadas = DB::table('competencia_evaluada')
-        ->where('id_evaluacion', $idEvaluacion)->where('tipo', 'COMUN')
-        ->whereNotNull('calificacion_definitiva')->pluck('nombre_competencia')->all();
-    $nivelCalificadas = DB::table('competencia_evaluada')
-        ->where('id_evaluacion', $idEvaluacion)->where('tipo', 'NIVEL_JERARQUICO')
-        ->whereNotNull('calificacion_definitiva')->pluck('nombre_competencia')->all();
+    $comunesCalificadas = DB::table('competencia_evaluada as ce')
+        ->join('competencia_catalogo as cc', 'cc.id_competencia', '=', 'ce.id_competencia')
+        ->where('ce.id_evaluacion', $idEvaluacion)->where('cc.tipo', 'COMUN')
+        ->whereNotNull('ce.calificacion_definitiva')->pluck('cc.nombre')->all();
+    $nivelCalificadas = DB::table('competencia_evaluada as ce')
+        ->join('competencia_catalogo as cc', 'cc.id_competencia', '=', 'ce.id_competencia')
+        ->where('ce.id_evaluacion', $idEvaluacion)->where('cc.tipo', 'NIVEL_JERARQUICO')
+        ->whereNotNull('ce.calificacion_definitiva')->pluck('cc.nombre')->all();
 
     $comunesFaltantes = array_values(array_diff($comunesEsperadas, $comunesCalificadas));
     $nivelFaltantes   = array_values(array_diff($nivelEsperadas, $nivelCalificadas));
@@ -1977,6 +2117,7 @@ Route::post('/evaluaciones/{id}/calificar-compromisos', function (Request $reque
         ->where('id_funcionario', $auth['id_funcionario'] ?? null)
         ->exists();
     abort_unless($puedeEditar, 403);
+    abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
 
     $data = $request->validate([
         'compromisos' => ['required', 'array'],
@@ -2031,11 +2172,11 @@ Route::post('/evaluaciones/{id}/calificar-competencias', function (Request $requ
         ->where('id_funcionario', $auth['id_funcionario'] ?? null)
         ->exists();
     abort_unless($puedeEditar, 403);
+    abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
 
     $data = $request->validate([
         'competencias'   => ['required', 'array'],
-        'competencias.*.nombre_competencia'     => ['required', 'string', 'max:150'],
-        'competencias.*.tipo'                   => ['required', 'in:COMUN,NIVEL_JERARQUICO'],
+        'competencias.*.id_competencia'         => ['required', 'integer', 'exists:competencia_catalogo,id_competencia'],
         'competencias.*.calificacion_definitiva'=> ['nullable', 'numeric', 'min:0', 'max:100'],
         'competencias.*.calificacion_sem1'      => ['nullable', 'numeric', 'min:0', 'max:100'],
         'competencias.*.calificacion_sem2'      => ['nullable', 'numeric', 'min:0', 'max:100'],
@@ -2044,8 +2185,7 @@ Route::post('/evaluaciones/{id}/calificar-competencias', function (Request $requ
     foreach ($data['competencias'] as $item) {
         $existing = DB::table('competencia_evaluada')
             ->where('id_evaluacion', $id)
-            ->where('nombre_competencia', $item['nombre_competencia'])
-            ->where('tipo', $item['tipo'])
+            ->where('id_competencia', $item['id_competencia'])
             ->first();
 
         $fields = [
@@ -2061,8 +2201,7 @@ Route::post('/evaluaciones/{id}/calificar-competencias', function (Request $requ
         } else {
             DB::table('competencia_evaluada')->insert(array_merge($fields, [
                 'id_evaluacion'      => $id,
-                'nombre_competencia' => $item['nombre_competencia'],
-                'tipo'               => $item['tipo'],
+                'id_competencia'     => $item['id_competencia'],
             ]));
         }
     }
@@ -2078,6 +2217,7 @@ Route::post('/evaluaciones/{id}/calcular-final', function (Request $request, int
 
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
+    abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
 
     // Solo admin puede forzar el cálculo; evaluador solo puede calificar sus propias
     if ($rolActivo === 'evaluador') {
@@ -2146,11 +2286,20 @@ Route::get('/evaluaciones/{id}/competencias', function (int $id) {
         abort_unless($puedeVer, 403);
     }
 
-    $competencias = DB::table('competencia_evaluada')
-        ->where('id_evaluacion', $id)
-        ->orderBy('tipo')
-        ->orderBy('nombre_competencia')
-        ->get();
+    $competencias = DB::table('competencia_evaluada as ce')
+        ->join('competencia_catalogo as cc', 'cc.id_competencia', '=', 'ce.id_competencia')
+        ->where('ce.id_evaluacion', $id)
+        ->orderBy('cc.tipo')
+        ->orderBy('cc.orden')
+        ->get([
+            'ce.id_comp_eval',
+            'ce.id_competencia',
+            'cc.nombre as nombre_competencia',
+            'cc.tipo',
+            'ce.calificacion_sem1',
+            'ce.calificacion_sem2',
+            'ce.calificacion_definitiva',
+        ]);
 
     return response()->json(['competencias' => $competencias]);
 })->name('evaluaciones.competencias');
@@ -2161,38 +2310,53 @@ Route::get('/catalogo/competencias', function (Request $request) {
     abort_unless(session()->has('usuario_autenticado'), 403);
 
     $catalogoPath = storage_path('app/competencias_catalogo.json');
-    if (!file_exists($catalogoPath)) {
-        return response()->json(['error' => 'Catálogo no disponible.'], 404);
-    }
-
-    $catalogo = json_decode(file_get_contents($catalogoPath), true);
+    $escala = file_exists($catalogoPath)
+        ? (json_decode(file_get_contents($catalogoPath), true)['escala_calificacion'] ?? [])
+        : [];
 
     // Filtrar por sistema y nivel si se pasan como query params
     $sistema = strtoupper($request->query('sistema', ''));
     $nivel   = strtoupper($request->query('nivel', ''));
 
-    if ($sistema && isset($catalogo[$sistema])) {
-        $resultado = $catalogo[$sistema];
+    if (! in_array($sistema, ['RENDIMIENTO_LABORAL', 'ACUERDO_GESTION'])) {
+        return response()->json(['error' => 'Sistema inválido.'], 404);
+    }
 
-        if ($nivel && isset($resultado['NIVEL_JERARQUICO'][$nivel])) {
-            return response()->json([
-                'sistema' => $sistema,
-                'nivel'   => $nivel,
-                'comun'   => $resultado['COMUN'],
-                'nivel_jerarquico' => $resultado['NIVEL_JERARQUICO'][$nivel],
-                'escala'  => $catalogo['escala_calificacion'],
-            ]);
-        }
+    $comun = DB::table('competencia_catalogo')
+        ->where('sistema', $sistema)
+        ->where('tipo', 'COMUN')
+        ->orderBy('orden')
+        ->get(['id_competencia', 'nombre', 'afirmacion']);
+
+    if ($nivel) {
+        $nivelRows = DB::table('competencia_catalogo')
+            ->where('sistema', $sistema)
+            ->where('tipo', 'NIVEL_JERARQUICO')
+            ->where('nivel_jerarquico', $nivel)
+            ->orderBy('orden')
+            ->get(['id_competencia', 'nombre', 'afirmacion']);
 
         return response()->json([
             'sistema' => $sistema,
-            'data'    => $resultado,
-            'escala'  => $catalogo['escala_calificacion'],
+            'nivel'   => $nivel,
+            'comun'   => $comun,
+            'nivel_jerarquico' => $nivelRows,
+            'escala'  => $escala,
         ]);
     }
 
+    $nivelGrouped = DB::table('competencia_catalogo')
+        ->where('sistema', $sistema)
+        ->where('tipo', 'NIVEL_JERARQUICO')
+        ->orderBy('nivel_jerarquico')
+        ->orderBy('orden')
+        ->get(['id_competencia', 'nivel_jerarquico', 'nombre', 'afirmacion'])
+        ->groupBy('nivel_jerarquico');
+
     return response()->json([
-        'catalogo' => $catalogo,
+        'sistema' => $sistema,
+        'data'    => ['COMUN' => $comun, 'NIVEL_JERARQUICO' => $nivelGrouped],
+        'escala'  => $escala,
     ]);
 })->name('catalogo.competencias');
 
@@ -2212,6 +2376,7 @@ Route::post('/evaluaciones/{id}/calificar-ejes', function (Request $request, int
         ->where('id_funcionario', $auth['id_funcionario'] ?? null)
         ->exists();
     abort_unless($puedeEditar, 403);
+    abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
 
     // Verificar que el evaluado tiene aplica_eje_misional = 1
     $vinculacionEvaluado = DB::table('vinculacion')
@@ -2273,9 +2438,6 @@ if (!function_exists('obtenerEvaluacionesAgConEjesMisionales')) {
             ->orderBy('f.apellidos')
             ->get();
 
-        $jsonPath = storage_path('app/evaluacion_ejes.json');
-        $ejesJson = file_exists($jsonPath) ? (json_decode(file_get_contents($jsonPath), true) ?? []) : [];
-
         foreach ($personas as $persona) {
             $evaluacion = $periodoAG
                 ? DB::table('evaluacion')
@@ -2290,7 +2452,7 @@ if (!function_exists('obtenerEvaluacionesAgConEjesMisionales')) {
             $persona->estado = $evaluacion->estado ?? null;
             $persona->concertacion_firmada = $evaluacion ? (bool) $evaluacion->concertacion_firmada : false;
 
-            $config = $evaluacion ? ($ejesJson[$evaluacion->id_evaluacion] ?? []) : [];
+            $config = $evaluacion ? getEvaluacionEjes((int) $evaluacion->id_evaluacion) : [];
             $ejesActivos = ['DOCENCIA'];
             if (!empty($config['investigacion'])) $ejesActivos[] = 'INVESTIGACION';
             if (!empty($config['proyeccion_social'])) $ejesActivos[] = 'PROYECCION_SOCIAL';
@@ -2326,6 +2488,7 @@ Route::post('/evaluaciones/{id}/ejes-externa', function (Request $request, int $
         ->select('ev.*', 'p.sistema')
         ->first();
     abort_unless($evaluacion, 404);
+    abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
     abort_unless(strtoupper(trim((string) $evaluacion->sistema)) === 'ACUERDO_GESTION', 422, 'Solo aplica a evaluaciones de Acuerdo de Gestión.');
     abort_unless($evaluacion->concertacion_firmada, 403, 'La concertación debe estar firmada antes de calificar ejes misionales.');
     abort_if($evaluacion->estado === 'CALIFICADA', 422, 'Esta evaluación ya fue calificada y calculada; las notas quedaron congeladas y no se pueden modificar.');
@@ -2386,19 +2549,45 @@ if (!function_exists('getTestigosConcertacion')) {
 /**
  * Devuelve los recursos de una evaluación con nombres de receptor/solicitante.
  */
+if (!function_exists('adjuntarEvidenciasRecursos')) {
+    function adjuntarEvidenciasRecursos($recursos) {
+        $ids = collect($recursos)
+            ->pluck('id_recurso')
+            ->map(fn ($i) => (int) $i)
+            ->filter()
+            ->all();
+
+        $evidencias = $ids
+            ? DB::table('recurso_evidencia')
+                ->whereIn('id_recurso', $ids)
+                ->orderBy('id_recurso_evidencia')
+                ->get()
+                ->groupBy('id_recurso')
+            : collect();
+
+        foreach ($recursos as $r) {
+            $r->evidencias = $evidencias[(int) $r->id_recurso] ?? [];
+        }
+
+        return $recursos;
+    }
+}
+
 if (!function_exists('getRecursosEvaluacion')) {
     function getRecursosEvaluacion(int $idEvaluacion) {
-        return DB::table('recurso as r')
-            ->leftJoin('vinculacion as vrec', 'vrec.id_vinculacion', '=', 'r.id_vinc_receptor')
-            ->leftJoin('funcionario as frec', 'frec.id_funcionario', '=', 'vrec.id_funcionario')
-            ->where('r.id_evaluacion', $idEvaluacion)
-            ->select(
-                'r.*',
-                'frec.nombres as receptor_nombres',
-                'frec.apellidos as receptor_apellidos'
-            )
-            ->orderByDesc('r.id_recurso')
-            ->get();
+        return adjuntarEvidenciasRecursos(
+            DB::table('recurso as r')
+                ->leftJoin('vinculacion as vrec', 'vrec.id_vinculacion', '=', 'r.id_vinc_receptor')
+                ->leftJoin('funcionario as frec', 'frec.id_funcionario', '=', 'vrec.id_funcionario')
+                ->where('r.id_evaluacion', $idEvaluacion)
+                ->select(
+                    'r.*',
+                    'frec.nombres as receptor_nombres',
+                    'frec.apellidos as receptor_apellidos'
+                )
+                ->orderByDesc('r.id_recurso')
+                ->get()
+        );
     }
 }
 
@@ -2536,6 +2725,8 @@ Route::get('/evaluaciones/{id}/recursos', function (int $id) {
     return response()->json([
         'recursos' => getRecursosEvaluacion($id),
         'estado' => $evaluacion->estado,
+        'categoria_final' => $evaluacion->categoria_final,
+        'traslado' => (bool) $evaluacion->es_traslado,
     ]);
 })->name('evaluaciones.recursos');
 
@@ -2546,6 +2737,7 @@ Route::post('/evaluaciones/{id}/recursos', function (Request $request, int $id) 
 
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
+    abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
     abort_unless($evaluacion->estado === 'CALIFICADA', 422, 'Solo puedes radicar un recurso cuando la evaluación haya sido calificada y calculada.');
 
     $auth = session('usuario_autenticado');
@@ -2561,6 +2753,9 @@ Route::post('/evaluaciones/{id}/recursos', function (Request $request, int $id) 
         'tipo_recurso' => ['required', 'in:REPOSICION,APELACION'],
         'numero_folios' => ['required', 'integer', 'min:1'],
         'motivacion' => ['required', 'string', 'max:3000'],
+        'evidencias' => ['nullable', 'array'],
+        'evidencias.*.url' => ['nullable', 'url', 'max:1000'],
+        'evidencias.*.descripcion' => ['nullable', 'string', 'max:200'],
     ]);
 
     $yaExistePendiente = DB::table('recurso')
@@ -2590,6 +2785,18 @@ Route::post('/evaluaciones/{id}/recursos', function (Request $request, int $id) 
         'numero_radicado' => sprintf('%s-%s-%04d', $prefijo, date('Y'), $idRecurso),
     ]);
 
+    $evidencias = array_values(array_filter($data['evidencias'] ?? [], function ($e) {
+        return !empty(trim((string) ($e['url'] ?? '')));
+    }));
+
+    foreach ($evidencias as $evidencia) {
+        DB::table('recurso_evidencia')->insert([
+            'id_recurso' => $idRecurso,
+            'descripcion' => trim((string) ($evidencia['descripcion'] ?? '')) ?: null,
+            'url' => trim($evidencia['url']),
+        ]);
+    }
+
     return response()->json([
         'success' => true,
         'message' => 'Recurso radicado correctamente (radicado ' . sprintf('%s-%s-%04d', $prefijo, date('Y'), $idRecurso) . ').',
@@ -2608,6 +2815,7 @@ Route::post('/recursos/{id}/decision', function (Request $request, int $id) {
 
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $recurso->id_evaluacion)->first();
     abort_unless($evaluacion, 404);
+    abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
 
     $auth = session('usuario_autenticado');
     $rolActivo = $auth['rol_activo'] ?? null;
@@ -2671,7 +2879,7 @@ Route::get('/recursos', function () {
         ->orderByDesc('r.id_recurso')
         ->get();
 
-    return response()->json(['recursos' => $recursos]);
+    return response()->json(['recursos' => adjuntarEvidenciasRecursos($recursos)]);
 })->name('recursos.index');
 
 
@@ -2714,7 +2922,7 @@ Route::get('/recursos/mios', function () {
         ->orderByDesc('r.id_recurso')
         ->get();
 
-    return response()->json(['recursos' => $recursos]);
+    return response()->json(['recursos' => adjuntarEvidenciasRecursos($recursos)]);
 })->name('recursos.mios');
 
 
@@ -2757,6 +2965,7 @@ Route::post('/evaluaciones/{id}/plan-mejoramiento', function (Request $request, 
 
     $evaluacion = getEvaluacionConSistema($id);
     abort_unless($evaluacion, 404);
+    abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
     abort_unless(evaluacionRequierePlanMejoramiento($evaluacion), 422, 'Esta evaluación no requiere plan de mejoramiento según la calificación obtenida.');
 
     $auth = session('usuario_autenticado');
@@ -2805,6 +3014,7 @@ Route::post('/plan-mejoramiento/{id}/firmar', function (Request $request, int $i
 
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $plan->id_evaluacion)->first();
     abort_unless($evaluacion, 404);
+    abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
 
     $auth = session('usuario_autenticado');
     $rolActivo = $auth['rol_activo'] ?? null;
@@ -2983,45 +3193,15 @@ if (!function_exists('prepararInformeSemestral')) {
             'fecha_fin' => $evaluacion->fecha_fin,
         ];
 
-        // Catálogo para ordenar competencias y completar afirmaciones
-        $catalogoPath = storage_path('app/competencias_catalogo.json');
-        $catalogo = file_exists($catalogoPath) ? (json_decode(file_get_contents($catalogoPath), true) ?? []) : [];
-        $nivelJerarquico = strtoupper(trim((string) $evaluacion->evaluado_nivel));
-        $catalogoComun = $catalogo[$sistema]['COMUN'] ?? [];
-        $catalogoNivel = $catalogo[$sistema]['NIVEL_JERARQUICO'][$nivelJerarquico] ?? [];
-        $ordenComun = array_flip(array_map(fn ($c) => mb_strtoupper($c['nombre'] ?? ''), $catalogoComun));
-        $ordenNivel = array_flip(array_map(fn ($c) => mb_strtoupper($c['nombre'] ?? ''), $catalogoNivel));
+        // Competencias uniendo el catálogo (nombre, afirmación y orden)
+        $competencias = DB::table('competencia_evaluada as ce')
+            ->join('competencia_catalogo as cc', 'cc.id_competencia', '=', 'ce.id_competencia')
+            ->where('ce.id_evaluacion', $idEvaluacion)
+            ->orderBy('cc.orden')
+            ->get(['cc.nombre as nombre_competencia', 'cc.tipo', 'cc.afirmacion', 'ce.calificacion_definitiva']);
 
-        $afirmacionPorNombre = function (array $catalogoRows) {
-            $map = [];
-            foreach ($catalogoRows as $row) {
-                $map[mb_strtoupper($row['nombre'] ?? '')] = $row['afirmacion'] ?? '';
-            }
-            return $map;
-        };
-        $afirmacionesComun = $afirmacionPorNombre($catalogoComun);
-        $afirmacionesNivel = $afirmacionPorNombre($catalogoNivel);
-
-        $competencias = DB::table('competencia_evaluada')
-            ->where('id_evaluacion', $idEvaluacion)
-            ->orderBy('tipo')
-            ->get(['nombre_competencia', 'tipo', 'calificacion_definitiva']);
-
-        $competenciasComunes = $competencias->filter(fn ($c) => $c->tipo === 'COMUN')->values()
-            ->sortBy(fn ($c) => $ordenComun[mb_strtoupper($c->nombre_competencia)] ?? 999)
-            ->values()
-            ->map(function ($c) use ($afirmacionesComun) {
-                $c->afirmacion = $afirmacionesComun[mb_strtoupper($c->nombre_competencia)] ?? '';
-                return $c;
-            });
-
-        $competenciasNivel = $competencias->filter(fn ($c) => $c->tipo === 'NIVEL_JERARQUICO')->values()
-            ->sortBy(fn ($c) => $ordenNivel[mb_strtoupper($c->nombre_competencia)] ?? 999)
-            ->values()
-            ->map(function ($c) use ($afirmacionesNivel) {
-                $c->afirmacion = $afirmacionesNivel[mb_strtoupper($c->nombre_competencia)] ?? '';
-                return $c;
-            });
+        $competenciasComunes = $competencias->filter(fn ($c) => $c->tipo === 'COMUN')->values();
+        $competenciasNivel   = $competencias->filter(fn ($c) => $c->tipo === 'NIVEL_JERARQUICO')->values();
 
         // Compromisos con metas, observaciones y links de evidencias
         $compromisos = DB::table('compromiso')
@@ -3061,7 +3241,14 @@ if (!function_exists('prepararInformeSemestral')) {
             ->where('r.id_evaluacion', $idEvaluacion)
             ->select('r.*', 'vr.cargo as cargo_receptor', 'fr.nombres as receptor_nombres', 'fr.apellidos as receptor_apellidos')
             ->orderBy('r.fecha_recurso')
-            ->get();
+            ->get()
+            ->map(function ($rec) {
+                $rec->evidencias = DB::table('recurso_evidencia')
+                    ->where('id_recurso', $rec->id_recurso)
+                    ->select('descripcion', 'url')
+                    ->get();
+                return $rec;
+            });
 
         // Renuencia del evaluado con testigos (en notificación de la nota)
         $renuencias = DB::table('firma')
@@ -3201,7 +3388,8 @@ if (!function_exists('prepararInformeAnual')) {
 if (!function_exists('descargarInformePdf')) {
     function descargarInformePdf(string $vista, array $info, string $filename, string $orientacion = 'portrait')
     {
-        $html = view($vista, compact('info'))->render();
+        $generadoEn = now('America/Bogota');
+        $html = view($vista, compact('info', 'generadoEn'))->render();
 
         $options = new \Dompdf\Options();
         $options->set('isRemoteEnabled', true);
