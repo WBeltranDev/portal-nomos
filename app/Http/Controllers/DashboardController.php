@@ -1,0 +1,338 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\View\View;
+
+class DashboardController extends Controller
+{
+    /**
+     * Handle the incoming request for the dashboard based on user role.
+     */
+    public function index(Request $request)
+    {
+        abort_unless(session()->has('usuario_autenticado'), 403);
+
+        if (! session('usuario_autenticado.rol_activo')) {
+            return redirect('/seleccionar-rol');
+        }
+
+        $usuario = session('usuario_autenticado');
+        $rolActivo = session('usuario_autenticado.rol_activo');
+
+        // Default empty collections
+        $usuarios = collect();
+        $empleados = collect();
+        $evaluaciones = collect();
+        $periodos = collect();
+        $ponderaciones = collect();
+        $periodosParciales = collect();
+        $funcionariosParaPeriodoParcial = collect();
+        $evaluacionesEvaluador = collect();
+        $evaluacionesEvaluado = collect();
+        $evaluadosDisponibles = collect();
+        $evaluacionesInstanciaExterna = collect();
+        $planesPendientesEvaluador = collect();
+        $miVinculacionEvaluador = null;
+
+        // 1. Data for Admin
+        if ($rolActivo === 'admin') {
+            $usuarios = DB::table('usuario as u')
+                ->leftJoin('funcionario as f', 'f.id_usuario', '=', 'u.id_usuario')
+                ->select(
+                    'u.id_usuario',
+                    'u.username as correo_institucional',
+                    'u.rol',
+                    'f.nombres',
+                    'f.apellidos',
+                    'f.tipo_documento',
+                    'f.numero_doc as documento_identidad'
+                )
+                ->orderBy('f.apellidos')
+                ->get();
+
+            $empleados = DB::table('funcionario as f')
+                ->leftJoin('vinculacion as v', function ($join) {
+                    $join->on('v.id_funcionario', '=', 'f.id_funcionario')->where('v.activa', '=', 1);
+                })
+                ->select(
+                    'f.id_funcionario',
+                    'f.nombres',
+                    'f.apellidos',
+                    'f.correo_cargo as correo_institucional',
+                    'f.numero_doc as documento_identidad',
+                    'f.tipo_documento',
+                    'v.cargo as nombre_cargo',
+                    'v.area as nombre_area',
+                    'v.activa as activo',
+                    'v.id_vinculacion',
+                    'v.es_evaluador'
+                )
+                ->orderBy('f.apellidos')
+                ->get();
+
+            $evaluaciones = DB::table('evaluacion as ev')
+                ->join('vinculacion as ve', 've.id_vinculacion', '=', 'ev.id_vinc_evaluado')
+                ->join('funcionario as fe', 'fe.id_funcionario', '=', 've.id_funcionario')
+                ->join('vinculacion as va', 'va.id_vinculacion', '=', 'ev.id_vinc_evaluador')
+                ->join('funcionario as fa', 'fa.id_funcionario', '=', 'va.id_funcionario')
+                ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
+                ->select(
+                    'ev.id_evaluacion',
+                    'ev.estado',
+                    'p.anio',
+                    'p.semestre',
+                    'p.fecha_inicio',
+                    'p.fecha_fin',
+                    'ev.tipo_evaluacion as tipo_nombre',
+                    'ev.es_traslado',
+                    'fe.nombres as evaluado_nombres',
+                    'fe.apellidos as evaluado_apellidos',
+                    'fa.nombres as evaluador_nombres',
+                    'fa.apellidos as evaluador_apellidos',
+                    'p.sistema'
+                )
+                ->orderByDesc('ev.id_evaluacion')
+                ->get();
+
+            $periodos = DB::table('periodo')->orderByDesc('id_periodo')->get();
+
+            $periodosParciales = DB::table('periodo_parcial as pp')
+                ->join('periodo as p', 'p.id_periodo', '=', 'pp.id_periodo')
+                ->join('vinculacion as vf', 'vf.id_vinculacion', '=', 'pp.id_vinc_funcionario')
+                ->join('funcionario as ff', 'ff.id_funcionario', '=', 'vf.id_funcionario')
+                ->select(
+                    'pp.*',
+                    'p.sistema',
+                    'p.anio',
+                    'p.semestre',
+                    'p.fecha_inicio as periodo_inicio',
+                    'p.fecha_fin as periodo_fin',
+                    'ff.nombres as funcionario_nombres',
+                    'ff.apellidos as funcionario_apellidos',
+                    'vf.cargo as funcionario_cargo',
+                    'vf.area as funcionario_area'
+                )
+                ->orderByDesc('pp.id_periodo_parcial')
+                ->get();
+
+            $funcionariosParaPeriodoParcial = DB::table('vinculacion as v')
+                ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
+                ->where('v.activa', 1)
+                ->select('v.id_vinculacion', 'v.cargo', 'v.area', 'v.sistema_evaluacion', 'f.nombres', 'f.apellidos')
+                ->orderBy('f.apellidos')
+                ->get();
+
+            $configData = getPonderacionesConfig();
+            $ponderacionesList = [];
+            foreach ($configData as $sistema => $vals) {
+                $ponderacionesList[] = (object) array_merge(['sistema' => $sistema], $vals);
+            }
+            $ponderaciones = collect($ponderacionesList);
+        }
+
+        // 2. Data for Evaluador or Instancia Externa
+        if (in_array($rolActivo, ['evaluador', 'instancia_externa'], true) && $usuario['id_funcionario']) {
+            $miVinculacionEvaluador = DB::table('vinculacion')
+                ->where('id_funcionario', $usuario['id_funcionario'])
+                ->where('activa', 1)
+                ->where('es_evaluador', 1)
+                ->orderByDesc('id_vinculacion')
+                ->first();
+
+            $evaluacionesEvaluador = DB::table('evaluacion as ev')
+                ->join('vinculacion as ve', 've.id_vinculacion', '=', 'ev.id_vinc_evaluado')
+                ->join('funcionario as fe', 'fe.id_funcionario', '=', 've.id_funcionario')
+                ->join('vinculacion as va', 'va.id_vinculacion', '=', 'ev.id_vinc_evaluador')
+                ->where('va.id_funcionario', $usuario['id_funcionario'])
+                ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
+                ->leftJoin('firma as f_ev', function ($join) {
+                    $join->on('f_ev.id_evaluacion', '=', 'ev.id_evaluacion')
+                        ->where('f_ev.tipo_firma', '=', 'CONCERTACION_EVALUADO');
+                })
+                ->leftJoin('firma as f_er', function ($join) {
+                    $join->on('f_er.id_evaluacion', '=', 'ev.id_evaluacion')
+                        ->where('f_er.tipo_firma', '=', 'CONCERTACION_EVALUADOR');
+                })
+                ->select(
+                    'ev.id_evaluacion',
+                    'ev.estado',
+                    'p.anio',
+                    'p.semestre',
+                    'p.fecha_inicio',
+                    'p.fecha_fin',
+                    'ev.tipo_evaluacion as tipo_nombre',
+                    'ev.referencia',
+                    'ev.es_traslado',
+                    'fe.nombres as evaluado_nombres',
+                    'fe.apellidos as evaluado_apellidos',
+                    'p.sistema',
+                    've.cargo as evaluado_cargo',
+                    've.area as evaluado_area',
+                    've.nivel_jerarquico as evaluado_nivel_jerarquico',
+                    'ev.fase_actual',
+                    've.aplica_eje_misional',
+                    'ev.concertacion_firmada',
+                    DB::raw('IF(f_ev.id_firma IS NOT NULL, 1, 0) as evaluado_firmado'),
+                    DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado')
+                )
+                ->orderByDesc('ev.id_evaluacion')
+                ->get();
+
+            $planesPendientesEvaluador = DB::table('evaluacion as ev')
+                ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
+                ->join('vinculacion as va', 'va.id_vinculacion', '=', 'ev.id_vinc_evaluador')
+                ->join('vinculacion as ve', 've.id_vinculacion', '=', 'ev.id_vinc_evaluado')
+                ->join('funcionario as fe', 'fe.id_funcionario', '=', 've.id_funcionario')
+                ->leftJoin('plan_mejoramiento as pm', 'pm.id_evaluacion', '=', 'ev.id_evaluacion')
+                ->where('va.id_funcionario', $usuario['id_funcionario'])
+                ->where('ev.estado', 'CALIFICADA')
+                ->where('ev.tipo_evaluacion', 'SEMESTRE_1')
+                ->whereIn('p.sistema', ['RENDIMIENTO_LABORAL', 'ACUERDO_GESTION'])
+                ->where('ev.categoria_final', 'NO_SATISFACTORIO')
+                ->where(function ($q) {
+                    $q->whereNull('pm.id_plan')->orWhere('pm.estado', '!=', 'CONCERTADO');
+                })
+                ->select(
+                    'ev.id_evaluacion',
+                    'ev.categoria_final',
+                    'p.sistema',
+                    'fe.nombres as evaluado_nombres',
+                    'fe.apellidos as evaluado_apellidos',
+                    'pm.id_plan',
+                    'pm.estado as plan_estado'
+                )
+                ->orderByDesc('ev.id_evaluacion')
+                ->get();
+
+            if ($miVinculacionEvaluador) {
+                $idsEvaluadosAsignados = collect(getEvaluadorAsignaciones())
+                    ->where('id_vinc_evaluador', $miVinculacionEvaluador->id_vinculacion)
+                    ->pluck('id_vinc_evaluado')
+                    ->unique()
+                    ->values()
+                    ->all();
+
+                if (! empty($idsEvaluadosAsignados)) {
+                    $evaluadosDisponibles = DB::table('vinculacion as v')
+                        ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
+                        ->whereIn('v.id_vinculacion', $idsEvaluadosAsignados)
+                        ->where('v.activa', 1)
+                        ->select(
+                            'v.id_vinculacion',
+                            'v.cargo',
+                            'v.codigo_cargo',
+                            'v.grado_cargo',
+                            'v.nivel_jerarquico',
+                            'v.area',
+                            'v.tipo_vinculacion',
+                            'v.sistema_evaluacion',
+                            'v.es_evaluador',
+                            'v.aplica_eje_misional',
+                            'v.fecha_ingreso',
+                            'v.fecha_retiro',
+                            'v.resolucion',
+                            'f.nombres',
+                            'f.apellidos',
+                            'f.numero_doc',
+                            'f.correo_cargo'
+                        )
+                        ->orderBy('v.area')
+                        ->orderBy('f.apellidos')
+                        ->get();
+
+                    $idsConPeriodoParcialAbierto = DB::table('periodo_parcial')
+                        ->where('estado', 'ABIERTO')
+                        ->pluck('id_vinc_funcionario')
+                        ->map(fn ($id) => (int) $id)
+                        ->all();
+
+                    foreach ($evaluadosDisponibles as $evaluado) {
+                        $evaluado->tiene_periodo_parcial = in_array((int) $evaluado->id_vinculacion, $idsConPeriodoParcialAbierto, true);
+                    }
+                }
+            }
+        }
+
+        // 3. Data for Evaluado
+        if ($rolActivo === 'evaluado' && $usuario['id_funcionario']) {
+            $evaluacionesEvaluado = DB::table('evaluacion as ev')
+                ->join('vinculacion as ve', 've.id_vinculacion', '=', 'ev.id_vinc_evaluado')
+                ->where('ve.id_funcionario', $usuario['id_funcionario'])
+                ->join('vinculacion as va', 'va.id_vinculacion', '=', 'ev.id_vinc_evaluador')
+                ->join('funcionario as fa', 'fa.id_funcionario', '=', 'va.id_funcionario')
+                ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
+                ->leftJoin('firma as f_ev', function ($join) {
+                    $join->on('f_ev.id_evaluacion', '=', 'ev.id_evaluacion')
+                        ->where('f_ev.tipo_firma', '=', 'CONCERTACION_EVALUADO');
+                })
+                ->leftJoin('firma as f_er', function ($join) {
+                    $join->on('f_er.id_evaluacion', '=', 'ev.id_evaluacion')
+                        ->where('f_er.tipo_firma', '=', 'CONCERTACION_EVALUADOR');
+                })
+                ->select(
+                    'ev.id_evaluacion',
+                    'ev.estado',
+                    'ev.categoria_final',
+                    'ev.calificacion_final',
+                    'p.anio',
+                    'p.semestre',
+                    'p.fecha_inicio',
+                    'p.fecha_fin',
+                    'ev.tipo_evaluacion as tipo_nombre',
+                    'ev.referencia',
+                    'ev.es_traslado',
+                    'fa.nombres as evaluador_nombres',
+                    'fa.apellidos as evaluador_apellidos',
+                    'p.sistema',
+                    've.cargo as evaluado_cargo',
+                    've.area as evaluado_area',
+                    've.nivel_jerarquico as evaluado_nivel_jerarquico',
+                    'ev.concertacion_firmada',
+                    'ev.fase_actual',
+                    've.aplica_eje_misional',
+                    DB::raw('IF(f_ev.id_firma IS NOT NULL, 1, 0) as evaluado_firmado'),
+                    DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado')
+                )
+                ->orderByDesc('ev.id_evaluacion')
+                ->get();
+        }
+
+        // 4. Data for Instancia Externa
+        if ($rolActivo === 'instancia_externa') {
+            $evaluacionesInstanciaExterna = obtenerEvaluacionesAgConEjesMisionales();
+        }
+
+        // Support lists
+        $configData = getPonderacionesConfig();
+        $acuerdosRL = isset($configData['RENDIMIENTO_LABORAL'])
+            ? (object) array_merge(['sistema' => 'RENDIMIENTO_LABORAL'], $configData['RENDIMIENTO_LABORAL'])
+            : null;
+        $acuerdosAG = isset($configData['ACUERDO_GESTION'])
+            ? (object) array_merge(['sistema' => 'ACUERDO_GESTION'], $configData['ACUERDO_GESTION'])
+            : null;
+        $ponderacionesConfig = $configData;
+
+        // Fetch periodos for JavaScript config if not loaded
+        if ($periodos->isEmpty()) {
+            $periodos = DB::table('periodo')->orderByDesc('id_periodo')->get();
+        }
+
+        $viewData = compact(
+            'usuario', 'rolActivo', 'usuarios', 'empleados', 'evaluaciones',
+            'periodos', 'ponderaciones', 'evaluacionesEvaluador', 'evaluacionesEvaluado',
+            'evaluadosDisponibles', 'miVinculacionEvaluador', 'acuerdosRL', 'acuerdosAG',
+            'ponderacionesConfig', 'evaluacionesInstanciaExterna', 'planesPendientesEvaluador',
+            'periodosParciales', 'funcionariosParaPeriodoParcial'
+        );
+
+        return match ($rolActivo) {
+            'admin' => view('dashboards.admin', $viewData),
+            'evaluado' => view('dashboards.evaluado', $viewData),
+            'evaluador', 'instancia_externa' => view('dashboards.evaluador', $viewData),
+            default => view('dashboards.evaluado', $viewData),
+        };
+    }
+}
