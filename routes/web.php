@@ -1846,6 +1846,38 @@ if (!function_exists('calcularNotaEvaluacion')) {
 }
 }
 
+if (!function_exists('informeAnualDisponible')) {
+    /**
+     * Indica si el informe anual está disponible para una evaluación:
+     * se requiere que AMBOS semestres (A y B) del mismo año/sistema/evaluado
+     * estén calificados.
+     */
+    function informeAnualDisponible(int $idEvaluacion): bool
+    {
+        $evaluacion = DB::table('evaluacion as ev')
+            ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
+            ->where('ev.id_evaluacion', $idEvaluacion)
+            ->select('ev.id_vinc_evaluado', 'p.anio', 'p.sistema')
+            ->first();
+
+        if (!$evaluacion) {
+            return false;
+        }
+
+        $tipos = DB::table('evaluacion as ev')
+            ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
+            ->where('ev.id_vinc_evaluado', $evaluacion->id_vinc_evaluado)
+            ->where('p.anio', $evaluacion->anio)
+            ->where('p.sistema', $evaluacion->sistema)
+            ->whereIn('ev.tipo_evaluacion', ['SEMESTRE_1', 'SEMESTRE_2'])
+            ->where('ev.estado', 'CALIFICADA')
+            ->pluck('ev.tipo_evaluacion')
+            ->unique();
+
+        return $tipos->contains('SEMESTRE_1') && $tipos->contains('SEMESTRE_2');
+    }
+}
+
 
 
 // --- GET: Vista previa del cálculo de nota (sin guardar) ---
@@ -1867,6 +1899,7 @@ Route::get('/evaluaciones/{id}/calculo', function (int $id) {
     }
 
     $calculo = calcularNotaEvaluacion($id);
+    $calculo['informe_anual_disponible'] = informeAnualDisponible($id);
 
     return response()->json($calculo);
 })->name('evaluaciones.calculo');
@@ -3066,7 +3099,7 @@ if (!function_exists('prepararInformeAnual')) {
             ->join('vinculacion as va', 'va.id_vinculacion', '=', 'ev.id_vinc_evaluador')
             ->join('funcionario as fa', 'fa.id_funcionario', '=', 'va.id_funcionario')
             ->where('ev.id_evaluacion', $idEvaluacion)
-            ->select('ev.*', 'p.sistema', 'p.fecha_inicio', 'p.fecha_fin', 'p.id_periodo',
+            ->select('ev.*', 'p.sistema', 'p.anio', 'p.fecha_inicio', 'p.fecha_fin', 'p.id_periodo',
                 've.id_vinculacion as id_vinc_evaluado',
                 'va.cargo as evaluador_cargo', 'va.area as evaluador_area', 'va.nivel_jerarquico as evaluador_nivel',
                 'va.codigo_cargo as evaluador_codigo', 'va.grado_cargo as evaluador_grado',
@@ -3108,13 +3141,16 @@ if (!function_exists('prepararInformeAnual')) {
             'fecha_fin' => $evaluacion->fecha_fin,
         ];
 
-        // Buscar ambos semestres del mismo periodo/evaluado
-        $semestres = DB::table('evaluacion')
-            ->where('id_periodo', $evaluacion->id_periodo)
-            ->where('id_vinc_evaluado', $evaluacion->id_vinc_evaluado)
-            ->whereIn('tipo_evaluacion', ['SEMESTRE_1', 'SEMESTRE_2'])
-            ->where('estado', 'CALIFICADA')
-            ->pluck('id_evaluacion', 'tipo_evaluacion');
+        // Buscar ambos semestres del mismo año/sistema/evaluado
+        // (cada semestre vive en un periodo distinto: id_periodo A y B)
+        $semestres = DB::table('evaluacion as ev')
+            ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
+            ->where('p.anio', $evaluacion->anio)
+            ->where('p.sistema', $evaluacion->sistema)
+            ->where('ev.id_vinc_evaluado', $evaluacion->id_vinc_evaluado)
+            ->whereIn('ev.tipo_evaluacion', ['SEMESTRE_1', 'SEMESTRE_2'])
+            ->where('ev.estado', 'CALIFICADA')
+            ->pluck('ev.id_evaluacion', 'ev.tipo_evaluacion');
 
         $idSemA = $semestres['SEMESTRE_1'] ?? (($evaluacion->tipo_evaluacion === 'SEMESTRE_1') ? $evaluacion->id_evaluacion : null);
         $idSemB = $semestres['SEMESTRE_2'] ?? (($evaluacion->tipo_evaluacion === 'SEMESTRE_2') ? $evaluacion->id_evaluacion : null);

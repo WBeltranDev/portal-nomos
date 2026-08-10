@@ -274,6 +274,7 @@ class DashboardController extends Controller
                 })
                 ->select(
                     'ev.id_evaluacion',
+                    'ev.id_vinc_evaluado',
                     'ev.estado',
                     'ev.categoria_final',
                     'ev.calificacion_final',
@@ -298,6 +299,35 @@ class DashboardController extends Controller
                 )
                 ->orderByDesc('ev.id_evaluacion')
                 ->get();
+
+            // Marcar en qué evaluaciones el informe anual está disponible
+            // (ambos semestres del mismo año/sistema calificados).
+            $clavesConInformeAnual = [];
+            if ($evaluacionesEvaluado->isNotEmpty()) {
+                $gruposSemestres = DB::table('evaluacion as ev')
+                    ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
+                    ->join('vinculacion as ve', 've.id_vinculacion', '=', 'ev.id_vinc_evaluado')
+                    ->where('ve.id_funcionario', $usuario['id_funcionario'])
+                    ->whereIn('ev.tipo_evaluacion', ['SEMESTRE_1', 'SEMESTRE_2'])
+                    ->where('ev.estado', 'CALIFICADA')
+                    ->get(['p.anio', 'p.sistema', 'ev.id_vinc_evaluado', 'ev.tipo_evaluacion'])
+                    ->groupBy(fn ($r) => "{$r->anio}|{$r->sistema}|{$r->id_vinc_evaluado}");
+
+                foreach ($gruposSemestres as $clave => $filas) {
+                    $tipos = $filas->pluck('tipo_evaluacion');
+                    if ($tipos->contains('SEMESTRE_1') && $tipos->contains('SEMESTRE_2')) {
+                        $clavesConInformeAnual[] = $clave;
+                    }
+                }
+
+                foreach ($evaluacionesEvaluado as $ev) {
+                    $ev->tiene_informe_anual = in_array(
+                        "{$ev->anio}|{$ev->sistema}|{$ev->id_vinc_evaluado}",
+                        $clavesConInformeAnual,
+                        true
+                    );
+                }
+            }
         }
 
         // 4. Data for Instancia Externa

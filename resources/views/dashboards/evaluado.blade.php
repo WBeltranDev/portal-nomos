@@ -258,9 +258,11 @@
                                                     <a href="/evaluaciones/{{ $ev->id_evaluacion }}/informe" class="inline-flex items-center gap-1.5 rounded-lg bg-[#00594E] text-white px-3 py-1.5 text-[11px] font-bold hover:brightness-110 transition">
                                                         <span class="material-symbols-outlined text-sm">picture_as_pdf</span> PDF semestral
                                                     </a>
-                                                    <a href="/evaluaciones/{{ $ev->id_evaluacion }}/informe-anual" class="inline-flex items-center gap-1.5 rounded-lg bg-[#B5A160] text-white px-3 py-1.5 text-[11px] font-bold hover:brightness-110 transition">
-                                                        <span class="material-symbols-outlined text-sm">picture_as_pdf</span> PDF anual
-                                                    </a>
+                                                    @if($ev->tiene_informe_anual)
+                                                        <a href="/evaluaciones/{{ $ev->id_evaluacion }}/informe-anual" class="inline-flex items-center gap-1.5 rounded-lg bg-[#B5A160] text-white px-3 py-1.5 text-[11px] font-bold hover:brightness-110 transition">
+                                                            <span class="material-symbols-outlined text-sm">picture_as_pdf</span> PDF anual
+                                                        </a>
+                                                    @endif
                                                 </div>
                                             </td>
                                         </tr>

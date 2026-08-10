@@ -62,9 +62,9 @@ COPY docker/supervisord.conf /etc/supervisord.conf
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 COPY --from=vendor /var/www/html/vendor /var/www/html/vendor
-COPY --from=frontend /app/public/build /var/www/html/public/build
 COPY .env /var/www/html/.env
 COPY . .
+COPY --from=frontend /app/public/build /var/www/html/public/build
 
 COPY docker/php/conf.d/opcache.ini /usr/local/etc/php/conf.d/opcache.ini
 COPY docker/php/conf.d/uploads.ini /usr/local/etc/php/conf.d/uploads.ini
