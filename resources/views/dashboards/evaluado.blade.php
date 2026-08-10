@@ -102,6 +102,8 @@
                                 <div id="compromisos-lista-evaluado" class="space-y-3"></div>
                             </div>
 
+                            <div id="resultado-calculo-evaluado" class="hidden mt-6 space-y-3"></div>
+
                             <div id="firma-evaluado-seccion" class="mt-6 pt-4 border-t border-slate-100 space-y-3">
                                 <div id="seccion-firmar-evaluado" class="flex items-center justify-between gap-4">
                                     <div class="text-xs text-slate-500 leading-tight">Podrás firmar cuando el evaluador haya firmado la concertación.</div>
@@ -111,26 +113,6 @@
                                     </form>
                                 </div>
                                 <div id="firmas-concertacion-evaluado" class="mt-3 hidden"></div>
-                            </div>
-
-                            <!-- Plan de mejoramiento condicionado - evaluado -->
-                            <div id="bloque-plan-mejoramiento-evaluado" class="mt-6 pt-4 border-t border-slate-100 space-y-3 hidden">
-                                <div class="flex items-center justify-between gap-3">
-                                    <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
-                                        <span class="material-symbols-outlined text-base">trending_up</span>
-                                        Plan de mejoramiento
-                                    </h4>
-                                    <span id="plan-estado-evaluado" class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-amber-50 text-amber-700 hidden">Pendiente</span>
-                                </div>
-                                <div id="plan-aviso-evaluado" class="hidden rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] font-semibold text-amber-700 flex items-center gap-2">
-                                    <span class="material-symbols-outlined text-base">warning</span>
-                                    <span>De acuerdo con tu calificación, debes concertar y firmar un plan de mejoramiento con tu evaluador.</span>
-                                </div>
-                                <div id="plan-contenido-evaluado"></div>
-                                <div class="flex items-center justify-between gap-3">
-                                    <p id="plan-firmas-evaluado" class="text-xs text-slate-500"></p>
-                                    <button type="button" id="btn-firmar-plan-evaluado" onclick="firmarPlanMejoramiento('evaluado')" class="bg-[#B5A160] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition hidden">Firmar plan de mejoramiento</button>
-                                </div>
                             </div>
                         </div>
 
@@ -188,7 +170,7 @@
                                         <textarea name="motivacion" id="recurso-motivacion-evaluado" rows="3" maxlength="3000" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Argumentos y hechos que sustentan el recurso..." required></textarea>
                                     </div>
                                     <div id="recurso-evidencias-bloque-evaluado">
-                                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Evidencias (links)</label>
+                                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Evidencias (links) <span class="text-red-600 font-bold">* (Obligatorio)</span></label>
                                         <div id="recurso-evidencias-lista-evaluado" class="space-y-2"></div>
                                         <button type="button" onclick="agregarEvidenciaRecurso()" class="mt-2 text-[11px] font-bold text-[#00594E] hover:underline flex items-center gap-1">
                                             <span class="material-symbols-outlined text-sm">add_link</span> Agregar evidencia
@@ -200,6 +182,26 @@
                                     </div>
                                 </form>
                                 <div id="recursos-lista-evaluado" class="space-y-2"></div>
+                            </div>
+
+                            <!-- Plan de mejoramiento condicionado - evaluado -->
+                            <div id="bloque-plan-mejoramiento-evaluado" class="mt-6 pt-4 border-t border-slate-100 space-y-3 hidden">
+                                <div class="flex items-center justify-between gap-3">
+                                    <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                        <span class="material-symbols-outlined text-base">trending_up</span>
+                                        Plan de mejoramiento
+                                    </h4>
+                                    <span id="plan-estado-evaluado" class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-amber-50 text-amber-700 hidden">Pendiente</span>
+                                </div>
+                                <div id="plan-aviso-evaluado" class="hidden rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] font-semibold text-amber-700 flex items-center gap-2">
+                                    <span class="material-symbols-outlined text-base">warning</span>
+                                    <span>De acuerdo con tu calificación, debes concertar y firmar un plan de mejoramiento con tu evaluador.</span>
+                                </div>
+                                <div id="plan-contenido-evaluado"></div>
+                                <div class="flex items-center justify-between gap-3">
+                                    <p id="plan-firmas-evaluado" class="text-xs text-slate-500"></p>
+                                    <button type="button" id="btn-firmar-plan-evaluado" onclick="firmarPlanMejoramiento('evaluado')" class="bg-[#B5A160] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition hidden">Firmar plan de mejoramiento</button>
+                                </div>
                             </div>
                         </div>
                     </div>

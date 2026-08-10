@@ -95,19 +95,32 @@ function getTargetCompromisosWeight($id_evaluacion) {
 }
 
 function resolveOpenPeriodForVinculacion(int $idVinculacion, ?int $idPeriodo = null, ?string $tipoEvaluacion = null) {
+    $vinculacion = DB::table('vinculacion')->where('id_vinculacion', $idVinculacion)->first();
+    if (! $vinculacion || ! $vinculacion->sistema_evaluacion) {
+        return null;
+    }
+    $sistema = strtoupper(trim((string) $vinculacion->sistema_evaluacion));
+
     $query = DB::table('periodo as p')
-        ->join('vinculacion as v', function ($join) {
-            $join->on(DB::raw('UPPER(TRIM(v.sistema_evaluacion))'), '=', DB::raw('UPPER(TRIM(p.sistema))'));
-        })
-        ->where('v.id_vinculacion', $idVinculacion)
+        ->whereRaw('UPPER(TRIM(p.sistema)) = ?', [$sistema])
         ->where('p.estado', 'ABIERTO');
 
-    if (!empty($idPeriodo)) {
-        $query->where('p.id_periodo', $idPeriodo);
-    }
-
     if (in_array($tipoEvaluacion, ['SEMESTRE_1', 'SEMESTRE_2'], true)) {
-        $query->where('p.semestre', $tipoEvaluacion === 'SEMESTRE_1' ? 1 : 2);
+        $targetSemestre = $tipoEvaluacion === 'SEMESTRE_1' ? 1 : 2;
+
+        if (! empty($idPeriodo)) {
+            $specificPeriod = (clone $query)->where('p.id_periodo', $idPeriodo)->where('p.semestre', $targetSemestre)->first();
+            if ($specificPeriod) {
+                return $specificPeriod;
+            }
+        }
+
+        $query->where('p.semestre', $targetSemestre);
+    } elseif (! empty($idPeriodo)) {
+        $specificPeriod = (clone $query)->where('p.id_periodo', $idPeriodo)->first();
+        if ($specificPeriod) {
+            return $specificPeriod;
+        }
     }
 
     return $query->select('p.*')->orderByDesc('p.id_periodo')->first();
@@ -252,10 +265,22 @@ Route::post('/login', function (Request $request) {
         'password' => ['required', 'string'],
     ]);
 
+    $correo = strtolower(trim($credentials['correo']));
+
     $user = DB::table('usuario as u')
-        ->where('u.username', $credentials['correo'])
+        ->where(DB::raw('LOWER(TRIM(u.username))'), $correo)
         ->where('u.activo', 1)
         ->first();
+
+    if (! $user) {
+        $user = DB::table('usuario as u')
+            ->where(function ($q) use ($correo) {
+                $q->where(DB::raw('LOWER(TRIM(u.username))'), $correo . '@unitropico.edu.co')
+                  ->orWhere(DB::raw('LOWER(TRIM(u.username))'), 'LIKE', $correo . '@%');
+            })
+            ->where('u.activo', 1)
+            ->first();
+    }
 
     if (! $user) {
         return back()->withErrors(['login' => 'Correo institucional o contraseña incorrectos.'])->onlyInput('correo');
@@ -432,27 +457,35 @@ Route::post('/evaluador/asignaciones', function (Request $request) {
         ->where('id_funcionario', $auth['id_funcionario'])
         ->where('activa', 1)
         ->where('es_evaluador', 1)
+        ->orderByDesc('id_vinculacion')
         ->first();
 
-    abort_unless($miVinc, 403);
+    if (! $miVinc) {
+        return back()->withErrors(['asignaciones' => 'No tienes una vinculación activa como evaluador.']);
+    }
 
     $evaluadoVinc = DB::table('vinculacion')
         ->where('id_vinculacion', $data['id_vinc_evaluado'])
         ->where('activa', 1)
         ->first();
 
-    abort_unless($evaluadoVinc, 403);
+    if (! $evaluadoVinc) {
+        return back()->withErrors(['asignaciones' => 'El funcionario a evaluar no cuenta con una vinculación activa.']);
+    }
 
-    abort_unless(evaluadorTieneEvaluadoAsignado($miVinc->id_vinculacion, (int) $data['id_vinc_evaluado']), 403);
+    if (! evaluadorTieneEvaluadoAsignado($miVinc->id_vinculacion, (int) $data['id_vinc_evaluado'])) {
+        return back()->withErrors(['asignaciones' => 'Este funcionario no está asignado a tu perfil de evaluador.']);
+    }
 
-    $periodo = resolveOpenPeriodForVinculacion($data['id_vinc_evaluado'], $data['id_periodo'] ?? null, $data['tipo_evaluacion']);
+    $periodo = resolveOpenPeriodForVinculacion((int) $data['id_vinc_evaluado'], $data['id_periodo'] ?? null, $data['tipo_evaluacion']);
 
-    abort_unless($periodo, 403);
+    if (! $periodo) {
+        return back()->withErrors(['asignaciones' => 'No hay un período abierto correspondiente al sistema de evaluación y ciclo seleccionado. Contacte al administrador.']);
+    }
 
-    abort_unless(
-        strtoupper(trim((string) $periodo->sistema)) === strtoupper(trim((string) $evaluadoVinc->sistema_evaluacion)),
-        403
-    );
+    if (strtoupper(trim((string) $periodo->sistema)) !== strtoupper(trim((string) $evaluadoVinc->sistema_evaluacion))) {
+        return back()->withErrors(['asignaciones' => 'El sistema de evaluación del período abierto no coincide con el del funcionario.']);
+    }
 
     $exists = DB::table('evaluacion')
         ->where('id_periodo', $periodo->id_periodo)
@@ -952,7 +985,9 @@ Route::post('/admin/importar-usuarios', function (Request $request) {
             $documento = trim($data['documento'] ?? $data['cedula'] ?? '');
             $nombres = trim($data['nombres'] ?? '');
             $apellidos = trim($data['apellidos'] ?? '');
-            $correo = trim($data['correo'] ?? $data['correo_institucional'] ?? '');
+            $correoRaw = trim($data['correo'] ?? $data['correo_institucional'] ?? '');
+            $correoSplitted = preg_split('/[\s,;\n\r]+/', $correoRaw);
+            $correo = strtolower(trim($correoSplitted[0] ?? ''));
             $cargo = trim($data['cargo'] ?? 'Profesional');
             $nivel = trim(strtoupper($data['nivel'] ?? 'PROFESIONAL'));
             $area = trim($data['area'] ?? 'Sistemas');
@@ -1080,6 +1115,7 @@ Route::get('/evaluaciones/{id}/compromisos', function (int $id) {
         'compromisos' => $compromisos,
         'evidencias' => $evidencias,
         'observaciones' => getEvaluacionObservaciones($id),
+        'estado_evaluacion' => $evaluacion->estado,
         'estado' => [
             'evaluado_firmado' => (bool) $evaluadoFirmado,
             'evaluador_firmado' => (bool) $evaluadorFirmado,
@@ -2415,21 +2451,27 @@ if (!function_exists('getEvaluacionConSistema')) {
  */
 if (!function_exists('evaluacionRequierePlanMejoramiento')) {
     function evaluacionRequierePlanMejoramiento($evaluacion): bool {
-        if (!$evaluacion || ($evaluacion->estado ?? null) !== 'CALIFICADA') {
+        if (!$evaluacion) {
             return false;
         }
 
-        $sistema = strtoupper(trim((string) ($evaluacion->sistema ?? '')));
-        $tipoEval = $evaluacion->tipo_evaluacion ?? 'SEMESTRE_1';
         $categoria = strtoupper(trim((string) ($evaluacion->categoria_final ?? '')));
-
-        if ($tipoEval !== 'SEMESTRE_1') {
-            return false;
+        if ($categoria === 'NO_SATISFACTORIO') {
+            return true;
         }
 
-        // RL y AG: NO_SATISFACTORIO (0-70) requieren plan de mejoramiento
-        if (in_array($sistema, ['RENDIMIENTO_LABORAL', 'ACUERDO_GESTION']) && $categoria === 'NO_SATISFACTORIO') {
+        $notaDef = $evaluacion->calificacion_final ?? $evaluacion->calificacion_parcial ?? null;
+        if ($notaDef !== null && (float) $notaDef <= 70.0 && (float) $notaDef > 0) {
             return true;
+        }
+
+        if (isset($evaluacion->id_evaluacion)) {
+            $planExiste = DB::table('plan_mejoramiento')
+                ->where('id_evaluacion', $evaluacion->id_evaluacion)
+                ->exists();
+            if ($planExiste) {
+                return true;
+            }
         }
 
         return false;
@@ -2556,10 +2598,21 @@ Route::post('/evaluaciones/{id}/recursos', function (Request $request, int $id) 
         'tipo_recurso' => ['required', 'in:REPOSICION,APELACION'],
         'numero_folios' => ['required', 'integer', 'min:1'],
         'motivacion' => ['required', 'string', 'max:3000'],
-        'evidencias' => ['nullable', 'array'],
-        'evidencias.*.url' => ['nullable', 'url', 'max:1000'],
+        'evidencias' => ['required', 'array', 'min:1'],
+        'evidencias.*.url' => ['required', 'url', 'max:1000'],
         'evidencias.*.descripcion' => ['nullable', 'string', 'max:200'],
+    ], [
+        'evidencias.required' => 'Es obligatorio incluir al menos un enlace (link) de evidencia para radicar el recurso.',
+        'evidencias.min' => 'Es obligatorio incluir al menos un enlace (link) de evidencia para radicar el recurso.',
+        'evidencias.*.url.required' => 'El enlace (link) de evidencia es obligatorio.',
+        'evidencias.*.url.url' => 'Cada enlace de evidencia debe ser una URL válida (ej. https://...).',
     ]);
+
+    $evidencias = array_values(array_filter($data['evidencias'] ?? [], function ($e) {
+        return !empty(trim((string) ($e['url'] ?? '')));
+    }));
+
+    abort_if(count($evidencias) === 0, 422, 'Es obligatorio incluir al menos un enlace (link) de evidencia para radicar el recurso.');
 
     $yaExistePendiente = DB::table('recurso')
         ->where('id_evaluacion', $id)
@@ -2587,10 +2640,6 @@ Route::post('/evaluaciones/{id}/recursos', function (Request $request, int $id) 
     DB::table('recurso')->where('id_recurso', $idRecurso)->update([
         'numero_radicado' => sprintf('%s-%s-%04d', $prefijo, date('Y'), $idRecurso),
     ]);
-
-    $evidencias = array_values(array_filter($data['evidencias'] ?? [], function ($e) {
-        return !empty(trim((string) ($e['url'] ?? '')));
-    }));
 
     foreach ($evidencias as $evidencia) {
         DB::table('recurso_evidencia')->insert([
@@ -2650,9 +2699,21 @@ Route::post('/recursos/{id}/decision', function (Request $request, int $id) {
         'fecha_decision' => date('Y-m-d'),
     ]);
 
+    if ($data['decision'] === 'APROBADO') {
+        DB::table('evaluacion')
+            ->where('id_evaluacion', $recurso->id_evaluacion)
+            ->update([
+                'estado' => 'EN_PROCESO',
+            ]);
+    }
+
+    $mensaje = $data['decision'] === 'APROBADO'
+        ? 'Decisión favorable registrada correctamente. La evaluación ha sido reabierta para su modificación y nuevo cálculo.'
+        : 'Decisión registrada correctamente.';
+
     return response()->json([
         'success' => true,
-        'message' => 'Decisión registrada correctamente.',
+        'message' => $mensaje,
         'recurso' => DB::table('recurso')->where('id_recurso', $id)->first(),
     ]);
 })->name('recursos.decision');

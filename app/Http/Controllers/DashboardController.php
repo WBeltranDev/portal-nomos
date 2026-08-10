@@ -166,6 +166,8 @@ class DashboardController extends Controller
                     'ev.tipo_evaluacion as tipo_nombre',
                     'ev.referencia',
                     'ev.es_traslado',
+                    'ev.calificacion_final',
+                    'ev.categoria_final',
                     'fe.nombres as evaluado_nombres',
                     'fe.apellidos as evaluado_apellidos',
                     'p.sistema',
@@ -189,15 +191,28 @@ class DashboardController extends Controller
                 ->leftJoin('plan_mejoramiento as pm', 'pm.id_evaluacion', '=', 'ev.id_evaluacion')
                 ->where('va.id_funcionario', $usuario['id_funcionario'])
                 ->where('ev.estado', 'CALIFICADA')
-                ->where('ev.tipo_evaluacion', 'SEMESTRE_1')
-                ->whereIn('p.sistema', ['RENDIMIENTO_LABORAL', 'ACUERDO_GESTION'])
-                ->where('ev.categoria_final', 'NO_SATISFACTORIO')
+                ->where(function ($q) {
+                    $q->where('ev.categoria_final', 'NO_SATISFACTORIO')
+                      ->orWhere(function ($q2) {
+                          $q2->whereNotNull('ev.calificacion_final')
+                             ->where('ev.calificacion_final', '<=', 70)
+                             ->where('ev.calificacion_final', '>', 0);
+                      })
+                      ->orWhere(function ($q3) {
+                          $q3->whereNotNull('ev.calificacion_parcial')
+                             ->where('ev.calificacion_parcial', '<=', 70)
+                             ->where('ev.calificacion_parcial', '>', 0);
+                      })
+                      ->orWhereNotNull('pm.id_plan');
+                })
                 ->where(function ($q) {
                     $q->whereNull('pm.id_plan')->orWhere('pm.estado', '!=', 'CONCERTADO');
                 })
                 ->select(
                     'ev.id_evaluacion',
                     'ev.categoria_final',
+                    'ev.calificacion_final',
+                    'ev.calificacion_parcial',
                     'p.sistema',
                     'fe.nombres as evaluado_nombres',
                     'fe.apellidos as evaluado_apellidos',
