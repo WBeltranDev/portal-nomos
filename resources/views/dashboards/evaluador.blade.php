@@ -140,10 +140,13 @@
                             <p class="text-xs text-slate-500 mt-1">Tienes <b>{{ $planesPendientesEvaluador->count() }}</b> evaluación(es) con plan de mejoramiento sin concertar ni firmar:</p>
                             <div class="mt-2 space-y-1.5">
                                 @foreach($planesPendientesEvaluador as $pp)
-                                <div class="flex items-center justify-between gap-3 rounded-xl border border-amber-100 bg-amber-50/60 px-3 py-2 text-xs">
-                                    <span class="font-bold text-slate-700">{{ $pp->evaluado_nombres }} {{ $pp->evaluado_apellidos }}</span>
-                                    <span class="text-[10px] font-bold uppercase text-amber-700">{{ $pp->sistema === 'RENDIMIENTO_LABORAL' ? 'RL' : 'AG' }} · {{ $pp->categoria_final }}</span>
-                                </div>
+                                <button type="button" onclick="seleccionarEvaluacionPorId({{ $pp->id_evaluacion }}, 'recursos')" class="w-full text-left flex items-center justify-between gap-3 rounded-xl border border-amber-100 bg-amber-50/60 p-2.5 text-xs hover:bg-amber-100/60 transition cursor-pointer">
+                                    <div>
+                                        <span class="font-bold text-slate-800 block">{{ $pp->evaluado_nombres }} {{ $pp->evaluado_apellidos }}</span>
+                                        <span class="text-[10px] text-amber-800 font-medium">Click para ir a concertar/firmar plan</span>
+                                    </div>
+                                    <span class="text-[10px] font-bold uppercase rounded-md px-2 py-1 bg-amber-200/60 text-amber-900 shrink-0">{{ $pp->sistema === 'RENDIMIENTO_LABORAL' ? 'RL' : ($pp->sistema === 'ACUERDO_GESTION' ? 'AG' : $pp->sistema) }} · {{ $pp->categoria_final ?? ($pp->calificacion_final ? number_format($pp->calificacion_final, 1) : 'Pendiente') }}</span>
+                                </button>
                                 @endforeach
                             </div>
                         </div>
@@ -175,7 +178,7 @@
                         <p class="text-xs text-slate-500 mb-4">Selecciona una Evaluación para redactar los compromisos del evaluado y firmar la concertación.</p>
                         <div class="space-y-3">
                             @forelse($evaluacionesEvaluador as $ev)
-                                <button type="button" class="evaluacion-evaluador-card w-full text-left p-4 rounded-2xl border border-slate-200 bg-white cursor-pointer hover:border-[#00594E] transition" onclick="abrirConcertacionEvaluador(this, @js($ev))">
+                                <button type="button" class="evaluacion-evaluador-card w-full text-left p-4 rounded-2xl border border-slate-200 bg-white cursor-pointer hover:border-[#00594E] transition" data-id-evaluacion="{{ $ev->id_evaluacion }}" onclick="abrirConcertacionEvaluador(this, @js($ev))">
                                     <div class="flex items-start justify-between gap-3">
                                         <div class="min-w-0">
                                             <div class="flex items-center gap-2">
@@ -255,27 +258,41 @@
                                         </div>
                                     </div>
                                     <div id="compromisos-lista-contenedor" class="space-y-3"></div>
-                                </div>
 
-                                <div id="compromiso-formulario-evaluador-contenedor" class="bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
-                                    <h4 class="text-xs font-bold text-slate-800 uppercase tracking-wide mb-3">Nuevo Compromiso</h4>
-                                    <form id="form-nuevo-compromiso-evaluador" onsubmit="agregarCompromisoEvaluador(event)" class="space-y-3">
-                                        <div>
-                                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Descripción del Compromiso</label>
-                                            <textarea id="comp-descripcion-evaluador" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" rows="2" placeholder="Describa el compromiso..." required></textarea>
-                                        </div>
-                                        <div class="grid grid-cols-3 gap-2 items-end">
-                                            <div class="col-span-1">
-                                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Peso (1% - 15%)</label>
-                                                <input type="number" id="comp-peso-evaluador" min="1" max="15" step="0.1" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" required />
+                                    <div id="compromiso-formulario-evaluador-contenedor" class="bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
+                                        <h4 class="text-xs font-bold text-slate-800 uppercase tracking-wide mb-3">Nuevo Compromiso</h4>
+                                        <form id="form-nuevo-compromiso-evaluador" onsubmit="agregarCompromisoEvaluador(event)" class="space-y-3">
+                                            <div>
+                                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Descripción del Compromiso</label>
+                                                <textarea id="comp-descripcion-evaluador" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" rows="2" placeholder="Describa el compromiso..." required></textarea>
                                             </div>
-                                            <div class="col-span-2">
-                                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Metas de Contribución</label>
-                                                <input type="text" id="comp-metas-evaluador" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Separadas por comas (ej: PDI, Manual)" required />
+                                            <div class="grid grid-cols-3 gap-2 items-end">
+                                                <div class="col-span-1">
+                                                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Peso (1% - 15%)</label>
+                                                    <input type="number" id="comp-peso-evaluador" min="1" max="15" step="0.1" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" required />
+                                                </div>
+                                                <div class="col-span-2">
+                                                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Metas de Contribución</label>
+                                                    <input type="text" id="comp-metas-evaluador" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Separadas por comas (ej: PDI, Manual)" required />
+                                                </div>
+                                            </div>
+                                            <button type="submit" class="w-full bg-[#00594E] text-white py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Agregar Compromiso</button>
+                                        </form>
+                                    </div>
+
+                                    <div id="compromisos-calificacion-bloque" class="hidden mt-4 rounded-2xl border border-slate-100 bg-white p-4 space-y-3">
+                                        <div class="flex flex-wrap items-center justify-between gap-3">
+                                            <p class="text-xs text-slate-500 leading-tight">Califica cada compromiso de 0 a 100 y luego calcula la nota final.</p>
+                                            <div class="flex flex-wrap items-center gap-2">
+                                                <span id="compromisos-calificacion-mensaje-evaluador" class="hidden text-xs font-semibold"></span>
+                                                <button type="button" onclick="guardarCalificacionesCompromisos()" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Guardar compromisos</button>
+                                                <button type="button" onclick="previsualizarCalculoEvaluador()" class="bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs font-bold hover:border-[#00594E] transition">Ver cálculo</button>
+                                                <button type="button" onclick="calcularNotaFinal()" class="bg-[#B5A160] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Calcular nota final</button>
                                             </div>
                                         </div>
-                                        <button type="submit" class="w-full bg-[#00594E] text-white py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Agregar Compromiso</button>
-                                    </form>
+                                    </div>
+
+                                    <div id="resultado-calculo-evaluador" class="hidden mt-4 rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs space-y-1"></div>
                                 </div>
 
                                 <div id="seccion-firmar-evaluador" class="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between gap-4">
@@ -285,6 +302,44 @@
                                         @csrf
                                         <button type="submit" id="btn-firmar-evaluador" class="bg-[#00594E] text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:brightness-110 transition disabled:opacity-50" disabled>Firmar concertación</button>
                                     </form>
+                                </div>
+                            </div>
+
+                            <div id="tab-evaluador-competencias" class="evaluador-tab-panel hidden">
+                                <div class="my-6 space-y-4">
+                                    <div class="flex items-center justify-between gap-4">
+                                        <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                            <span class="material-symbols-outlined text-base">verified_user</span>
+                                            Competencias
+                                        </h4>
+                                        <span id="competencias-suma-peso-evaluador" class="text-sm font-black text-[#00594E]">-</span>
+                                    </div>
+                                    <p class="text-[11px] text-slate-500 leading-tight">Califica cada competencia de 0 a 100. Las comunes y las del nivel jerárquico del evaluado.</p>
+                                    <div id="competencias-bloqueado-evaluador" class="hidden rounded-xl border border-slate-200 bg-slate-100 p-3 text-[11px] font-semibold text-slate-600"></div>
+                                    <div id="competencias-lista-evaluador" class="space-y-3"></div>
+                                    <div class="flex items-center justify-between gap-3">
+                                        <span id="competencias-mensaje-evaluador" class="hidden text-xs font-semibold"></span>
+                                        <button type="button" id="btn-guardar-competencias-evaluador" onclick="guardarCalificacionesCompetencias()" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Guardar competencias</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="tab-evaluador-ejes" class="evaluador-tab-panel hidden">
+                                <div class="my-6 space-y-4">
+                                    <div class="flex items-center justify-between gap-4">
+                                        <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                            <span class="material-symbols-outlined text-base">donut_small</span>
+                                            Ejes misionales
+                                        </h4>
+                                        <span id="ejes-suma-peso-evaluador" class="text-sm font-black text-[#00594E]">-</span>
+                                    </div>
+                                    <p class="text-[11px] text-slate-500 leading-tight">Califica cada eje misional activo de 0 a 100.</p>
+                                    <div id="ejes-bloqueado-evaluador" class="hidden rounded-xl border border-slate-200 bg-slate-100 p-3 text-[11px] font-semibold text-slate-600"></div>
+                                    <div id="ejes-lista-evaluador" class="space-y-3"></div>
+                                    <div class="flex items-center justify-between gap-3">
+                                        <span id="ejes-mensaje-evaluador" class="hidden text-xs font-semibold"></span>
+                                        <button type="button" id="btn-guardar-ejes-evaluador" onclick="guardarCalificacionesEjes()" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Guardar ejes</button>
+                                    </div>
                                 </div>
                             </div>
 
@@ -299,32 +354,32 @@
                                     </div>
                                     <div id="recursos-lista-evaluador" class="space-y-2"></div>
                                 </div>
-                            </div>
 
-                            <!-- Plan de mejoramiento condicionado (evaluador) -->
-                            <div id="bloque-plan-mejoramiento-evaluador" class="my-6 pt-4 border-t border-slate-100 space-y-3 hidden">
-                                <div class="flex items-center justify-between gap-3">
-                                    <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
-                                        <span class="material-symbols-outlined text-base">trending_up</span>
-                                        Plan de mejoramiento
-                                    </h4>
-                                    <span id="plan-estado-evaluador" class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-amber-50 text-amber-700 hidden">Pendiente</span>
-                                </div>
-                                <form id="form-plan-mejoramiento-evaluador" onsubmit="guardarPlanMejoramiento(event)" class="grid gap-3 rounded-2xl border border-slate-100 bg-slate-50/50 p-4">
-                                    <div>
-                                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Temas del plan de mejoramiento</label>
-                                        <textarea id="plan-temas-evaluador" rows="4" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Describe los temas, acciones, metas y plazos del plan de mejoramiento..." required></textarea>
-                                    </div>
+                                <!-- Plan de mejoramiento condicionado (evaluador) -->
+                                <div id="bloque-plan-mejoramiento-evaluador" class="my-6 pt-4 border-t border-slate-100 space-y-3 hidden">
                                     <div class="flex items-center justify-between gap-3">
-                                        <span id="plan-mensaje-evaluador" class="hidden text-xs font-semibold"></span>
-                                        <button type="submit" id="btn-guardar-plan-evaluador" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition ml-auto">Guardar plan</button>
+                                        <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                            <span class="material-symbols-outlined text-base">trending_up</span>
+                                            Plan de mejoramiento
+                                        </h4>
+                                        <span id="plan-estado-evaluador" class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-amber-50 text-amber-700 hidden">Pendiente</span>
                                     </div>
-                                </form>
-                                <div class="flex items-center justify-between gap-3">
-                                    <p class="text-xs text-slate-500 leading-tight">Cuando el plan esté guardado, el evaluado podrá revisarlo y firmarlo.</p>
-                                    <button type="button" id="btn-firmar-plan-evaluador" onclick="firmarPlanMejoramiento('evaluador')" class="bg-[#B5A160] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition hidden">Firmar plan de mejoramiento</button>
+                                    <form id="form-plan-mejoramiento-evaluador" onsubmit="guardarPlanMejoramiento(event)" class="grid gap-3 rounded-2xl border border-slate-100 bg-slate-50/50 p-4">
+                                        <div>
+                                            <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Temas del plan de mejoramiento</label>
+                                            <textarea id="plan-temas-evaluador" rows="4" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Describe los temas, acciones, metas y plazos del plan de mejoramiento..." required></textarea>
+                                        </div>
+                                        <div class="flex items-center justify-between gap-3">
+                                            <span id="plan-mensaje-evaluador" class="hidden text-xs font-semibold"></span>
+                                            <button type="submit" id="btn-guardar-plan-evaluador" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition ml-auto">Guardar plan</button>
+                                        </div>
+                                    </form>
+                                    <div class="flex items-center justify-between gap-3">
+                                        <p class="text-xs text-slate-500 leading-tight">Cuando el plan esté guardado, el evaluado podrá revisarlo y firmarlo.</p>
+                                        <button type="button" id="btn-firmar-plan-evaluador" onclick="firmarPlanMejoramiento('evaluador')" class="bg-[#B5A160] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition hidden">Firmar plan de mejoramiento</button>
+                                    </div>
+                                    <div id="plan-firmas-evaluador" class="grid sm:grid-cols-2 gap-2 text-xs"></div>
                                 </div>
-                                <div id="plan-firmas-evaluador" class="grid sm:grid-cols-2 gap-2 text-xs"></div>
                             </div>
                         </div>
 

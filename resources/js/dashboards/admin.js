@@ -81,18 +81,20 @@ export function mostrarEvaluadorActualTraslado() {
         box.classList.add('hidden');
         return;
     }
-    fetchJson(`/admin/vinculaciones/${idVinc}/evaluador-actual`)
+    fetchJson(`/admin/traslados/evaluador-actual/${idVinc}`)
         .then(res => res.json())
         .then(data => {
-            if (data.evaluador) {
-                textoNode.innerText = `${data.evaluador.nombres} ${data.evaluador.apellidos} (${data.evaluador.cargo || 'Sin cargo'})`;
-                box.classList.remove('hidden');
+            if (data) {
+                textoNode.innerText = `${data.nombres || ''} ${data.apellidos || ''} — ${data.cargo || 'Sin cargo'} (${data.area || 'Sin área'})`;
             } else {
-                textoNode.innerText = 'Sin evaluador asignado actualmente';
-                box.classList.remove('hidden');
+                textoNode.innerText = 'Sin evaluador asignado';
             }
+            box.classList.remove('hidden');
         })
-        .catch(() => box.classList.add('hidden'));
+        .catch(() => {
+            textoNode.innerText = 'Sin evaluador asignado';
+            box.classList.remove('hidden');
+        });
 }
 
 export function badgeDecisionRecurso(decision) {

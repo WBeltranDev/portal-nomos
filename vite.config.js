@@ -8,7 +8,6 @@ export default defineConfig({
         laravel({
             input: [
                 'resources/css/app.css',
-                'resources/js/app.js',
                 'resources/js/dashboards/admin.js',
                 'resources/js/dashboards/evaluado.js',
                 'resources/js/dashboards/evaluador.js',

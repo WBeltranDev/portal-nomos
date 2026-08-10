@@ -1,7 +1,7 @@
 /**
  * Evaluador & Instancia Externa Dashboard JS Module
  */
-import { escapeHtml, fetchJson, parseErrorMessage, navegarMenu } from './common.js';
+import { escapeHtml, fetchJson, parseErrorMessage, showInlineMessage, navegarMenu, renderResultado } from './common.js';
 
 let selectedEvaluacionId = null;
 let selectedEstadoEvaluacion = null;
@@ -44,12 +44,49 @@ export function calcularObjetivoCompromisos(ev, ejes = {}) {
     return Math.max(0, objetivo);
 }
 
+export function actualizarPeriodoSeleccionado(persona) {
+    if (!persona) return;
+    const periodosDisponibles = window.APP_CONFIG?.periodosDisponibles || [];
+    const sistema = String(persona.sistema_evaluacion || '').trim().toUpperCase();
+    const cicloSelect = document.getElementById('apertura-ciclo-select');
+    const tipo = cicloSelect ? cicloSelect.value : 'SEMESTRE_1';
+
+    let semestreTarget = 1;
+    if (tipo === 'SEMESTRE_2') semestreTarget = 2;
+
+    let periodo = null;
+    if (tipo === 'SEMESTRE_1' || tipo === 'SEMESTRE_2') {
+        periodo = periodosDisponibles.find(p => p.estado === 'ABIERTO' && String(p.sistema || '').trim().toUpperCase() === sistema && Number(p.semestre) === semestreTarget);
+    } else {
+        periodo = periodosDisponibles.find(p => p.estado === 'ABIERTO' && String(p.sistema || '').trim().toUpperCase() === sistema);
+    }
+
+    const aperturaIdPeriodo = document.getElementById('apertura-id-periodo');
+    const aperturaPeriodo = document.getElementById('apertura-periodo');
+    const aperturaVigencia = document.getElementById('apertura-vigencia');
+    const aperturaCiclo = document.getElementById('apertura-ciclo');
+    const aperturaAviso = document.getElementById('apertura-aviso-periodo');
+
+    if (periodo) {
+        if (aperturaIdPeriodo) aperturaIdPeriodo.value = periodo.id_periodo;
+        if (aperturaPeriodo) aperturaPeriodo.innerText = `${periodo.sistema} (${periodo.anio}-${String(periodo.semestre).padStart(2, '0')})`;
+        if (aperturaVigencia) aperturaVigencia.innerText = `${periodo.fecha_inicio || '-'} a ${periodo.fecha_fin || '-'}`;
+        if (aperturaCiclo && cicloSelect) aperturaCiclo.innerText = cicloSelect.options[cicloSelect.selectedIndex].text;
+        if (aperturaAviso) aperturaAviso.innerText = 'El periodo se asigna automáticamente según el tipo de acuerdo y ciclo.';
+    } else {
+        if (aperturaIdPeriodo) aperturaIdPeriodo.value = '';
+        if (aperturaPeriodo) aperturaPeriodo.innerText = 'No hay periodo abierto para este sistema y ciclo';
+        if (aperturaVigencia) aperturaVigencia.innerText = '-';
+        if (aperturaCiclo && cicloSelect) aperturaCiclo.innerText = cicloSelect.options[cicloSelect.selectedIndex].text;
+        if (aperturaAviso) aperturaAviso.innerText = 'No hay un periodo abierto activo para este ciclo. Pide al administrador que abra el periodo.';
+    }
+}
+
 export function seleccionarPersonaEvaluador(card, persona) {
     selectedEvaluacionData = persona;
-    const periodosDisponibles = window.APP_CONFIG?.periodosDisponibles || [];
     const nombreCompleto = `${persona.nombres || ''} ${persona.apellidos || ''}`.trim();
     const sistema = String(persona.sistema_evaluacion || '').trim().toUpperCase();
-    const periodo = periodosDisponibles.find(p => p.estado === 'ABIERTO' && String(p.sistema || '').trim().toUpperCase() === sistema);
+
     const setText = (id, value) => {
         const node = document.getElementById(id);
         if (node) node.innerText = value;
@@ -73,12 +110,7 @@ export function seleccionarPersonaEvaluador(card, persona) {
     setText('apertura-sistema', sistema === 'RENDIMIENTO_LABORAL' ? 'RL' : (sistema === 'ACUERDO_GESTION' ? 'AG' : (persona.sistema_evaluacion || '-')));
 
     const aperturaIdVinc = document.getElementById('apertura-id-vinc');
-    const aperturaIdPeriodo = document.getElementById('apertura-id-periodo');
     const cicloSelect = document.getElementById('apertura-ciclo-select');
-    const aperturaPeriodo = document.getElementById('apertura-periodo');
-    const aperturaVigencia = document.getElementById('apertura-vigencia');
-    const aperturaCiclo = document.getElementById('apertura-ciclo');
-    const aperturaAviso = document.getElementById('apertura-aviso-periodo');
     const aperturaEjes = document.getElementById('apertura-ejes-misionales');
     const aperturaEjeInv = document.getElementById('apertura-eje-investigacion');
     const aperturaEjeProy = document.getElementById('apertura-eje-proyeccion');
@@ -90,25 +122,13 @@ export function seleccionarPersonaEvaluador(card, persona) {
     const aperturaOpcionParcial = document.getElementById('apertura-opcion-parcial');
     if (aperturaOpcionParcial) aperturaOpcionParcial.classList.toggle('hidden', !persona.tiene_periodo_parcial);
 
-    toggleAperturaDiasLaborados();
     if (aperturaEjeInv) aperturaEjeInv.checked = false;
     if (aperturaEjeProy) aperturaEjeProy.checked = false;
     if (aperturaEjes) {
         aperturaEjes.classList.toggle('hidden', !(sistema === 'ACUERDO_GESTION' && !!persona.aplica_eje_misional));
     }
-    if (periodo) {
-        if (aperturaIdPeriodo) aperturaIdPeriodo.value = periodo.id_periodo;
-        if (aperturaPeriodo) aperturaPeriodo.innerText = `${periodo.sistema} (${periodo.anio}-${String(periodo.semestre).padStart(2, '0')})`;
-        if (aperturaVigencia) aperturaVigencia.innerText = `${periodo.fecha_inicio || '-'} a ${periodo.fecha_fin || '-'}`;
-        if (aperturaCiclo && cicloSelect) aperturaCiclo.innerText = cicloSelect.options[cicloSelect.selectedIndex].text;
-        if (aperturaAviso) aperturaAviso.innerText = 'El periodo se asigna automáticamente según el tipo de acuerdo.';
-    } else {
-        if (aperturaIdPeriodo) aperturaIdPeriodo.value = '';
-        if (aperturaPeriodo) aperturaPeriodo.innerText = 'No hay periodo abierto para este sistema';
-        if (aperturaVigencia) aperturaVigencia.innerText = '-';
-        if (aperturaCiclo && cicloSelect) aperturaCiclo.innerText = cicloSelect.options[cicloSelect.selectedIndex].text;
-        if (aperturaAviso) aperturaAviso.innerText = 'Abre un periodo activo para este sistema antes de iniciar la evaluacion.';
-    }
+
+    toggleAperturaDiasLaborados();
     document.querySelectorAll('.evaluado-card').forEach(el => el.classList.remove('ring-[#00594E]', 'ring-2'));
     if (card) card.classList.add('ring-2', 'ring-[#00594E]');
 }
@@ -119,6 +139,10 @@ export function toggleAperturaDiasLaborados() {
     const refWrap = document.getElementById('apertura-referencia-wrap');
     if (select && wrap) wrap.classList.toggle('hidden', select.value !== 'PARCIAL');
     if (select && refWrap) refWrap.classList.toggle('hidden', select.value !== 'PARCIAL');
+
+    if (selectedEvaluacionData) {
+        actualizarPeriodoSeleccionado(selectedEvaluacionData);
+    }
 }
 
 export function cambiarTabEvaluador(tab) {
@@ -129,6 +153,9 @@ export function cambiarTabEvaluador(tab) {
         const btn = document.getElementById(`tabbtn-evaluador-${t}`);
         if (btn) btn.classList.toggle('active', t === tab);
     });
+    if (tab === 'competencias' && selectedEvaluacionData) cargarCompetenciasEvaluador(selectedEvaluacionData);
+    if (tab === 'ejes' && selectedEvaluacionData) cargarEjesEvaluador(selectedEvaluacionData);
+    if (tab === 'recursos' && selectedEvaluacionData) cargarPlanMejoramientoEvaluador(selectedEvaluacionData);
 }
 
 export function abrirConcertacionEvaluador(card, ev) {
@@ -149,6 +176,9 @@ export function abrirConcertacionEvaluador(card, ev) {
     setText('concertacion-nombre', `${ev.evaluado_nombres || ''} ${ev.evaluado_apellidos || ''}`.trim());
     setText('concertacion-detalle', `${ev.evaluado_cargo || '-'} - ${ev.evaluado_area || '-'}`);
     setText('concertacion-sistema', ev.sistema === 'RENDIMIENTO_LABORAL' ? 'RL' : (ev.sistema === 'ACUERDO_GESTION' ? 'AG' : ev.sistema));
+
+    const resultado = document.getElementById('resultado-calculo-evaluador');
+    if (resultado) previsualizarCalculoEvaluador();
 
     const formFirmar = document.getElementById('form-firmar-evaluacion');
     if (formFirmar) formFirmar.action = `/evaluaciones/${ev.id_evaluacion}/firmar`;
@@ -207,6 +237,7 @@ export function renderEvidenciasEvaluadorAccion(evidencias = [], bloqueada = fal
                     <p class="text-[11px] font-bold text-slate-700 truncate">${escapeHtml(evidencia.descripcion || 'Evidencia registrada')}</p>
                     <p class="text-[10px] text-slate-400">${escapeHtml(evidencia.fecha_inclusion || '')}</p>
                     ${badgeEstadoAprobacion(estado)}
+                    ${estado === 'RECHAZADA' && evidencia.observacion_aprobacion ? `<p class="text-[10px] text-red-600 mt-1">${escapeHtml(evidencia.observacion_aprobacion)}</p>` : ''}
                 </div>
                 <div class="flex items-center gap-2 shrink-0">
                     <a class="inline-flex items-center gap-1 text-[11px] font-bold text-[#00594E] hover:underline" href="${escapeHtml(evidencia.url_o_ubicacion || '#')}" target="_blank" rel="noopener noreferrer">
@@ -284,10 +315,10 @@ export function guardarObservacionCompromiso(e, idCompromiso, confirmar = false)
     const msg = document.getElementById(`observacion-mensaje-${idCompromiso}`);
     const texto = (document.getElementById(`observacion-compromiso-${idCompromiso}`)?.value || '').trim();
 
-    fetchJson(`/evaluaciones/${selectedEvaluacionId}/compromisos/${idCompromiso}/observacion`, {
+    fetchJson(`/evaluaciones/${selectedEvaluacionId}/observaciones`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ texto, confirmar }),
+        body: JSON.stringify({ id_compromiso: idCompromiso, texto, confirmar }),
     })
         .then(async res => {
             const payload = await res.json().catch(() => ({}));
@@ -322,6 +353,12 @@ export function cargarCompromisosEvaluador(ev, ejes = {}) {
     fetchJson(`/evaluaciones/${ev.id_evaluacion}/compromisos`)
         .then(res => res.json())
         .then(payload => {
+            if (payload.estado_evaluacion) {
+                ev.estado = payload.estado_evaluacion;
+                if (selectedEvaluacionData && selectedEvaluacionData.id_evaluacion === ev.id_evaluacion) {
+                    selectedEvaluacionData.estado = payload.estado_evaluacion;
+                }
+            }
             const compromisos = payload.compromisos || [];
             const evidencias = payload.evidencias || [];
             const observaciones = payload.observaciones || [];
@@ -340,42 +377,67 @@ export function cargarCompromisosEvaluador(ev, ejes = {}) {
             }, {});
 
             const total = compromisos.length;
-            const sumaPeso = compromisos.reduce((acc, item) => acc + parseFloat(item.peso_porcentaje || 0), 0);
+            const sumaPeso = compromisos.reduce((acc, item) => acc + parseFloat(item.porcentaje_peso || 0), 0);
             if (sumaPesoNode) sumaPesoNode.innerText = `${sumaPeso.toFixed(1)}% / ${objetivo.toFixed(1)}%`;
             if (contadorNode) contadorNode.innerText = `${total} compromisos (mín 7, máx 10)`;
 
             const cumpleConcertacion = total >= 7 && total <= 10 && Math.abs(sumaPeso - objetivo) < 0.01;
             const btnFirmar = document.getElementById('btn-firmar-evaluador');
-            if (btnFirmar) btnFirmar.disabled = !cumpleConcertacion || !!ev.evaluador_firmado || !!ev.es_traslado;
+            if (btnFirmar) {
+                const yaFirmado = !!ev.evaluador_firmado;
+                btnFirmar.disabled = !cumpleConcertacion || yaFirmado || !!ev.es_traslado;
+                btnFirmar.classList.toggle('bg-[#00594E]', !yaFirmado);
+                btnFirmar.classList.toggle('bg-emerald-600', yaFirmado);
+                btnFirmar.classList.toggle('cursor-not-allowed', yaFirmado);
+                btnFirmar.innerText = yaFirmado ? 'Firmado' : 'Firmar concertación';
+            }
+
+            const puedeCalificar = ev.concertacion_firmada && ev.estado !== 'CALIFICADA' && !ev.es_traslado;
+            const bloqueCalificacion = document.getElementById('compromisos-calificacion-bloque');
+            if (bloqueCalificacion) bloqueCalificacion.classList.toggle('hidden', !puedeCalificar);
 
             if (!compromisos.length) {
                 contenedor.innerHTML = '<div class="py-8 text-center text-slate-500 text-xs">No hay compromisos registrados aún.</div>';
                 return;
             }
 
-            contenedor.innerHTML = compromisos.map((c, idx) => `
+            contenedor.innerHTML = compromisos.map((c, idx) => {
+                const calificacionControl = ev.concertacion_firmada
+                    ? (ev.estado !== 'CALIFICADA'
+                        ? `<div class="flex flex-col items-end gap-1">
+                            <label class="text-[10px] font-bold uppercase text-slate-500">Calificación (0-100)</label>
+                            <input type="number" min="0" max="100" step="0.01" class="compromiso-calificacion-input w-20 text-xs rounded-lg border border-slate-200 p-1.5 bg-white outline-none focus:border-[#00594E]" data-id="${c.id_compromiso}" value="${c.calificacion_definitiva ?? ''}" onblur="clampCalificacion(this)" />
+                        </div>`
+                        : `<div class="flex flex-col items-end gap-1">
+                            <label class="text-[10px] font-bold uppercase text-slate-500">Calificación</label>
+                            <span class="text-xs font-black rounded-xl px-2.5 py-1 bg-[#EAF2EF] text-[#00594E]">${c.calificacion_definitiva ?? '-'}</span>
+                        </div>`)
+                    : '';
+                return `
                 <div class="rounded-2xl border border-slate-100 bg-slate-50/50 p-4 space-y-3">
-                    <div class="flex items-start justify-between gap-3">
+                    <div class="flex items-center justify-between gap-3">
                         <div class="min-w-0">
                             <span class="text-[10px] font-black uppercase text-[#00594E] tracking-wide">Compromiso #${idx + 1}</span>
                             <p class="text-xs font-semibold text-slate-800 mt-0.5">${escapeHtml(c.descripcion)}</p>
                         </div>
                         <div class="flex items-center gap-2 shrink-0">
-                            <span class="text-xs font-black rounded-xl px-2.5 py-1 bg-[#EAF2EF] text-[#00594E]">${c.peso_porcentaje}%</span>
+                            ${calificacionControl}
+                            <span class="text-xs font-black rounded-xl px-2.5 py-1 bg-[#EAF2EF] text-[#00594E]">${c.porcentaje_peso}%</span>
                             ${!ev.concertacion_firmada && !ev.es_traslado ? `
                             <button type="button" onclick="eliminarCompromisoEvaluador(${c.id_compromiso})" class="text-red-400 hover:text-red-600 p-1" title="Eliminar compromiso">
                                 <span class="material-symbols-outlined text-base">delete</span>
                             </button>` : ''}
                         </div>
                     </div>
-                    <p class="text-[11px] text-slate-500"><span class="font-bold">Metas:</span> ${escapeHtml(c.metas_subtemas || '-')}</p>
+                    <p class="text-[11px] text-slate-500"><span class="font-bold">Metas:</span> ${(c.metas || []).join(', ') || '-'}</p>
                     <div class="pt-2 border-t border-slate-100">
                         <p class="text-[10px] font-bold uppercase text-slate-400 mb-1">Evidencias</p>
-                        ${renderEvidenciasEvaluadorAccion(gruposEvidencias[String(c.id_compromiso)] || [], !!ev.concertacion_firmada)}
+                        ${renderEvidenciasEvaluadorAccion(gruposEvidencias[String(c.id_compromiso)] || [], !ev.concertacion_firmada || ev.estado === 'CALIFICADA' || !!ev.es_traslado)}
                     </div>
                     ${renderObservacionEvaluador(c, gruposObservaciones[String(c.id_compromiso)], !ev.concertacion_firmada)}
                 </div>
-            `).join('');
+            `;
+            }).join('');
         })
         .catch(() => {
             contenedor.innerHTML = '<div class="py-8 text-center text-red-500 text-xs">Error al cargar compromisos.</div>';
@@ -392,7 +454,7 @@ export function agregarCompromisoEvaluador(e) {
     fetchJson(`/evaluaciones/${selectedEvaluacionId}/compromisos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ descripcion: desc, peso_porcentaje: peso, metas_subtemas: metas }),
+        body: JSON.stringify({ descripcion: desc, porcentaje_peso: peso, metas: (metas || '').split(',').map(m => m.trim()).filter(Boolean) }),
     })
         .then(async res => {
             const data = await res.json().catch(() => ({}));
@@ -514,7 +576,14 @@ export function enviarDecisionRecurso(id, decision, motivacion) {
             const payload = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(parseErrorMessage(payload, 'No se pudo registrar la decisión.'));
             alert(payload.message || 'Decisión registrada.');
-            if (selectedEvaluacionData) cargarRecursosEvaluador(selectedEvaluacionData);
+            if (selectedEvaluacionData) {
+                if (decision === 'APROBADO') {
+                    selectedEvaluacionData.estado = 'EN_PROCESO';
+                    abrirConcertacionEvaluador(null, selectedEvaluacionData);
+                } else {
+                    cargarRecursosEvaluador(selectedEvaluacionData);
+                }
+            }
             cargarRecursosMiosEvaluador();
         })
         .catch(error => alert(error.message));
@@ -541,13 +610,13 @@ export function renderFirmasPlan(plan) {
 
 export function cargarPlanMejoramientoEvaluador(ev) {
     const bloque = document.getElementById('bloque-plan-mejoramiento-evaluador');
-    if (!bloque || !ev) return;
-    fetchJson(`/evaluaciones/${ev.id_evaluacion}/plan-mejoramiento`)
+    if (!bloque || !ev) return Promise.resolve();
+    return fetchJson(`/evaluaciones/${ev.id_evaluacion}/plan-mejoramiento`)
         .then(res => res.json())
         .then(payload => {
             const requiere = !!payload.requiere_plan;
             bloque.classList.toggle('hidden', !requiere);
-            if (!requiere) return;
+            if (!requiere) return payload;
             const plan = payload.plan;
             selectedPlanData = plan;
             const estado = document.getElementById('plan-estado-evaluador');
@@ -556,13 +625,14 @@ export function cargarPlanMejoramientoEvaluador(ev) {
                 estado.innerText = plan && plan.firmado_evaluador && plan.firmado_evaluado ? 'CONCERTADO' : (plan ? (plan.estado || 'PENDIENTE') : 'PENDIENTE');
             }
             const textarea = document.getElementById('plan-temas-evaluador');
-            if (textarea && plan) textarea.value = plan.descripcion_temas || '';
+            if (textarea) textarea.value = plan ? (plan.descripcion_temas || '') : '';
             const btnFirmar = document.getElementById('btn-firmar-plan-evaluador');
             if (btnFirmar) {
                 btnFirmar.classList.toggle('hidden', !(plan && !plan.firmado_evaluador));
             }
             const firmas = document.getElementById('plan-firmas-evaluador');
             if (firmas) firmas.innerHTML = renderFirmasPlan(plan);
+            return payload;
         })
         .catch(() => {});
 }
@@ -625,6 +695,241 @@ export function firmarConcertacion(e, rol) {
         return false;
     }
     return true;
+}
+
+export function guardarCalificacionesCompromisos() {
+    if (!selectedEvaluacionId) return;
+    const inputs = Array.from(document.querySelectorAll('.compromiso-calificacion-input'));
+    const compromisos = inputs.map(inp => ({
+        id_compromiso: parseInt(inp.dataset.id, 10),
+        calificacion_definitiva: inp.value === '' ? null : parseFloat(inp.value),
+    })).filter(i => i.calificacion_definitiva !== null);
+    if (!compromisos.length) {
+        showInlineMessage('compromisos-calificacion-mensaje-evaluador', 'Ingresa al menos una calificación.', true);
+        return;
+    }
+    fetchJson(`/evaluaciones/${selectedEvaluacionId}/calificar-compromisos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ compromisos }),
+    })
+        .then(async res => {
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudieron guardar las calificaciones de compromisos.'));
+            showInlineMessage('compromisos-calificacion-mensaje-evaluador', data.message || 'Calificaciones de compromisos guardadas.');
+            previsualizarCalculoEvaluador();
+        })
+        .catch(error => showInlineMessage('compromisos-calificacion-mensaje-evaluador', error.message, true));
+}
+
+export function cargarCompetenciasEvaluador(ev) {
+    const contenedor = document.getElementById('competencias-lista-evaluador');
+    if (!contenedor || !ev) return;
+    const sistema = String(ev.sistema || '').trim().toUpperCase();
+    const nivel = ev.evaluado_nivel_jerarquico || '';
+    contenedor.innerHTML = '<div class="text-xs text-slate-400">Cargando competencias...</div>';
+
+    Promise.all([
+        fetchJson(`/catalogo/competencias?sistema=${encodeURIComponent(sistema)}&nivel=${encodeURIComponent(nivel)}`).then(res => res.json()),
+        fetchJson(`/evaluaciones/${ev.id_evaluacion}/competencias`).then(res => res.json()),
+    ])
+        .then(([catalogo, existentes]) => {
+            if (catalogo.error) {
+                contenedor.innerHTML = `<div class="text-xs text-red-500">${escapeHtml(catalogo.error)}</div>`;
+                return;
+            }
+            const guardadas = (existentes.competencias || []).reduce((acc, c) => {
+                acc[c.id_competencia] = c;
+                return acc;
+            }, {});
+            const bloqueado = !ev.concertacion_firmada || ev.estado === 'CALIFICADA' || !!ev.es_traslado;
+            const bloqueadoMsg = document.getElementById('competencias-bloqueado-evaluador');
+            if (bloqueadoMsg) {
+                bloqueadoMsg.classList.toggle('hidden', !bloqueado);
+                bloqueadoMsg.innerText = ev.estado === 'CALIFICADA'
+                    ? 'Esta evaluación ya fue calificada y calculada; las notas quedaron congeladas.'
+                    : 'La concertación debe estar firmada por ambas partes antes de calificar competencias.';
+            }
+            const btn = document.getElementById('btn-guardar-competencias-evaluador');
+            if (btn) btn.classList.toggle('hidden', bloqueado);
+
+            const renderGrupo = (rows) => rows.map(c => {
+                const existente = guardadas[c.id_competencia] || {};
+                const valor = existente.calificacion_definitiva ?? '';
+                return `
+                    <div class="rounded-xl border border-slate-100 bg-slate-50/50 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div class="min-w-0">
+                            <p class="text-xs font-bold text-slate-800">${escapeHtml(c.nombre)}</p>
+                            ${c.afirmacion ? `<p class="text-[10px] text-slate-400 mt-0.5">${escapeHtml(c.afirmacion)}</p>` : ''}
+                        </div>
+                        <div class="flex items-center gap-2 shrink-0">
+                            <label class="text-[10px] font-bold text-slate-500 uppercase">Nota (0-100)</label>
+                            <input type="number" min="0" max="100" step="0.01" class="competencia-calificacion-input w-24 text-xs rounded-lg border border-slate-200 p-1.5 disabled:bg-slate-100 disabled:text-slate-500" data-id="${c.id_competencia}" value="${valor}" onblur="clampCalificacion(this)" ${bloqueado ? 'disabled' : ''} />
+                        </div>
+                    </div>`;
+            }).join('');
+
+            let html = '';
+            const comunes = catalogo.comun || [];
+            const nivelRows = catalogo.nivel_jerarquico || [];
+            if (comunes.length) {
+                html += `<p class="text-[10px] font-bold uppercase text-slate-500">Competencias comunes</p>` + renderGrupo(comunes);
+            }
+            if (nivelRows.length) {
+                html += `<p class="text-[10px] font-bold uppercase text-slate-500 mt-3">Competencias del nivel jerárquico</p>` + renderGrupo(nivelRows);
+            }
+            contenedor.innerHTML = html || '<div class="text-xs text-slate-400">No hay competencias en el catálogo para este sistema y nivel.</div>';
+        })
+        .catch(() => {
+            contenedor.innerHTML = '<div class="text-xs text-red-500">Error al cargar competencias.</div>';
+        });
+}
+
+export function guardarCalificacionesCompetencias() {
+    if (!selectedEvaluacionId) return;
+    const inputs = Array.from(document.querySelectorAll('.competencia-calificacion-input'));
+    const competencias = inputs.map(inp => ({
+        id_competencia: parseInt(inp.dataset.id, 10),
+        calificacion_definitiva: inp.value === '' ? null : parseFloat(inp.value),
+    })).filter(i => i.calificacion_definitiva !== null);
+    if (!competencias.length) {
+        showInlineMessage('competencias-mensaje-evaluador', 'Ingresa al menos una calificación.', true);
+        return;
+    }
+    fetchJson(`/evaluaciones/${selectedEvaluacionId}/calificar-competencias`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ competencias }),
+    })
+        .then(async res => {
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudieron guardar las competencias.'));
+            showInlineMessage('competencias-mensaje-evaluador', data.message || 'Competencias guardadas.');
+            previsualizarCalculoEvaluador();
+        })
+        .catch(error => showInlineMessage('competencias-mensaje-evaluador', error.message, true));
+}
+
+export function cargarEjesEvaluador(ev) {
+    const contenedor = document.getElementById('ejes-lista-evaluador');
+    if (!contenedor || !ev) return;
+    if (ev.sistema !== 'ACUERDO_GESTION' || !ev.aplica_eje_misional) {
+        contenedor.innerHTML = '';
+        return;
+    }
+    const etiquetas = {
+        DOCENCIA: 'Docencia (eje base)',
+        INVESTIGACION: 'Horas de Investigación',
+        PROYECCION_SOCIAL: 'Proyección Social',
+    };
+    fetchJson(`/evaluaciones/${ev.id_evaluacion}/calculo`)
+        .then(res => res.json())
+        .then(calculo => {
+            const ejesActivos = calculo.ejes_activos || [];
+            const notas = calculo.notas_ejes_raw || {};
+            const pesos = (calculo.pesos && calculo.pesos.ejes) || {};
+            const bloqueado = !ev.concertacion_firmada || ev.estado === 'CALIFICADA' || !!ev.es_traslado;
+            const bloqueadoMsg = document.getElementById('ejes-bloqueado-evaluador');
+            if (bloqueadoMsg) {
+                bloqueadoMsg.classList.toggle('hidden', !bloqueado);
+                bloqueadoMsg.innerText = ev.estado === 'CALIFICADA'
+                    ? 'Esta evaluación ya fue calificada y calculada; las notas quedaron congeladas.'
+                    : 'La concertación debe estar firmada por ambas partes antes de calificar ejes misionales.';
+            }
+            const btn = document.getElementById('btn-guardar-ejes-evaluador');
+            if (btn) btn.classList.toggle('hidden', bloqueado);
+
+            if (!ejesActivos.length) {
+                contenedor.innerHTML = '<div class="text-xs text-slate-400">Esta evaluación no tiene ejes misionales activos.</div>';
+                return;
+            }
+            contenedor.innerHTML = ejesActivos.map(eje => {
+                const nota = notas[eje];
+                const valor = nota === undefined ? '' : nota;
+                return `
+                    <div class="rounded-xl border border-slate-100 bg-slate-50/50 p-3 space-y-2">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                                <p class="text-xs font-bold text-slate-800">${etiquetas[eje] || eje}</p>
+                                <p class="text-[10px] text-slate-400">Peso ${pesos[eje] ?? '-'}%</p>
+                            </div>
+                            <div class="flex items-center gap-2 shrink-0">
+                                <label class="text-[10px] font-bold text-slate-500 uppercase">Nota (0-100)</label>
+                                <input type="number" min="0" max="100" step="0.01" class="eje-calificacion-input w-24 text-xs rounded-lg border border-slate-200 p-1.5 disabled:bg-slate-100 disabled:text-slate-500" data-eje="${eje}" value="${valor}" onblur="clampCalificacion(this)" ${bloqueado ? 'disabled' : ''} />
+                            </div>
+                        </div>
+                        <textarea class="eje-calificacion-observacion w-full text-xs rounded-lg border border-slate-200 p-2 disabled:bg-slate-100 disabled:text-slate-500" rows="2" data-eje="${eje}" placeholder="Observaciones (opcional)" ${bloqueado ? 'disabled' : ''}></textarea>
+                    </div>`;
+            }).join('');
+        })
+        .catch(() => {
+            contenedor.innerHTML = '<div class="text-xs text-red-500">Error al cargar ejes misionales.</div>';
+        });
+}
+
+export function guardarCalificacionesEjes() {
+    if (!selectedEvaluacionId) return;
+    const inputs = Array.from(document.querySelectorAll('.eje-calificacion-input'));
+    const ejes = inputs.map(inp => ({
+        tipo_eje: inp.dataset.eje,
+        calificacion: parseFloat(inp.value),
+        observacion: document.querySelector(`.eje-calificacion-observacion[data-eje="${inp.dataset.eje}"]`)?.value?.trim() || '',
+    })).filter(i => !isNaN(i.calificacion));
+    if (!ejes.length) {
+        showInlineMessage('ejes-mensaje-evaluador', 'Ingresa al menos una calificación.', true);
+        return;
+    }
+    fetchJson(`/evaluaciones/${selectedEvaluacionId}/calificar-ejes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ejes }),
+    })
+        .then(async res => {
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudieron guardar los ejes misionales.'));
+            showInlineMessage('ejes-mensaje-evaluador', data.message || 'Ejes misionales calificados.');
+            previsualizarCalculoEvaluador();
+        })
+        .catch(error => showInlineMessage('ejes-mensaje-evaluador', error.message, true));
+}
+
+export function previsualizarCalculoEvaluador() {
+    if (!selectedEvaluacionId) return;
+    fetchJson(`/evaluaciones/${selectedEvaluacionId}/calculo`)
+        .then(res => res.json())
+        .then(calculo => {
+            const resultado = document.getElementById('resultado-calculo-evaluador');
+            if (resultado) {
+                resultado.classList.remove('hidden');
+                renderResultado(calculo, 'resultado-calculo-evaluador', 'evaluador');
+            }
+        })
+        .catch(() => {});
+}
+
+export function calcularNotaFinal() {
+    if (!selectedEvaluacionId) return;
+    if (!confirm('¿Confirmas calcular la nota final? La evaluación quedará calificada y las notas se congelarán.')) return;
+    fetchJson(`/evaluaciones/${selectedEvaluacionId}/calcular-final`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+    })
+        .then(async res => {
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo calcular la nota final.'));
+            showInlineMessage('compromisos-calificacion-mensaje-evaluador', data.message || 'Nota final calculada.');
+            const resultado = document.getElementById('resultado-calculo-evaluador');
+            if (resultado && data.calculo) {
+                resultado.classList.remove('hidden');
+                renderResultado(data.calculo, 'resultado-calculo-evaluador', 'evaluador');
+            }
+            if (selectedEvaluacionData) {
+                const ev = { ...selectedEvaluacionData, estado: 'CALIFICADA' };
+                abrirConcertacionEvaluador(null, ev);
+            }
+        })
+        .catch(error => showInlineMessage('compromisos-calificacion-mensaje-evaluador', error.message, true));
 }
 
 // --- Instancia Externa Functions ---
@@ -778,7 +1083,36 @@ export function guardarNotasInstanciaExterna(e) {
         });
 }
 
+export function seleccionarEvaluacionPorId(idEvaluacion, targetTab = 'recursos') {
+    const sec = document.getElementById('section-evaluaciones-evaluador');
+    if (sec && sec.classList.contains('hidden')) {
+        navegarMenu(null, 'evaluaciones-evaluador');
+    }
+
+    const card = document.querySelector(`.evaluacion-evaluador-card[data-id-evaluacion="${idEvaluacion}"]`);
+    if (card) {
+        card.click();
+        if (targetTab) {
+            cambiarTabEvaluador(targetTab);
+        }
+        const panel = document.getElementById('panel-concertacion-evaluador');
+        if (panel) {
+            panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        if (targetTab === 'recursos' && selectedEvaluacionData) {
+            cargarPlanMejoramientoEvaluador(selectedEvaluacionData).then(() => {
+                const planBlock = document.getElementById('bloque-plan-mejoramiento-evaluador');
+                if (planBlock && !planBlock.classList.contains('hidden')) {
+                    planBlock.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            });
+        }
+    }
+}
+
 // Global window exposure
+window.seleccionarEvaluacionPorId = seleccionarEvaluacionPorId;
 window.seleccionarPersonaEvaluador = seleccionarPersonaEvaluador;
 window.toggleAperturaDiasLaborados = toggleAperturaDiasLaborados;
 window.abrirConcertacionEvaluador = abrirConcertacionEvaluador;
@@ -792,6 +1126,11 @@ window.decidirRecurso = decidirRecurso;
 window.guardarPlanMejoramiento = guardarPlanMejoramiento;
 window.firmarPlanMejoramiento = firmarPlanMejoramiento;
 window.firmarConcertacion = firmarConcertacion;
+window.guardarCalificacionesCompromisos = guardarCalificacionesCompromisos;
+window.guardarCalificacionesCompetencias = guardarCalificacionesCompetencias;
+window.guardarCalificacionesEjes = guardarCalificacionesEjes;
+window.calcularNotaFinal = calcularNotaFinal;
+window.previsualizarCalculoEvaluador = previsualizarCalculoEvaluador;
 window.cargarListaInstanciaExterna = cargarListaInstanciaExterna;
 window.abrirInstanciaExterna = abrirInstanciaExterna;
 window.guardarNotasInstanciaExterna = guardarNotasInstanciaExterna;

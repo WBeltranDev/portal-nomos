@@ -1,7 +1,7 @@
 /**
  * Evaluado Dashboard JS Module
  */
-import { escapeHtml, fetchJson, parseErrorMessage, navegarMenu } from './common.js';
+import { escapeHtml, fetchJson, parseErrorMessage, showInlineMessage, navegarMenu, renderResultado } from './common.js';
 
 let selectedEvaluacionId = null;
 let selectedEvaluacionData = null;
@@ -71,6 +71,7 @@ export function cambiarTabEvaluado(tab) {
         const btn = document.getElementById(`tabbtn-evaluado-${t}`);
         if (btn) btn.classList.toggle('active', t === tab);
     });
+    if (tab === 'recursos' && selectedEvaluacionData) cargarPlanMejoramientoEvaluado(selectedEvaluacionData);
 }
 
 export function abrirConcertacionEvaluado(card, ev) {
@@ -84,17 +85,10 @@ export function abrirConcertacionEvaluado(card, ev) {
     const tipo = document.getElementById('concertacion-evaluado-tipo');
     const evaluador = document.getElementById('concertacion-evaluado-evaluador');
     const form = document.getElementById('form-firmar-evaluado');
-    const evidenciaForm = document.getElementById('form-evidencia-evaluado');
-    const evidenciaMensaje = document.getElementById('evidencia-mensaje-evaluado');
 
     if (tipo) tipo.innerText = ev.tipo_nombre || 'Tipo de evaluacion';
     if (evaluador) evaluador.innerText = `Quién lo evaluó: ${ev.evaluador_nombres || 'Mi Evaluador'} ${ev.evaluador_apellidos || ''}`.trim();
     if (form) form.action = `/evaluaciones/${ev.id_evaluacion}/firmar`;
-    if (evidenciaForm) evidenciaForm.reset();
-    if (evidenciaMensaje) {
-        evidenciaMensaje.classList.add('hidden');
-        evidenciaMensaje.innerText = '';
-    }
 
     const axesView = document.getElementById('ejes-misionales-seleccion-evaluado');
     const chkInv = document.getElementById('chk-eje-investigacion');
@@ -108,7 +102,7 @@ export function abrirConcertacionEvaluado(card, ev) {
 
     const tabBtnRecursos = document.getElementById('tabbtn-evaluado-recursos');
     if (tabBtnRecursos) {
-        const puedeRecursos = ev.estado === 'CALIFICADA' && ev.categoria_final === 'NO_SATISFACTORIO';
+        const puedeRecursos = ev.estado === 'CALIFICADA' || ev.categoria_final === 'NO_SATISFACTORIO' || (ev.calificacion_final !== null && Number(ev.calificacion_final) <= 70) || (ev.calificacion_parcial !== null && Number(ev.calificacion_parcial) <= 70);
         tabBtnRecursos.classList.toggle('hidden', !puedeRecursos);
     }
 
@@ -135,9 +129,28 @@ export function abrirConcertacionEvaluado(card, ev) {
     cargarEjesEvaluado(ev);
     cargarRecursosEvaluado(ev);
     cargarPlanMejoramientoEvaluado(ev);
+    cargarResultadoEvaluado(ev);
 
     document.querySelectorAll('.evaluacion-card').forEach(el => el.classList.remove('ring-2', 'ring-[#00594E]'));
     if (card) card.classList.add('ring-2', 'ring-[#00594E]');
+}
+
+export function cargarResultadoEvaluado(ev) {
+    const resultado = document.getElementById('resultado-calculo-evaluado');
+    if (!resultado) return;
+    const visible = !!ev.concertacion_firmada || ev.estado === 'CALIFICADA';
+    if (!visible) {
+        resultado.classList.add('hidden');
+        return;
+    }
+    resultado.classList.remove('hidden');
+    resultado.innerHTML = '<div class="text-xs text-slate-400">Cargando resultado...</div>';
+    fetchJson(`/evaluaciones/${ev.id_evaluacion}/calculo`)
+        .then(res => res.json())
+        .then(calculo => renderResultado(calculo, 'resultado-calculo-evaluado', 'evaluado', ev.id_evaluacion))
+        .catch(() => {
+            resultado.innerHTML = '<div class="text-xs text-red-500">Error al cargar el resultado.</div>';
+        });
 }
 
 export function cargarCompromisosEvaluado(ev) {
@@ -165,14 +178,19 @@ export function cargarCompromisosEvaluado(ev) {
             }, {});
 
             const totalCompromisos = compromisos.length;
-            const sumaPeso = compromisos.reduce((acc, item) => acc + parseFloat(item.peso_porcentaje || 0), 0);
+            const sumaPeso = compromisos.reduce((acc, item) => acc + parseFloat(item.porcentaje_peso || 0), 0);
             if (sumaPesoNode) sumaPesoNode.innerText = `${sumaPeso.toFixed(1)}%`;
             if (contadorNode) contadorNode.innerText = `${totalCompromisos} compromisos`;
 
             const btnFirmar = document.getElementById('btn-firmar-evaluado');
             if (btnFirmar) {
-                const firmable = ev.concertacion_firmada || (ev.evaluador_firmado && !ev.evaluado_firmado);
+                const yaFirmado = !!ev.evaluado_firmado;
+                const firmable = ev.evaluador_firmado && !ev.evaluado_firmado && !ev.concertacion_firmada && !ev.es_traslado;
                 btnFirmar.disabled = !firmable;
+                btnFirmar.classList.toggle('bg-[#00594E]', !yaFirmado);
+                btnFirmar.classList.toggle('bg-emerald-600', yaFirmado);
+                btnFirmar.classList.toggle('cursor-not-allowed', yaFirmado);
+                btnFirmar.innerText = yaFirmado ? 'Firmado' : 'Firmar Concertación';
             }
 
             if (!compromisos.length) {
@@ -180,23 +198,42 @@ export function cargarCompromisosEvaluado(ev) {
                 return;
             }
 
-            contenedor.innerHTML = compromisos.map((c, idx) => `
+            contenedor.innerHTML = compromisos.map((c, idx) => {
+                const puedeEvidencias = ev.concertacion_firmada && ev.estado !== 'CALIFICADA' && !ev.es_traslado;
+                const formularioEvidencia = puedeEvidencias ? `
+                    <form class="mt-4 pt-3 border-t border-slate-100 space-y-2" onsubmit="guardarEvidenciaEvaluado(event, ${c.id_compromiso})">
+                        <div class="flex items-center gap-1.5 text-[11px] font-bold uppercase text-slate-500">
+                            <span class="material-symbols-outlined text-sm">attach_file</span>
+                            Registrar evidencia
+                        </div>
+                        <div class="grid sm:grid-cols-2 gap-2">
+                            <input type="url" required class="evidencia-url-input w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="https://ejemplo.com/evidencia" />
+                            <input type="text" class="evidencia-descripcion-input w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Descripción (opcional)" maxlength="500" />
+                        </div>
+                        <div class="flex items-center justify-between gap-2">
+                            <span id="evidencia-mensaje-evaluado-${c.id_compromiso}" class="hidden text-xs font-semibold"></span>
+                            <button type="submit" class="bg-[#00594E] text-white px-3 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Agregar evidencia</button>
+                        </div>
+                    </form>` : '';
+                return `
                 <div class="rounded-2xl border border-slate-100 bg-slate-50/50 p-4 space-y-3">
                     <div class="flex items-start justify-between gap-3">
                         <div class="min-w-0">
                             <span class="text-[10px] font-black uppercase text-[#00594E] tracking-wide">Compromiso #${idx + 1}</span>
                             <p class="text-xs font-semibold text-slate-800 mt-0.5">${escapeHtml(c.descripcion)}</p>
                         </div>
-                        <span class="text-xs font-black rounded-xl px-2.5 py-1 bg-[#EAF2EF] text-[#00594E] shrink-0">${c.peso_porcentaje}%</span>
+                        <span class="text-xs font-black rounded-xl px-2.5 py-1 bg-[#EAF2EF] text-[#00594E] shrink-0">${c.porcentaje_peso}%</span>
                     </div>
-                    <p class="text-[11px] text-slate-500"><span class="font-bold">Metas:</span> ${escapeHtml(c.metas_subtemas || '-')}</p>
+                    <p class="text-[11px] text-slate-500"><span class="font-bold">Metas:</span> ${(c.metas || []).join(', ') || '-'}</p>
                     <div class="pt-2 border-t border-slate-100">
                         <p class="text-[10px] font-bold uppercase text-slate-400 mb-1">Evidencias</p>
                         ${renderEvidenciasCompactas(gruposEvidencias[String(c.id_compromiso)] || [])}
                     </div>
                     ${renderObservacionEvaluado(gruposObservaciones[String(c.id_compromiso)])}
+                    ${formularioEvidencia}
                 </div>
-            `).join('');
+            `;
+            }).join('');
         })
         .catch(() => {
             contenedor.innerHTML = '<div class="py-8 text-center text-red-500 text-xs">Error al cargar compromisos.</div>';
@@ -222,7 +259,7 @@ export function cargarCompetenciasEvaluado() {
                         <p class="text-xs font-bold text-slate-800">${escapeHtml(c.nombre_competencia || c.competencia)}</p>
                         <p class="text-[10px] text-slate-400 uppercase">${c.tipo}</p>
                     </div>
-                    <span class="text-xs font-black px-2.5 py-1 rounded-lg bg-[#EAF2EF] text-[#00594E]">${c.nivel_desarrollo ?? '-'}</span>
+                    <span class="text-xs font-black px-2.5 py-1 rounded-lg bg-[#EAF2EF] text-[#00594E]">${c.calificacion_definitiva ?? '-'}</span>
                 </div>
             `).join('');
         })
@@ -235,25 +272,38 @@ export function cargarEjesEvaluado(ev) {
     if (!ev || ev.sistema !== 'ACUERDO_GESTION' || !ev.aplica_eje_misional) return;
     const contenedor = document.getElementById('ejes-lista-evaluado');
     if (!contenedor) return;
-    fetchJson(`/evaluaciones/${ev.id_evaluacion}/ejes`)
+    const etiquetas = {
+        DOCENCIA: 'Docencia (eje base)',
+        INVESTIGACION: 'Horas de Investigación',
+        PROYECCION_SOCIAL: 'Proyección Social',
+    };
+    fetchJson(`/evaluaciones/${ev.id_evaluacion}/calculo`)
         .then(res => res.json())
-        .then(ejes => {
-            const items = [];
-            if (ejes.docencia) items.push({ nombre: 'Docencia (eje base)', nota: ejes.docencia_nota });
-            if (ejes.investigacion) items.push({ nombre: 'Horas de Investigación', nota: ejes.investigacion_nota });
-            if (ejes.proyeccion_social) items.push({ nombre: 'Proyección Social', nota: ejes.proyeccion_social_nota });
-            if (!items.length) {
-                contenedor.innerHTML = '<div class="text-xs text-slate-400">Sin ejes misionales configurados.</div>';
+        .then(calculo => {
+            const ejesActivos = calculo.ejes_activos || [];
+            const notas = calculo.notas_ejes_raw || {};
+            const pesos = (calculo.pesos && calculo.pesos.ejes) || {};
+            if (!ejesActivos.length) {
+                contenedor.innerHTML = '<div class="rounded-xl border border-slate-100 bg-slate-50/50 p-4 text-xs text-slate-400 text-center">Esta evaluación no tiene ejes misionales activos.</div>';
                 return;
             }
-            contenedor.innerHTML = items.map(i => `
-                <div class="rounded-xl border border-slate-100 bg-slate-50/50 p-3 flex justify-between items-center">
-                    <span class="text-xs font-bold text-slate-800">${i.nombre}</span>
-                    <span class="text-xs font-black px-2.5 py-1 rounded-lg bg-[#EAF2EF] text-[#00594E]">${i.nota ?? 'Sin nota'}</span>
-                </div>
-            `).join('');
+            contenedor.innerHTML = ejesActivos.map(eje => {
+                const nota = notas[eje];
+                const peso = pesos[eje];
+                return `
+                    <div class="rounded-xl border border-slate-100 bg-slate-50/50 p-3 flex justify-between items-center">
+                        <div class="min-w-0">
+                            <p class="text-xs font-bold text-slate-800">${etiquetas[eje] || eje}</p>
+                            <p class="text-[10px] text-slate-400">Peso ${peso ?? '-'}%</p>
+                        </div>
+                        <span class="text-xs font-black px-2.5 py-1 rounded-lg bg-[#EAF2EF] text-[#00594E] shrink-0">${nota !== undefined ? nota : '-'}</span>
+                    </div>
+                `;
+            }).join('');
         })
-        .catch(() => {});
+        .catch(() => {
+            contenedor.innerHTML = '<div class="text-xs text-red-500">Error al cargar ejes misionales.</div>';
+        });
 }
 
 export function renderTarjetaRecurso(r, contexto) {
@@ -304,6 +354,10 @@ export function cargarRecursosEvaluado(ev) {
             const tienePendiente = recursos.some(r => r.decision === 'PENDIENTE');
             const form = document.getElementById('form-recurso-evaluado');
             if (form) form.classList.toggle('hidden', tienePendiente);
+            const listaEvidencias = document.getElementById('recurso-evidencias-lista-evaluado');
+            if (listaEvidencias && !tienePendiente && listaEvidencias.children.length === 0) {
+                agregarEvidenciaRecurso();
+            }
             const contador = document.getElementById('recursos-contador-evaluado');
             if (contador) contador.innerText = String(recursos.length);
             const lista = document.getElementById('recursos-lista-evaluado');
@@ -342,6 +396,21 @@ export function radicarRecurso(e) {
             return { url, descripcion };
         })
         .filter(Boolean);
+
+    if (!evidencias.length) {
+        if (mensaje) { mensaje.classList.remove('hidden'); mensaje.className = 'text-xs font-semibold text-red-600'; mensaje.innerText = 'Es obligatorio incluir al menos un enlace (link) de evidencia para radicar el recurso.'; }
+        return;
+    }
+
+    for (const ev of evidencias) {
+        try {
+            new URL(ev.url);
+        } catch (_) {
+            if (mensaje) { mensaje.classList.remove('hidden'); mensaje.className = 'text-xs font-semibold text-red-600'; mensaje.innerText = 'Por favor ingresa un enlace (link) de evidencia válido (ej. https://ejemplo.com/evidencia).'; }
+            return;
+        }
+    }
+
     fetchJson(`/evaluaciones/${selectedEvaluacionId}/recursos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -353,7 +422,10 @@ export function radicarRecurso(e) {
             if (mensaje) { mensaje.classList.remove('hidden'); mensaje.className = 'text-xs font-semibold text-[#00594E]'; mensaje.innerText = payload.message || 'Recurso radicado.'; }
             e.target.reset();
             const listaEvidencias = document.getElementById('recurso-evidencias-lista-evaluado');
-            if (listaEvidencias) listaEvidencias.innerHTML = '';
+            if (listaEvidencias) {
+                listaEvidencias.innerHTML = '';
+                agregarEvidenciaRecurso();
+            }
             cargarRecursosEvaluado(selectedEvaluacionData);
         })
         .catch(error => {
@@ -364,18 +436,22 @@ export function radicarRecurso(e) {
 export function agregarEvidenciaRecurso() {
     const contenedor = document.getElementById('recurso-evidencias-lista-evaluado');
     if (!contenedor) return;
+    const esPrimero = contenedor.children.length === 0;
     const fila = document.createElement('div');
     fila.className = 'flex items-start gap-2';
     fila.innerHTML = `
         <div class="grid gap-1.5 flex-1">
-            <input type="url" class="recurso-evidencia-url w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="https://ejemplo.com/evidencia" />
+            <input type="url" class="recurso-evidencia-url w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="https://ejemplo.com/evidencia" ${esPrimero ? 'required' : ''} />
             <input type="text" class="recurso-evidencia-desc w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Descripción (opcional)" maxlength="200" />
         </div>
+        ${!esPrimero ? `
         <button type="button" onclick="eliminarEvidenciaRecurso(this)" class="mt-1 text-red-400 hover:text-red-600 shrink-0" title="Quitar evidencia">
             <span class="material-symbols-outlined text-base">close</span>
-        </button>`;
+        </button>` : ''}`;
     contenedor.appendChild(fila);
-    fila.querySelector('.recurso-evidencia-url')?.focus();
+    if (!esPrimero) {
+        fila.querySelector('.recurso-evidencia-url')?.focus();
+    }
 }
 
 export function eliminarEvidenciaRecurso(btn) {
@@ -466,6 +542,32 @@ export function firmarPlanMejoramiento(rol) {
         .catch(() => alert('Ocurrió un error al obtener la información del plan.'));
 }
 
+export function guardarEvidenciaEvaluado(e, idCompromiso) {
+    e.preventDefault();
+    if (!selectedEvaluacionId) return;
+    const form = e.target;
+    const url = (form.querySelector('.evidencia-url-input')?.value || '').trim();
+    const descripcion = (form.querySelector('.evidencia-descripcion-input')?.value || '').trim();
+    const mensajeId = `evidencia-mensaje-evaluado-${idCompromiso}`;
+    if (!url) {
+        showInlineMessage(mensajeId, 'Indica la URL de la evidencia.', true);
+        return;
+    }
+    fetchJson(`/evaluaciones/${selectedEvaluacionId}/evidencias`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ componente: 'B', id_compromiso: idCompromiso, url, descripcion }),
+    })
+        .then(async res => {
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo registrar la evidencia.'));
+            showInlineMessage(mensajeId, data.message || 'Evidencia registrada.');
+            form.reset();
+            if (selectedEvaluacionData) cargarCompromisosEvaluado(selectedEvaluacionData);
+        })
+        .catch(error => showInlineMessage(mensajeId, error.message, true));
+}
+
 export function firmarConcertacion(e, rol) {
     if (!confirm('¿Confirmas firmar la concertación? Una vez que ambas partes firmen, los compromisos y sus porcentajes quedarán bloqueados y no se podrán editar.')) {
         e.preventDefault();
@@ -481,6 +583,7 @@ window.radicarRecurso = radicarRecurso;
 window.agregarEvidenciaRecurso = agregarEvidenciaRecurso;
 window.eliminarEvidenciaRecurso = eliminarEvidenciaRecurso;
 window.firmarPlanMejoramiento = firmarPlanMejoramiento;
+window.guardarEvidenciaEvaluado = guardarEvidenciaEvaluado;
 window.firmarConcertacion = firmarConcertacion;
 
 window.addEventListener('DOMContentLoaded', () => {
