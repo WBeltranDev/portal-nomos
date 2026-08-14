@@ -36,6 +36,7 @@ class DashboardController extends Controller
         $evaluacionesInstanciaExterna = collect();
         $planesPendientesEvaluador = collect();
         $miVinculacionEvaluador = null;
+        $vinculacionesReemplazo = collect();
 
         // 1. Data for Admin
         if ($rolActivo === 'admin') {
@@ -70,6 +71,22 @@ class DashboardController extends Controller
                     'v.id_vinculacion',
                     'v.es_evaluador'
                 )
+                ->orderBy('f.apellidos')
+                ->get();
+
+            // Todas las vinculaciones (activas e inactivas) para seleccionar a
+            // quién reemplaza el trasladado: el titular suele estar retirado.
+            $vinculacionesReemplazo = DB::table('vinculacion as v')
+                ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
+                ->select(
+                    'v.id_vinculacion',
+                    'v.activa',
+                    'v.cargo',
+                    'v.area',
+                    'f.nombres',
+                    'f.apellidos'
+                )
+                ->orderBy('v.activa', 'desc')
                 ->orderBy('f.apellidos')
                 ->get();
 
@@ -287,6 +304,10 @@ class DashboardController extends Controller
                     $join->on('f_er.id_evaluacion', '=', 'ev.id_evaluacion')
                         ->where('f_er.tipo_firma', '=', 'CONCERTACION_EVALUADOR');
                 })
+                ->leftJoin('firma as f_no', function ($join) {
+                    $join->on('f_no.id_evaluacion', '=', 'ev.id_evaluacion')
+                        ->where('f_no.tipo_firma', '=', 'NOTIFICACION_EVALUADO');
+                })
                 ->select(
                     'ev.id_evaluacion',
                     'ev.id_vinc_evaluado',
@@ -310,7 +331,10 @@ class DashboardController extends Controller
                     'ev.fase_actual',
                     've.aplica_eje_misional',
                     DB::raw('IF(f_ev.id_firma IS NOT NULL, 1, 0) as evaluado_firmado'),
-                    DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado')
+                    DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado'),
+                    DB::raw('IF(f_no.id_firma IS NOT NULL, 1, 0) as notificacion_firmada'),
+                    DB::raw('IF(f_no.renuencia, 1, 0) as notificacion_renuencia'),
+                    'f_no.fecha_firma as notificacion_fecha'
                 )
                 ->orderByDesc('ev.id_evaluacion')
                 ->get();
@@ -370,7 +394,7 @@ class DashboardController extends Controller
             'periodos', 'ponderaciones', 'evaluacionesEvaluador', 'evaluacionesEvaluado',
             'evaluadosDisponibles', 'miVinculacionEvaluador', 'acuerdosRL', 'acuerdosAG',
             'ponderacionesConfig', 'evaluacionesInstanciaExterna', 'planesPendientesEvaluador',
-            'periodosParciales', 'funcionariosParaPeriodoParcial'
+            'periodosParciales', 'funcionariosParaPeriodoParcial', 'vinculacionesReemplazo'
         );
 
         return match ($rolActivo) {

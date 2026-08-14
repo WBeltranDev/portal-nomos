@@ -216,7 +216,7 @@ export function cargarPlanesAdmin() {
 export function cargarRenuenciasAdmin() {
     const lista = document.getElementById('renuencias-admin-lista');
     if (!lista) return;
-    fetchJson('/renuencias')
+    fetchJson('/renuncias')
         .then(res => res.json())
         .then(payload => {
             const renuencias = payload.renuencias || [];
@@ -234,6 +234,21 @@ export function cargarRenuenciasAdmin() {
                         <span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-amber-50 text-amber-700">${r.tipo_firma === 'NOTIFICACION_EVALUADO' ? 'Renuencia de notificación' : (r.tipo_firma === 'CONCERTACION_EVALUADOR' ? 'Evaluador renunció' : 'Evaluado renunció')}</span>
                     </div>
                     <p class="text-[10px] text-slate-400">Firma registrada: ${escapeHtml(r.fecha_firma || '')}</p>
+                    ${(r.testigos || []).length ? `
+                        <div class="pt-2 border-t border-slate-100 space-y-1">
+                            ${(r.testigos || []).map(t => `
+                                <p class="text-[10px] text-slate-500">Testigo: <b>${escapeHtml(t.nombre_testigo)}</b> — ${escapeHtml(t.cargo_testigo)}</p>
+                            `).join('')}
+                        </div>` : ''}
+                    ${(r.evidencias || []).length ? `
+                        <div class="pt-2 border-t border-slate-100 space-y-1">
+                            <p class="text-[10px] font-bold uppercase text-slate-500">Evidencia (acta digitalizada)</p>
+                            ${(r.evidencias || []).map(ev => `
+                                <a href="${escapeHtml(ev.url)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 text-[11px] text-[#00594E] hover:underline min-w-0">
+                                    <span class="material-symbols-outlined text-sm shrink-0">open_in_new</span>
+                                    <span class="truncate">${escapeHtml(ev.descripcion || ev.url)}</span>
+                                </a>`).join('')}
+                        </div>` : ''}
                 </div>`).join('');
         })
         .catch(() => {});
@@ -274,6 +289,7 @@ export function cargarTrasladosAdmin() {
                         </div>
                     </div>
                     ${t.referencia ? `<p class="text-[10px] font-semibold text-[#00594E]">${escapeHtml(t.referencia)}</p>` : ''}
+                    ${t.reemplazado_nombres ? `<p class="text-[10px] text-slate-500">Reemplaza a: <b>${escapeHtml(t.reemplazado_nombres)} ${escapeHtml(t.reemplazado_apellidos)}</b></p>` : ''}
                     ${t.motivo ? `<p class="text-[10px] text-slate-400 italic">${escapeHtml(t.motivo)}</p>` : ''}
                 </div>`).join('');
         })

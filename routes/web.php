@@ -747,15 +747,81 @@ Route::post('/admin/asignaciones', function (Request $request) {
 })->name('admin.asignaciones.store');
 
 // --- S6: GESTIÓN DE TRASLADOS ---
-// Registra el traslado de un funcionario: cambia de evaluador, traslada al
-// nuevo evaluador la evaluación vigente sin concertar y genera una evaluación
-// PARCIAL prorrateada por los días laborados en la dependencia origen (RF3).
+// Registra el traslado de un funcionario: bloquea la SEMESTRE (solo lectura),
+// genera una evaluación PARCIAL prorrateada por los días laborados en la
+// dependencia origen (con los compromisos de la SEMESTRE cerrada) y otra PARCIAL
+// para el nuevo evaluador con los días en el nuevo cargo (con los compromisos
+// del evaluado anterior del puesto).
+if (!function_exists('copiarCompromisosEvaluacion')) {
+    function copiarCompromisosEvaluacion(int $idEvaluacionOrigen, int $idEvaluacionDestino): void
+    {
+        DB::table('compromiso')->where('id_evaluacion', $idEvaluacionDestino)->delete();
+
+        $compromisos = DB::table('compromiso')
+            ->where('id_evaluacion', $idEvaluacionOrigen)
+            ->orderBy('numero_orden')
+            ->get();
+
+        foreach ($compromisos as $compromiso) {
+            $nuevoCompromisoId = DB::table('compromiso')->insertGetId([
+                'id_evaluacion' => $idEvaluacionDestino,
+                'numero_orden' => $compromiso->numero_orden,
+                'descripcion' => $compromiso->descripcion,
+                'porcentaje_peso' => $compromiso->porcentaje_peso,
+            ]);
+
+            $metas = DB::table('compromiso_meta')
+                ->where('id_compromiso', $compromiso->id_compromiso)
+                ->pluck('meta');
+
+            foreach ($metas as $meta) {
+                DB::table('compromiso_meta')->insert([
+                    'id_compromiso' => $nuevoCompromisoId,
+                    'meta' => $meta,
+                ]);
+            }
+        }
+    }
+}
+
+if (!function_exists('evaluacionAnteriorEvaluadoPuesto')) {
+    /**
+     * Encuentra la evaluación SEMESTRE del evaluado anterior del puesto que
+     * ocupa el nuevo evaluador, para heredar sus compromisos al trasladado.
+     */
+    function evaluacionAnteriorEvaluadoPuesto(int $idVincEvaluador, int $idVincEvaluadoExcluido, int $idPeriodo, ?string $cargoNuevo = null, ?string $areaNueva = null)
+    {
+        $query = DB::table('evaluacion as ev')
+            ->join('vinculacion as ve', 've.id_vinculacion', '=', 'ev.id_vinc_evaluado')
+            ->where('ev.id_periodo', $idPeriodo)
+            ->where('ev.id_vinc_evaluador', $idVincEvaluador)
+            ->where('ev.id_vinc_evaluado', '!=', $idVincEvaluadoExcluido)
+            ->whereIn('ev.tipo_evaluacion', ['SEMESTRE_1', 'SEMESTRE_2'])
+            ->whereExists(function ($sub) {
+                $sub->select(DB::raw(1))
+                    ->from('compromiso')
+                    ->whereColumn('compromiso.id_evaluacion', 'ev.id_evaluacion');
+            })
+            ->select('ev.id_evaluacion', 've.cargo', 've.area');
+
+        if (! empty($cargoNuevo) || ! empty($areaNueva)) {
+            $query->orderByRaw(
+                '(CASE WHEN ve.cargo = ? THEN 1 WHEN ve.area = ? THEN 1 ELSE 0 END) DESC',
+                [$cargoNuevo ?? '', $areaNueva ?? '']
+            );
+        }
+
+        return $query->orderByDesc('ev.id_evaluacion')->first();
+    }
+}
+
 Route::post('/admin/traslados', function (Request $request) {
     abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
 
     $data = $request->validate([
         'id_vinc_funcionario' => ['required', 'integer', 'exists:vinculacion,id_vinculacion'],
         'id_vinc_evaluador_nuevo' => ['required', 'integer', 'exists:vinculacion,id_vinculacion', 'different:id_vinc_funcionario'],
+        'id_vinc_reemplazado' => ['nullable', 'integer', 'exists:vinculacion,id_vinculacion', 'different:id_vinc_funcionario'],
         'fecha_traslado' => ['required', 'date'],
         'area_nuevo' => ['nullable', 'string', 'max:250'],
         'cargo_nuevo' => ['nullable', 'string', 'max:200'],
@@ -831,32 +897,32 @@ Route::post('/admin/traslados', function (Request $request) {
 
         $diasLaborados = max(1, min($fechaInicio->diff($fechaTraslado)->days + 1, $diasPeriodo));
 
-        // La evaluación vigente del ciclo (SEMESTRE) sin concertar pasa al nuevo evaluador
-        DB::table('evaluacion')
+        // La evaluación SEMESTRE vigente del ciclo (concertada o no) queda bloqueada
+        // por traslado: se etiqueta y solo se puede consultar. Sus compromisos se
+        // copian a la PARCIAL de la dependencia origen.
+        $semestreOrigen = DB::table('evaluacion')
             ->where('id_periodo', $periodo->id_periodo)
             ->where('id_vinc_evaluado', $data['id_vinc_funcionario'])
             ->whereIn('tipo_evaluacion', ['SEMESTRE_1', 'SEMESTRE_2'])
-            ->where('concertacion_firmada', 0)
             ->where('id_vinc_evaluador', $evaluadorOrigenId)
-            ->update(['id_vinc_evaluador' => $data['id_vinc_evaluador_nuevo']]);
+            ->orderByDesc('id_evaluacion')
+            ->first();
 
-        // La evaluación SEMESTRE ya concertada y firmada queda bloqueada por
-        // traslado: se etiqueta y solo se puede consultar.
-        DB::table('evaluacion')
-            ->where('id_periodo', $periodo->id_periodo)
-            ->where('id_vinc_evaluado', $data['id_vinc_funcionario'])
-            ->whereIn('tipo_evaluacion', ['SEMESTRE_1', 'SEMESTRE_2'])
-            ->where('concertacion_firmada', 1)
-            ->update(['es_traslado' => 1]);
+        if ($semestreOrigen) {
+            DB::table('evaluacion')
+                ->where('id_evaluacion', $semestreOrigen->id_evaluacion)
+                ->update(['es_traslado' => 1]);
+        }
 
         if ($diasLaborados < $diasPeriodo) {
-            $existeParcial = DB::table('evaluacion')
+            $existeParcialOrigen = DB::table('evaluacion')
                 ->where('id_periodo', $periodo->id_periodo)
                 ->where('id_vinc_evaluado', $data['id_vinc_funcionario'])
+                ->where('id_vinc_evaluador', $evaluadorOrigenId)
                 ->where('tipo_evaluacion', 'PARCIAL')
                 ->exists();
 
-            if (! $existeParcial) {
+            if (! $existeParcialOrigen) {
                 $idEvaluacionParcial = DB::table('evaluacion')->insertGetId([
                     'id_periodo' => $periodo->id_periodo,
                     'id_vinc_evaluado' => $data['id_vinc_funcionario'],
@@ -869,6 +935,65 @@ Route::post('/admin/traslados', function (Request $request) {
                     'dias_laborados' => $diasLaborados,
                     'referencia' => trim($data['referencia'] ?? '') ?: null,
                 ]);
+
+                // La PARCIAL de origen hereda los compromisos de la SEMESTRE cerrada.
+                if ($semestreOrigen) {
+                    copiarCompromisosEvaluacion($semestreOrigen->id_evaluacion, $idEvaluacionParcial);
+                }
+            }
+        }
+
+        // PARCIAL para el nuevo evaluador: días laborados en el nuevo cargo (no
+        // inició allí desde el inicio del semestre). Hereda los compromisos del
+        // evaluado anterior del puesto.
+        $diasNuevoCargo = max(0, $diasPeriodo - $diasLaborados);
+        if ($diasNuevoCargo >= 1) {
+            $existeParcialNuevo = DB::table('evaluacion')
+                ->where('id_periodo', $periodo->id_periodo)
+                ->where('id_vinc_evaluado', $data['id_vinc_funcionario'])
+                ->where('id_vinc_evaluador', $data['id_vinc_evaluador_nuevo'])
+                ->where('tipo_evaluacion', 'PARCIAL')
+                ->exists();
+
+            if (! $existeParcialNuevo) {
+                $idEvaluacionParcialNuevo = DB::table('evaluacion')->insertGetId([
+                    'id_periodo' => $periodo->id_periodo,
+                    'id_vinc_evaluado' => $data['id_vinc_funcionario'],
+                    'id_vinc_evaluador' => (int) $data['id_vinc_evaluador_nuevo'],
+                    'tipo_evaluacion' => 'PARCIAL',
+                    'fase_actual' => 1,
+                    'concertacion_firmada' => 0,
+                    'estado' => 'EN_PROCESO',
+                    'es_parcial' => 1,
+                    'dias_laborados' => $diasNuevoCargo,
+                    'referencia' => trim($data['referencia'] ?? '') ?: null,
+                ]);
+
+                $anteriorDelPuesto = null;
+                if (! empty($data['id_vinc_reemplazado'])) {
+                    // Si se indicó a quién reemplaza, heredar de su SEMESTRE
+                    // (el titular suele estar retirado pero conserva evaluaciones).
+                    $anteriorDelPuesto = DB::table('evaluacion')
+                        ->where('id_periodo', $periodo->id_periodo)
+                        ->where('id_vinc_evaluado', (int) $data['id_vinc_reemplazado'])
+                        ->whereIn('tipo_evaluacion', ['SEMESTRE_1', 'SEMESTRE_2'])
+                        ->orderByDesc('id_evaluacion')
+                        ->first();
+                }
+
+                if (! $anteriorDelPuesto) {
+                    $anteriorDelPuesto = evaluacionAnteriorEvaluadoPuesto(
+                        (int) $data['id_vinc_evaluador_nuevo'],
+                        (int) $data['id_vinc_funcionario'],
+                        $periodo->id_periodo,
+                        $data['cargo_nuevo'] ?? null,
+                        $data['area_nuevo'] ?? null
+                    );
+                }
+
+                if ($anteriorDelPuesto) {
+                    copiarCompromisosEvaluacion($anteriorDelPuesto->id_evaluacion, $idEvaluacionParcialNuevo);
+                }
             }
         }
     }
@@ -900,6 +1025,7 @@ Route::post('/admin/traslados', function (Request $request) {
         'id_vinc_funcionario' => (int) $data['id_vinc_funcionario'],
         'id_vinc_evaluador_origen' => $evaluadorOrigenId,
         'id_vinc_evaluador_nuevo' => (int) $data['id_vinc_evaluador_nuevo'],
+        'id_vinc_reemplazado' => $data['id_vinc_reemplazado'] ?? null,
         'area_origen' => $areaOrigen,
         'cargo_origen' => $cargoOrigen,
         'area_nuevo' => $data['area_nuevo'] ?? null,
@@ -926,8 +1052,10 @@ Route::get('/admin/traslados', function () {
         ->leftJoin('funcionario as feo', 'feo.id_funcionario', '=', 'veo.id_funcionario')
         ->leftJoin('vinculacion as ven', 'ven.id_vinculacion', '=', 't.id_vinc_evaluador_nuevo')
         ->leftJoin('funcionario as fen', 'fen.id_funcionario', '=', 'ven.id_funcionario')
+        ->leftJoin('vinculacion as vr', 'vr.id_vinculacion', '=', 't.id_vinc_reemplazado')
+        ->leftJoin('funcionario as fr', 'fr.id_funcionario', '=', 'vr.id_funcionario')
         ->leftJoin('evaluacion as evp', 'evp.id_evaluacion', '=', 't.id_evaluacion_parcial')
-        ->select('t.*', 'evp.referencia', 'ff.nombres as funcionario_nombres', 'ff.apellidos as funcionario_apellidos', 'feo.nombres as origen_nombres', 'feo.apellidos as origen_apellidos', 'fen.nombres as nuevo_nombres', 'fen.apellidos as nuevo_apellidos')
+        ->select('t.*', 'evp.referencia', 'ff.nombres as funcionario_nombres', 'ff.apellidos as funcionario_apellidos', 'feo.nombres as origen_nombres', 'feo.apellidos as origen_apellidos', 'fen.nombres as nuevo_nombres', 'fen.apellidos as nuevo_apellidos', 'fr.nombres as reemplazado_nombres', 'fr.apellidos as reemplazado_apellidos')
         ->orderByDesc('t.id_traslado')
         ->get();
 })->name('admin.traslados.index');
@@ -1111,6 +1239,14 @@ Route::get('/evaluaciones/{id}/compromisos', function (int $id) {
             ->get();
     }
 
+    $evidenciasNotificacion = [];
+    if ($notificacionFirmada && $notificacionFirmada->renuencia) {
+        $evidenciasNotificacion = DB::table('renuencia_evidencia')
+            ->where('id_firma', $notificacionFirmada->id_firma)
+            ->select('descripcion', 'url')
+            ->get();
+    }
+
     return response()->json([
         'compromisos' => $compromisos,
         'evidencias' => $evidencias,
@@ -1126,6 +1262,7 @@ Route::get('/evaluaciones/{id}/compromisos', function (int $id) {
             'fecha_notificacion' => $notificacionFirmada->fecha_firma ?? null,
             'testigos' => getTestigosConcertacion($id),
             'testigos_notificacion' => $testigosNotificacion,
+            'evidencias_notificacion' => $evidenciasNotificacion,
             'congelada' => (bool) $evaluacion->concertacion_firmada,
             'traslado' => (bool) $evaluacion->es_traslado,
             'calificada' => $evaluacion->estado === 'CALIFICADA',
@@ -1529,8 +1666,28 @@ Route::post('/evaluaciones/{id}/firmar-notificacion', function (Request $request
         ->values()
         ->all();
 
+    $evidencias = collect($request->input('evidencias', []))
+        ->filter(fn ($e) => is_array($e)
+            && !empty(trim((string) ($e['url'] ?? ''))))
+        ->map(fn ($e) => [
+            'descripcion' => trim((string) ($e['descripcion'] ?? '')),
+            'url' => trim((string) ($e['url'] ?? '')),
+        ])
+        ->values()
+        ->all();
+
     if ($renuncia && count($testigos) < 1) {
         return response()->json(['error' => 'Debes registrar al menos un testigo (nombre y cargo) cuando renuncias a firmar.'], 422);
+    }
+
+    if ($renuncia && count($evidencias) < 1) {
+        return response()->json(['error' => 'Debes adjuntar al menos un enlace (link) con el acta de renuencia digitalizada en PDF.'], 422);
+    }
+
+    foreach ($evidencias as $evidencia) {
+        if (!filter_var($evidencia['url'], FILTER_VALIDATE_URL)) {
+            return response()->json(['error' => 'Cada enlace de evidencia debe ser una URL válida (ej. https://...).'], 422);
+        }
     }
 
     $puedeFirmar = false;
@@ -1568,6 +1725,18 @@ Route::post('/evaluaciones/{id}/firmar-notificacion', function (Request $request
                     'nombre_testigo' => $testigo['nombre_testigo'],
                     'cargo_testigo' => $testigo['cargo_testigo'],
                     'fecha_registro' => date('Y-m-d H:i:s'),
+                ]);
+            }
+        }
+
+        DB::table('renuencia_evidencia')->where('id_firma', $firmaRegistrada->id_firma)->delete();
+        if ($renuncia) {
+            foreach ($evidencias as $evidencia) {
+                DB::table('renuencia_evidencia')->insert([
+                    'id_firma' => $firmaRegistrada->id_firma,
+                    'descripcion' => $evidencia['descripcion'],
+                    'url' => $evidencia['url'],
+                    'fecha_inclusion' => date('Y-m-d H:i:s'),
                 ]);
             }
         }
@@ -2571,6 +2740,10 @@ Route::get('/evaluaciones/{id}/recursos', function (int $id) {
         'recursos' => getRecursosEvaluacion($id),
         'estado' => $evaluacion->estado,
         'categoria_final' => $evaluacion->categoria_final,
+        'notificacion_firmada' => DB::table('firma')
+            ->where('id_evaluacion', $id)
+            ->where('tipo_firma', 'NOTIFICACION_EVALUADO')
+            ->exists(),
         'traslado' => (bool) $evaluacion->es_traslado,
     ]);
 })->name('evaluaciones.recursos');
@@ -2584,6 +2757,13 @@ Route::post('/evaluaciones/{id}/recursos', function (Request $request, int $id) 
     abort_unless($evaluacion, 404);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
     abort_unless($evaluacion->estado === 'CALIFICADA', 422, 'Solo puedes radicar un recurso cuando la evaluación haya sido calificada y calculada.');
+
+    $notificacionFirmada = DB::table('firma')
+        ->where('id_evaluacion', $id)
+        ->where('tipo_firma', 'NOTIFICACION_EVALUADO')
+        ->exists();
+
+    abort_unless($notificacionFirmada, 422, 'Debes firmar la notificación de la calificación antes de radicar un recurso.');
 
     $auth = session('usuario_autenticado');
     $vinculacionSolicitante = DB::table('vinculacion')
@@ -2963,7 +3143,7 @@ Route::get('/planes-mejoramiento', function () {
 
 
 // --- GET: Renuncias a la firma de concertación (renuencia) con testigos ---
-Route::get('/renuencias', function () {
+Route::get('/renuncias', function () {
     abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
 
     $renuencias = DB::table('firma as f')
@@ -2995,6 +3175,12 @@ Route::get('/renuencias', function () {
             ->where('id_firma', $r->id_firma)
             ->select('nombre_testigo', 'cargo_testigo')
             ->orderBy('id_testigo')
+            ->get();
+
+        $r->evidencias = DB::table('renuencia_evidencia')
+            ->where('id_firma', $r->id_firma)
+            ->select('descripcion', 'url')
+            ->orderBy('id_renuncia_evidencia')
             ->get();
     }
 
@@ -3125,6 +3311,11 @@ if (!function_exists('prepararInformeSemestral')) {
             $r->testigos = DB::table('testigo_renuencia')
                 ->where('id_firma', $r->id_firma)
                 ->select('nombre_testigo', 'cargo_testigo')
+                ->get();
+
+            $r->evidencias = DB::table('renuencia_evidencia')
+                ->where('id_firma', $r->id_firma)
+                ->select('descripcion', 'url')
                 ->get();
         }
 
