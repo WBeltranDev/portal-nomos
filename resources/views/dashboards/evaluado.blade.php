@@ -104,6 +104,46 @@
 
                             <div id="resultado-calculo-evaluado" class="hidden mt-6 space-y-3"></div>
 
+                            <div id="notificacion-evaluado-seccion" class="hidden mt-6 pt-4 border-t border-slate-100 space-y-3">
+                                <div class="flex items-center justify-between gap-3">
+                                    <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                        <span class="material-symbols-outlined text-base">how_to_reg</span>
+                                        Notificación de la calificación
+                                    </h4>
+                                    <span id="notificacion-estado-evaluado" class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-amber-50 text-amber-700 hidden">Pendiente</span>
+                                </div>
+                                <p class="text-[10px] text-slate-400 font-semibold">Debes dejar constancia de que conoces la calificación. Si renuncias a firmar, se registra la renuencia con un testigo institucional y el acta digitalizada en PDF.</p>
+                                <div id="notificacion-detalle-evaluado" class="hidden space-y-1"></div>
+                                <div id="notificacion-acciones-evaluado" class="hidden flex flex-wrap items-center gap-3">
+                                    <button type="button" id="btn-firmar-notificacion-evaluado" onclick="firmarNotificacionEvaluado(event)" class="bg-[#00594E] text-white px-5 py-2.5 rounded-xl text-xs font-bold hover:brightness-110 transition">Firmar notificación</button>
+                                    <button type="button" id="btn-abrir-renuncia-evaluado" onclick="toggleFormRenuenciaEvaluado()" class="text-[11px] font-bold text-red-600 hover:underline flex items-center gap-1">
+                                        <span class="material-symbols-outlined text-sm">cancel</span> Renunciar a firmar
+                                    </button>
+                                </div>
+                                <form id="form-renuncia-evaluado" onsubmit="registrarRenuenciaEvaluado(event)" class="hidden grid gap-3 rounded-2xl border border-red-100 bg-red-50/40 p-4">
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Testigos <span class="text-red-600 font-bold">*</span></label>
+                                        <p class="text-[10px] text-slate-400 mb-1.5">Registra al menos un testigo institucional que acompañe la renuencia.</p>
+                                        <div id="renuncia-testigos-lista-evaluado" class="space-y-2"></div>
+                                        <button type="button" onclick="agregarTestigoRenuencia()" class="mt-2 text-[11px] font-bold text-[#00594E] hover:underline flex items-center gap-1">
+                                            <span class="material-symbols-outlined text-sm">person_add</span> Agregar testigo
+                                        </button>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Evidencia — acta digitalizada en PDF <span class="text-red-600 font-bold">*</span></label>
+                                        <p class="text-[10px] text-slate-400 mb-1.5">Adjunta el enlace (link) del acta física de renuencia escaneada en PDF.</p>
+                                        <div id="renuncia-evidencias-lista-evaluado" class="space-y-2"></div>
+                                        <button type="button" onclick="agregarEvidenciaRenuencia()" class="mt-2 text-[11px] font-bold text-[#00594E] hover:underline flex items-center gap-1">
+                                            <span class="material-symbols-outlined text-sm">add_link</span> Agregar enlace del acta
+                                        </button>
+                                    </div>
+                                    <div class="flex items-center justify-between gap-3">
+                                        <span id="renuncia-mensaje-evaluado" class="hidden text-xs font-semibold"></span>
+                                        <button type="submit" class="bg-red-600 text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition ml-auto">Registrar renuencia con testigos</button>
+                                    </div>
+                                </form>
+                            </div>
+
                             <div id="firma-evaluado-seccion" class="mt-6 pt-4 border-t border-slate-100 space-y-3">
                                 <div id="seccion-firmar-evaluado" class="flex items-center justify-between gap-4">
                                     <div class="text-xs text-slate-500 leading-tight">Podrás firmar cuando el evaluador haya firmado la concertación.</div>

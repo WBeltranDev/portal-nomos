@@ -310,6 +310,13 @@
                 @foreach($ren->testigos as $t)
                     <div><b>{{ $t->nombre_testigo }}</b> — {{ $t->cargo_testigo }}</div>
                 @endforeach
+                @foreach($ren->evidencias ?? [] as $ev)
+                    <div style="margin-top:3px;">
+                        <a href="{{ $ev->url }}" target="_blank" rel="noopener noreferrer" style="color:#00594E;">
+                            {{ $ev->descripcion ?: 'Evidencia (acta digitalizada)' }} — {{ $ev->url }}
+                        </a>
+                    </div>
+                @endforeach
             </td>
             <td></td>
         </tr>
