@@ -538,6 +538,17 @@
                                 </div>
                             </div>
                             <div>
+                                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Reemplaza a (Vinculación)</label>
+                                <input type="search" id="buscar-reemplazado-traslado" oninput="filtrarOpcionesAsignacion('buscar-reemplazado-traslado', 'select-reemplazado-traslado')" class="mb-2 w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Buscar reemplazo por nombre o cargo" />
+                                <select name="id_vinc_reemplazado" id="select-reemplazado-traslado" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]">
+                                    <option value="">Ninguno (puesto nuevo)</option>
+                                    @foreach($vinculacionesReemplazo as $vr)
+                                        <option value="{{ $vr->id_vinculacion }}">{{ $vr->nombres }} {{ $vr->apellidos }} - {{ $vr->cargo }}{{ $vr->activa ? '' : ' (inactivo)' }}</option>
+                                    @endforeach
+                                </select>
+                                <p class="text-[10px] text-slate-400 mt-1">Titular del puesto que ocupará el trasladado (suele estar retirado). Sus compromisos del semestre se copian a la evaluación parcial del nuevo evaluador.</p>
+                            </div>
+                            <div>
                                 <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Motivo (opcional)</label>
                                 <input type="text" name="motivo" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Motivo del traslado" />
                             </div>
