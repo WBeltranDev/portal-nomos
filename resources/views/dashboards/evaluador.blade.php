@@ -186,6 +186,9 @@
                                                 @if($ev->es_traslado)
                                                     <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-200 text-slate-600">Traslado</span>
                                                 @endif
+                                                @if($ev->id_vinc_suplente)
+                                                    <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-[#B5A160]/20 text-[#8a7b3c]">Delegación</span>
+                                                @endif
                                             </div>
                                             <p class="text-xs text-slate-500 mt-0.5">{{ $ev->evaluado_cargo }} - {{ $ev->evaluado_area }}</p>
                                             @if($ev->tipo_nombre === 'PARCIAL' && $ev->referencia)
@@ -227,6 +230,11 @@
                             <div id="aviso-traslado-evaluador" class="hidden mt-4 flex items-start gap-2 rounded-2xl border border-slate-200 bg-slate-100 p-3 text-xs font-semibold text-slate-600">
                                 <span class="material-symbols-outlined text-base shrink-0">lock</span>
                                 <span>Esta evaluación quedó bloqueada por traslado. Solo puedes consultarla; no se puede modificar ni calificar.</span>
+                            </div>
+
+                            <div id="aviso-delegacion-evaluador" class="hidden mt-4 flex items-start gap-2 rounded-2xl border border-[#B5A160]/30 bg-[#B5A160]/10 p-3 text-xs font-semibold text-[#8a7b3c]">
+                                <span class="material-symbols-outlined text-base shrink-0">swap_horiz</span>
+                                <span>Estás actuando <b>en delegación de</b> <span id="delegacion-titular-nombre"></span> (titular del cargo). Al finalizar la delegación, el titular retomará la responsabilidad de la firma final de las evaluaciones pendientes.</span>
                             </div>
 
                             <div id="ejes-misionales-vista-evaluador" class="mt-4 bg-slate-50/50 p-4 rounded-2xl border border-slate-100 hidden">

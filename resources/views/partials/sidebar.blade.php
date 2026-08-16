@@ -28,6 +28,10 @@
             <span class="material-symbols-outlined">swap_horiz</span>
             Traslados
         </button>
+        <button type="button" class="sidebar-link w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-slate-700 transition" onclick="navegarMenu(this, 'delegaciones')">
+            <span class="material-symbols-outlined">supervisor_account</span>
+            Delegaciones
+        </button>
         @endif
 
         @if ($rolActivo !== 'instancia_externa')

@@ -24,11 +24,14 @@
                                         @if($ev->es_traslado)
                                             <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-200 text-slate-600">Traslado</span>
                                         @endif
+                                        @if($ev->id_vinc_suplente)
+                                            <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-[#B5A160]/20 text-[#8a7b3c]">Delegación</span>
+                                        @endif
                                     </div>
                                     @if($ev->tipo_nombre === 'PARCIAL' && $ev->referencia)
                                         <p class="text-[10px] font-semibold text-[#00594E] mt-1">{{ $ev->referencia }}</p>
                                     @endif
-                                    <p class="text-xs text-slate-500 mt-0.5">Quién lo evaluó: {{ $ev->evaluador_nombres ?? 'Mi Evaluador' }} {{ $ev->evaluador_apellidos ?? '' }}</p>
+                                    <p class="text-xs text-slate-500 mt-0.5">Quién lo evaluó: {{ $ev->evaluador_nombres ?? 'Mi Evaluador' }} {{ $ev->evaluador_apellidos ?? '' }}@if($ev->id_vinc_suplente) (en delegación de {{ $ev->suplente_nombres }} {{ $ev->suplente_apellidos }})@endif</p>
                                     <div class="mt-2 space-y-0.5 text-[10px] text-slate-500">
                                         <p><span class="font-semibold text-slate-600">Período de evaluación:</span> {{ $ev->anio }} · Semestre {{ $ev->semestre }}</p>
                                         <p><span class="font-semibold text-slate-600">Fechas de calificación:</span> {{ \Carbon\Carbon::parse($ev->fecha_inicio)->format('d/m/Y') }} al {{ \Carbon\Carbon::parse($ev->fecha_fin)->format('d/m/Y') }}</p>

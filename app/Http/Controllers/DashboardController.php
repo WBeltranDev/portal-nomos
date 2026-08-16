@@ -37,6 +37,8 @@ class DashboardController extends Controller
         $planesPendientesEvaluador = collect();
         $miVinculacionEvaluador = null;
         $vinculacionesReemplazo = collect();
+        $evaluadoresDelegacion = collect();
+        $delegadosDisponibles = collect();
 
         // 1. Data for Admin
         if ($rolActivo === 'admin') {
@@ -142,6 +144,26 @@ class DashboardController extends Controller
                 ->orderBy('f.apellidos')
                 ->get();
 
+            // Evaluadores disponibles para delegación de funciones del cargo (S8).
+            // Delegante: evaluadores que actualmente tienen personas asignadas a cargo.
+            $idsEvaluadoresDelegacion = DB::table('evaluador_asignacion')->distinct()->pluck('id_vinc_evaluador')->all();
+            $evaluadoresDelegacion = DB::table('vinculacion as v')
+                ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
+                ->where('v.activa', 1)
+                ->whereIn('v.id_vinculacion', $idsEvaluadoresDelegacion)
+                ->select('v.id_vinculacion', 'v.cargo', 'v.area', 'v.sistema_evaluacion', 'f.nombres', 'f.apellidos')
+                ->orderBy('f.apellidos')
+                ->get();
+
+            // Delegado: cualquier funcionario activo con rol de evaluador disponible para asumir la función.
+            $delegadosDisponibles = DB::table('vinculacion as v')
+                ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
+                ->where('v.activa', 1)
+                ->where('v.es_evaluador', 1)
+                ->select('v.id_vinculacion', 'v.cargo', 'v.area', 'v.sistema_evaluacion', 'f.nombres', 'f.apellidos')
+                ->orderBy('f.apellidos')
+                ->get();
+
             $configData = getPonderacionesConfig();
             $ponderacionesList = [];
             foreach ($configData as $sistema => $vals) {
@@ -173,6 +195,8 @@ class DashboardController extends Controller
                     $join->on('f_er.id_evaluacion', '=', 'ev.id_evaluacion')
                         ->where('f_er.tipo_firma', '=', 'CONCERTACION_EVALUADOR');
                 })
+                ->leftJoin('vinculacion as vs', 'vs.id_vinculacion', '=', 'ev.id_vinc_suplente')
+                ->leftJoin('funcionario as fs', 'fs.id_funcionario', '=', 'vs.id_funcionario')
                 ->select(
                     'ev.id_evaluacion',
                     'ev.estado',
@@ -183,6 +207,9 @@ class DashboardController extends Controller
                     'ev.tipo_evaluacion as tipo_nombre',
                     'ev.referencia',
                     'ev.es_traslado',
+                    'ev.id_vinc_suplente',
+                    'fs.nombres as suplente_nombres',
+                    'fs.apellidos as suplente_apellidos',
                     'ev.calificacion_final',
                     'ev.categoria_final',
                     'fe.nombres as evaluado_nombres',
@@ -308,6 +335,8 @@ class DashboardController extends Controller
                     $join->on('f_no.id_evaluacion', '=', 'ev.id_evaluacion')
                         ->where('f_no.tipo_firma', '=', 'NOTIFICACION_EVALUADO');
                 })
+                ->leftJoin('vinculacion as vs', 'vs.id_vinculacion', '=', 'ev.id_vinc_suplente')
+                ->leftJoin('funcionario as fs', 'fs.id_funcionario', '=', 'vs.id_funcionario')
                 ->select(
                     'ev.id_evaluacion',
                     'ev.id_vinc_evaluado',
@@ -321,8 +350,11 @@ class DashboardController extends Controller
                     'ev.tipo_evaluacion as tipo_nombre',
                     'ev.referencia',
                     'ev.es_traslado',
+                    'ev.id_vinc_suplente',
                     'fa.nombres as evaluador_nombres',
                     'fa.apellidos as evaluador_apellidos',
+                    'fs.nombres as suplente_nombres',
+                    'fs.apellidos as suplente_apellidos',
                     'p.sistema',
                     've.cargo as evaluado_cargo',
                     've.area as evaluado_area',
@@ -394,7 +426,8 @@ class DashboardController extends Controller
             'periodos', 'ponderaciones', 'evaluacionesEvaluador', 'evaluacionesEvaluado',
             'evaluadosDisponibles', 'miVinculacionEvaluador', 'acuerdosRL', 'acuerdosAG',
             'ponderacionesConfig', 'evaluacionesInstanciaExterna', 'planesPendientesEvaluador',
-            'periodosParciales', 'funcionariosParaPeriodoParcial', 'vinculacionesReemplazo'
+            'periodosParciales', 'funcionariosParaPeriodoParcial', 'vinculacionesReemplazo',
+            'evaluadoresDelegacion', 'delegadosDisponibles'
         );
 
         return match ($rolActivo) {
