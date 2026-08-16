@@ -298,6 +298,164 @@ export function cargarTrasladosAdmin() {
         });
 }
 
+// --- S8: EDICION DE PERIODOS Y AUDITORIA ---
+export function abrirEditarPeriodo(btn) {
+    const id = btn.dataset.id;
+    const setVal = (idNode, value) => {
+        const node = document.getElementById(idNode);
+        if (node) node.value = value || '';
+    };
+    setVal('editar-periodo-id', id);
+    setVal('editar-periodo-inicio', btn.dataset.inicio);
+    setVal('editar-periodo-fin', btn.dataset.fin);
+    setVal('editar-periodo-descripcion', btn.dataset.descripcion);
+    const estadoSelect = document.getElementById('editar-periodo-estado');
+    if (estadoSelect) estadoSelect.value = btn.dataset.estado;
+
+    const titulo = document.getElementById('editar-periodo-titulo');
+    if (titulo) titulo.innerText = `${btn.dataset.sistema} · ${btn.dataset.anio} · Semestre ${btn.dataset.semestre}`;
+
+    const form = document.getElementById('form-editar-periodo');
+    if (form) form.action = `/admin/periodos/${id}`;
+
+    const panel = document.getElementById('panel-editar-periodo');
+    if (panel) panel.classList.remove('hidden');
+    const panelAud = document.getElementById('panel-auditoria-periodo');
+    if (panelAud) panelAud.classList.add('hidden');
+}
+
+export function cerrarEditarPeriodo() {
+    const panel = document.getElementById('panel-editar-periodo');
+    if (panel) panel.classList.add('hidden');
+}
+
+export function verAuditoriaPeriodo(btn) {
+    const id = btn.dataset.id;
+    const panel = document.getElementById('panel-auditoria-periodo');
+    const lista = document.getElementById('auditoria-periodo-lista');
+    const titulo = document.getElementById('auditoria-periodo-titulo');
+    if (!panel || !lista) return;
+
+    const panelEdit = document.getElementById('panel-editar-periodo');
+    if (panelEdit) panelEdit.classList.add('hidden');
+    panel.classList.remove('hidden');
+    lista.innerHTML = '<div class="text-slate-400 text-center py-4">Cargando auditoría...</div>';
+
+    const accionBadge = (accion) => {
+        const clases = {
+            CREAR: 'bg-[#EAF2EF] text-[#00594E]',
+            EDITAR: 'bg-slate-100 text-slate-600',
+            ABRIR: 'bg-emerald-50 text-emerald-700',
+            CERRAR: 'bg-red-50 text-red-600',
+        };
+        return `<span class="text-[9px] font-bold uppercase rounded-full px-2 py-0.5 ${clases[accion] || 'bg-slate-100 text-slate-500'}">${accion}</span>`;
+    };
+
+    fetchJson(`/admin/periodos/${id}/auditoria`)
+        .then(res => {
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            return res.json();
+        })
+        .then(items => {
+            const registros = Array.isArray(items) ? items : [];
+            if (titulo) titulo.innerText = `Periodo #${id} · ${registros.length} registro(s)`;
+            if (!registros.length) {
+                lista.innerHTML = '<div class="text-slate-400 text-center py-4">Sin cambios registrados aún.</div>';
+                return;
+            }
+            lista.innerHTML = registros.map(r => {
+                const cambios = r.cambios && typeof r.cambios === 'object'
+                    ? Object.entries(r.cambios).map(([campo, detalle]) => {
+                        const isDiff = detalle && typeof detalle === 'object' && ('antes' in detalle || 'despues' in detalle);
+                        if (isDiff) {
+                            const antes = detalle.antes;
+                            const despues = detalle.despues;
+                            return `<span class="inline-flex items-center gap-1.5 rounded-md bg-slate-50 border border-slate-100 px-2 py-1">
+                                <b>${escapeHtml(campo)}</b>:
+                                <s class="text-slate-400">${escapeHtml(antes === null || antes === undefined ? '—' : String(antes))}</s>
+                                <span class="text-[#00594E] font-bold">→</span>
+                                <span>${escapeHtml(despues === null || despues === undefined ? '—' : String(despues))}</span>
+                            </span>`;
+                        }
+                        return `<span class="inline-flex items-center gap-1.5 rounded-md bg-slate-50 border border-slate-100 px-2 py-1">
+                            <b>${escapeHtml(campo)}</b>:
+                            <span>${escapeHtml(detalle === null || detalle === undefined ? '—' : String(detalle))}</span>
+                        </span>`;
+                    }).join('')
+                    : '';
+                return `
+                    <div class="rounded-xl border border-slate-100 bg-white p-3 flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-2 flex-wrap">${accionBadge(r.accion)}<span class="text-[10px] text-slate-400">${escapeHtml(r.created_at || '')}</span></div>
+                            <div class="mt-1.5 flex flex-wrap gap-1.5">${cambios || '<span class="text-[10px] text-slate-400">Sin detalle</span>'}</div>
+                        </div>
+                        <span class="text-[10px] text-slate-400 font-medium shrink-0">${escapeHtml(r.usuario_nombre || r.email || 'Admin')}</span>
+                    </div>`;
+            }).join('');
+        })
+        .catch(() => {
+            lista.innerHTML = '<div class="text-red-500 text-center py-4">No se pudo cargar la auditoría.</div>';
+        });
+}
+
+// --- S8: DELEGACIONES DE FUNCIONES DEL CARGO ---
+export function finalizarDelegacion(id) {
+    if (!confirm('¿Finalizar esta delegación? El titular (delegante) retomará sus evaluaciones pendientes y la responsabilidad de la firma final.')) return;
+    fetchJson(`/admin/delegaciones/${id}/finalizar`, { method: 'POST' })
+        .then(async res => {
+            if (!res.ok) {
+                const payload = await res.json().catch(() => ({}));
+                throw new Error(parseErrorMessage(payload, 'No se pudo finalizar la delegación.'));
+            }
+            cargarDelegacionesAdmin();
+        })
+        .catch(error => alert(error.message));
+}
+
+export function cargarDelegacionesAdmin() {
+    const lista = document.getElementById('delegaciones-admin-lista');
+    const contador = document.getElementById('delegaciones-admin-contador');
+    if (!lista) return;
+    fetchJson('/admin/delegaciones')
+        .then(res => res.json())
+        .then(delegaciones => {
+            const items = Array.isArray(delegaciones) ? delegaciones : [];
+            if (contador) contador.innerText = `${items.length} delegacion${items.length === 1 ? '' : 'es'}`;
+            if (!items.length) {
+                lista.innerHTML = '<div class="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-xs text-slate-500 text-center">No hay delegaciones registradas.</div>';
+                return;
+            }
+            lista.innerHTML = items.map(d => `
+                <div class="rounded-2xl border border-slate-100 bg-white p-4 space-y-2">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                            <p class="text-xs font-black text-slate-800 truncate">${escapeHtml(d.delegante_nombres || '')} ${escapeHtml(d.delegante_apellidos || '')}</p>
+                            <p class="text-[10px] text-slate-400">Titular del cargo · ${escapeHtml(d.delegante_cargo || '')}</p>
+                        </div>
+                        <span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 ${d.estado === 'ACTIVA' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}">${d.estado}</span>
+                    </div>
+                    <div class="flex items-center gap-2 text-xs text-slate-600 rounded-xl border border-slate-100 bg-slate-50/50 p-3">
+                        <span class="material-symbols-outlined text-base text-[#B5A160]">arrow_right_alt</span>
+                        <div class="min-w-0">
+                            <p class="font-bold truncate">${escapeHtml(d.delegado_nombres || '')} ${escapeHtml(d.delegado_apellidos || '')}</p>
+                            <p class="text-[10px] text-slate-400 truncate">Delegado · ${escapeHtml(d.delegado_cargo || '')}</p>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 text-[10px]">
+                        <p class="text-slate-500"><span class="font-bold text-slate-600">Vigencia:</span> ${escapeHtml(d.fecha_inicio || '')} → ${escapeHtml(d.fecha_fin || '')}</p>
+                        <p class="text-slate-500"><span class="font-bold text-slate-600">Evaluados:</span> ${Array.isArray(d.detalle_transferencia?.evaluados_transferidos) ? d.detalle_transferencia.evaluados_transferidos.length : 0}</p>
+                    </div>
+                    ${d.motivo ? `<p class="text-[10px] text-slate-400 italic">${escapeHtml(d.motivo)}</p>` : ''}
+                    ${d.estado === 'ACTIVA' ? `
+                        <button type="button" onclick="finalizarDelegacion(${d.id_delegacion})" class="w-full bg-red-50 text-red-700 border border-red-100 rounded-xl py-2 text-xs font-bold hover:bg-red-100 transition">Finalizar delegación (el titular retoma)</button>
+                    ` : ''}
+                </div>`).join('');
+        })
+        .catch(() => {
+            if (contador) contador.innerText = 'Error';
+        });
+}
+
 // Global window exposure
 window.filtrarEmpleados = filtrarEmpleados;
 window.seleccionarEmpleado = seleccionarEmpleado;
@@ -306,6 +464,10 @@ window.contarAsignados = contarAsignados;
 window.filtrarCheckboxAsignacion = filtrarCheckboxAsignacion;
 window.mostrarEvaluadorActualTraslado = mostrarEvaluadorActualTraslado;
 window.decidirRecursoAdmin = decidirRecursoAdmin;
+window.abrirEditarPeriodo = abrirEditarPeriodo;
+window.cerrarEditarPeriodo = cerrarEditarPeriodo;
+window.verAuditoriaPeriodo = verAuditoriaPeriodo;
+window.finalizarDelegacion = finalizarDelegacion;
 
 window.addEventListener('DOMContentLoaded', () => {
     navegarMenu(null, 'usuarios');
@@ -313,6 +475,7 @@ window.addEventListener('DOMContentLoaded', () => {
     cargarPlanesAdmin();
     cargarRenuenciasAdmin();
     cargarTrasladosAdmin();
+    cargarDelegacionesAdmin();
 
     const firstCard = document.querySelector('.empleado-card');
     if (firstCard) {

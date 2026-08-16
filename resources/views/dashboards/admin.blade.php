@@ -176,6 +176,7 @@
                                         <th class="px-4 py-3">Semestre</th>
                                         <th class="px-4 py-3">Inicio</th>
                                         <th class="px-4 py-3">Fin</th>
+                                        <th class="px-4 py-3">Descripción</th>
                                         <th class="px-4 py-3">Estado</th>
                                         <th class="px-4 py-3 text-right">Acción</th>
                                     </tr>
@@ -188,23 +189,77 @@
                                         <td class="px-4 py-3">Semestre {{ $p->semestre }}</td>
                                         <td class="px-4 py-3 text-xs">{{ $p->fecha_inicio }}</td>
                                         <td class="px-4 py-3 text-xs">{{ $p->fecha_fin }}</td>
+                                        <td class="px-4 py-3 text-xs text-slate-500 max-w-[160px] truncate" title="{{ $p->descripcion ?? '' }}">{{ $p->descripcion ?? '-' }}</td>
                                         <td class="px-4 py-3">
                                             <span class="px-2.5 py-1 text-[10px] font-bold uppercase rounded-full @if($p->estado === 'ABIERTO') bg-green-50 text-green-700 @else bg-gray-100 text-gray-500 @endif">
                                                 {{ $p->estado }}
                                             </span>
                                         </td>
                                         <td class="px-4 py-3 text-right">
-                                            <form method="POST" action="{{ route('admin.periodos.toggle', $p->id_periodo) }}">
-                                                @csrf
-                                                <button type="submit" class="px-3 py-1.5 rounded-lg border text-xs font-bold hover:bg-slate-50 transition">
-                                                    {{ $p->estado === 'ABIERTO' ? 'Cerrar' : 'Abrir' }}
-                                                </button>
-                                            </form>
+                                            <div class="flex items-center justify-end gap-2">
+                                                <button type="button" onclick="abrirEditarPeriodo(this)" data-id="{{ $p->id_periodo }}" data-sistema="{{ $p->sistema }}" data-anio="{{ $p->anio }}" data-semestre="{{ $p->semestre }}" data-inicio="{{ $p->fecha_inicio }}" data-fin="{{ $p->fecha_fin }}" data-estado="{{ $p->estado }}" data-descripcion="{{ $p->descripcion ?? '' }}" class="px-3 py-1.5 rounded-lg border text-xs font-bold hover:bg-slate-50 transition">Editar</button>
+                                                <button type="button" onclick="verAuditoriaPeriodo(this)" data-id="{{ $p->id_periodo }}" class="px-3 py-1.5 rounded-lg border text-xs font-bold hover:bg-slate-50 transition">Auditoría</button>
+                                                <form method="POST" action="{{ route('admin.periodos.toggle', $p->id_periodo) }}">
+                                                    @csrf
+                                                    <button type="submit" class="px-3 py-1.5 rounded-lg border text-xs font-bold hover:bg-slate-50 transition">
+                                                        {{ $p->estado === 'ABIERTO' ? 'Cerrar' : 'Abrir' }}
+                                                    </button>
+                                                </form>
+                                            </div>
                                         </td>
                                     </tr>
                                     @endforeach
                                 </tbody>
                             </table>
+                        </div>
+
+                        <div id="panel-editar-periodo" class="hidden mt-6 rounded-2xl border border-slate-200 bg-slate-50/60 p-5">
+                            <div class="flex items-center justify-between gap-3 mb-4">
+                                <div>
+                                    <h4 class="text-sm font-black text-slate-800">Editar periodo</h4>
+                                    <p id="editar-periodo-titulo" class="text-[11px] text-slate-500 mt-0.5">-</p>
+                                </div>
+                                <button type="button" onclick="cerrarEditarPeriodo()" class="text-slate-400 hover:text-slate-600 font-bold text-xs">Cerrar ×</button>
+                            </div>
+                            <form id="form-editar-periodo" method="POST" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-12">
+                                @csrf
+                                <input type="hidden" name="id_periodo" id="editar-periodo-id" />
+                                <div class="lg:col-span-4">
+                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Descripción</label>
+                                    <input type="text" name="descripcion" id="editar-periodo-descripcion" maxlength="200" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Opcional" />
+                                </div>
+                                <div class="lg:col-span-2">
+                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Fecha inicio</label>
+                                    <input type="date" name="fecha_inicio" id="editar-periodo-inicio" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" required />
+                                </div>
+                                <div class="lg:col-span-2">
+                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Fecha fin</label>
+                                    <input type="date" name="fecha_fin" id="editar-periodo-fin" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" required />
+                                </div>
+                                <div class="lg:col-span-2">
+                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Estado</label>
+                                    <select name="estado" id="editar-periodo-estado" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" required>
+                                        <option value="ABIERTO">ABIERTO</option>
+                                        <option value="CERRADO">CERRADO</option>
+                                    </select>
+                                </div>
+                                <div class="lg:col-span-2 flex items-end">
+                                    <button type="submit" class="w-full bg-[#00594E] text-white rounded-xl py-2.5 text-xs font-bold hover:brightness-110 transition shadow-md shadow-[#00594E]/20">Guardar cambios</button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <div id="panel-auditoria-periodo" class="hidden mt-6 rounded-2xl border border-slate-200 bg-white p-5">
+                            <div class="flex items-center justify-between gap-3 mb-4">
+                                <div>
+                                    <h4 class="text-sm font-black text-slate-800">Auditoría del periodo</h4>
+                                    <p id="auditoria-periodo-titulo" class="text-[11px] text-slate-500 mt-0.5">-</p>
+                                </div>
+                                <button type="button" onclick="document.getElementById('panel-auditoria-periodo').classList.add('hidden')" class="text-slate-400 hover:text-slate-600 font-bold text-xs">Cerrar ×</button>
+                            </div>
+                            <div id="auditoria-periodo-lista" class="space-y-2 text-xs">
+                                <div class="text-slate-400 text-center py-4">Cargando auditoría...</div>
+                            </div>
                         </div>
                     </div>
 
@@ -538,7 +593,7 @@
                                 </div>
                             </div>
                             <div>
-                                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Reemplaza a (Vinculación)</label>
+                                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Reemplaza a (opcional — Vinculación)</label>
                                 <input type="search" id="buscar-reemplazado-traslado" oninput="filtrarOpcionesAsignacion('buscar-reemplazado-traslado', 'select-reemplazado-traslado')" class="mb-2 w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Buscar reemplazo por nombre o cargo" />
                                 <select name="id_vinc_reemplazado" id="select-reemplazado-traslado" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]">
                                     <option value="">Ninguno (puesto nuevo)</option>
@@ -546,7 +601,7 @@
                                         <option value="{{ $vr->id_vinculacion }}">{{ $vr->nombres }} {{ $vr->apellidos }} - {{ $vr->cargo }}{{ $vr->activa ? '' : ' (inactivo)' }}</option>
                                     @endforeach
                                 </select>
-                                <p class="text-[10px] text-slate-400 mt-1">Titular del puesto que ocupará el trasladado (suele estar retirado). Sus compromisos del semestre se copian a la evaluación parcial del nuevo evaluador.</p>
+                                <p class="text-[10px] text-slate-400 mt-1">Opcional. Titular del puesto que ocupará el trasladado (suele estar retirado). Si lo indicas, sus compromisos del semestre se copian a la evaluación parcial del nuevo evaluador y quedan <b>editables</b> hasta firmar la concertación.</p>
                             </div>
                             <div>
                                 <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Motivo (opcional)</label>
@@ -570,6 +625,70 @@
                         </div>
                         <div id="traslados-admin-lista" class="grid gap-3">
                             <div class="py-10 text-center text-slate-500 text-xs">Cargando traslados...</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION: DELEGACIONES (Admin Only) -->
+            <section id="section-delegaciones" class="section-content hidden space-y-6">
+                <div class="grid gap-6 lg:grid-cols-[1.1fr_0.9fr] items-start">
+                    <div class="panel-card rounded-3xl p-6">
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="material-symbols-outlined text-[#00594E]">swap_horiz</span>
+                            <h2 class="text-2xl sm:text-3xl font-black text-slate-900">Delegaciones de funciones del cargo</h2>
+                        </div>
+                        <p class="text-sm text-slate-500 mb-4">Registra que un evaluador (delegante, titular del cargo) ceda temporalmente el ejercicio de su rol de evaluador a otro funcionario (delegado). La delegación no altera la titularidad ni la responsabilidad de firma final del titular cuando retorna.</p>
+                        <form method="POST" action="{{ route('admin.delegaciones.store') }}" class="space-y-3">
+                            @csrf
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Delegante — titular del cargo (Vinculación)</label>
+                                <input type="search" id="buscar-delegante" oninput="filtrarOpcionesAsignacion('buscar-delegante', 'select-delegante')" class="mb-2 w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Buscar evaluador por nombre o cargo" />
+                                <select name="id_vinc_delegante" id="select-delegante" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
+                                    <option value="">Selecciona un evaluador</option>
+                                    @foreach($evaluadoresDelegacion as $ed)
+                                        <option value="{{ $ed->id_vinculacion }}">{{ $ed->nombres }} {{ $ed->apellidos }} - {{ $ed->cargo }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Delegado (Vinculación)</label>
+                                <input type="search" id="buscar-delegado" oninput="filtrarOpcionesAsignacion('buscar-delegado', 'select-delegado')" class="mb-2 w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Buscar evaluador por nombre o cargo" />
+                                <select name="id_vinc_delegado" id="select-delegado" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
+                                    <option value="">Selecciona un evaluador</option>
+                                    @foreach($delegadosDisponibles as $dd)
+                                        <option value="{{ $dd->id_vinculacion }}">{{ $dd->nombres }} {{ $dd->apellidos }} - {{ $dd->cargo }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="grid gap-3 sm:grid-cols-2">
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Fecha inicio (vigencia)</label>
+                                    <input type="date" name="fecha_inicio" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" required />
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Fecha fin (vigencia)</label>
+                                    <input type="date" name="fecha_fin" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" required />
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Motivo (opcional)</label>
+                                <input type="text" name="motivo" maxlength="500" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Ej. Vacaciones, comisión, licencia" />
+                            </div>
+                            <button type="submit" class="w-full bg-[#B5A160] text-white rounded-xl py-2.5 text-xs font-bold hover:brightness-110 transition shadow-md shadow-[#B5A160]/20">Activar delegación</button>
+                        </form>
+                    </div>
+
+                    <div class="panel-card rounded-3xl p-6">
+                        <div class="flex items-end justify-between gap-4 mb-4">
+                            <div>
+                                <h3 class="text-lg font-bold text-slate-800">Histórico de delegaciones</h3>
+                                <p class="text-xs text-slate-500 mt-1">Delegaciones activas y finalizadas.</p>
+                            </div>
+                            <span id="delegaciones-admin-contador" class="text-[10px] font-bold uppercase rounded-full px-3 py-1.5 bg-[#EAF2EF] text-[#00594E]">Cargando...</span>
+                        </div>
+                        <div id="delegaciones-admin-lista" class="grid gap-3">
+                            <div class="py-10 text-center text-slate-500 text-xs">Cargando delegaciones...</div>
                         </div>
                     </div>
                 </div>
