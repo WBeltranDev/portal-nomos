@@ -9,6 +9,7 @@ let selectedEvaluacionData = null;
 let selectedEvaluacionEjes = {};
 let selectedPlanData = null;
 let selectedEvalExternaId = null;
+let compromisosActuales = [];
 
 const EJE_LABELS = {
     DOCENCIA: 'Docencia',
@@ -185,6 +186,14 @@ export function abrirConcertacionEvaluador(card, ev) {
 
     const avisoTraslado = document.getElementById('aviso-traslado-evaluador');
     if (avisoTraslado) avisoTraslado.classList.toggle('hidden', !ev.es_traslado);
+
+    const avisoDelegacion = document.getElementById('aviso-delegacion-evaluador');
+    if (avisoDelegacion) {
+        const titular = ev.id_vinc_suplente ? `${ev.suplente_nombres || ''} ${ev.suplente_apellidos || ''}`.trim() : '';
+        const label = document.getElementById('delegacion-titular-nombre');
+        if (label) label.textContent = titular;
+        avisoDelegacion.classList.toggle('hidden', !ev.id_vinc_suplente);
+    }
 
     const formNuevoComp = document.getElementById('compromiso-formulario-evaluador-contenedor');
     if (formNuevoComp) formNuevoComp.classList.toggle('hidden', !!ev.es_traslado || !!ev.concertacion_firmada);
@@ -363,6 +372,7 @@ export function cargarCompromisosEvaluador(ev, ejes = {}) {
             const evidencias = payload.evidencias || [];
             const observaciones = payload.observaciones || [];
             const objetivo = calcularObjetivoCompromisos(ev, ejes);
+            compromisosActuales = compromisos;
 
             const gruposEvidencias = evidencias.reduce((g, e) => {
                 const k = String(e.id_compromiso || '');
@@ -424,12 +434,16 @@ export function cargarCompromisosEvaluador(ev, ejes = {}) {
                             ${calificacionControl}
                             <span class="text-xs font-black rounded-xl px-2.5 py-1 bg-[#EAF2EF] text-[#00594E]">${c.porcentaje_peso}%</span>
                             ${!ev.concertacion_firmada && !ev.es_traslado ? `
+                            <button type="button" onclick="editarCompromisoEvaluador(${c.id_compromiso})" class="text-[#00594E] hover:text-[#00443b] p-1" title="Editar compromiso">
+                                <span class="material-symbols-outlined text-base">edit</span>
+                            </button>
                             <button type="button" onclick="eliminarCompromisoEvaluador(${c.id_compromiso})" class="text-red-400 hover:text-red-600 p-1" title="Eliminar compromiso">
                                 <span class="material-symbols-outlined text-base">delete</span>
                             </button>` : ''}
                         </div>
                     </div>
                     <p class="text-[11px] text-slate-500"><span class="font-bold">Metas:</span> ${(c.metas || []).join(', ') || '-'}</p>
+                    <div id="editar-compromiso-contenedor-${c.id_compromiso}" class="hidden"></div>
                     <div class="pt-2 border-t border-slate-100">
                         <p class="text-[10px] font-bold uppercase text-slate-400 mb-1">Evidencias</p>
                         ${renderEvidenciasEvaluadorAccion(gruposEvidencias[String(c.id_compromiso)] || [], !ev.concertacion_firmada || ev.estado === 'CALIFICADA' || !!ev.es_traslado)}
@@ -478,6 +492,66 @@ export function eliminarCompromisoEvaluador(id) {
                 cargarCompromisosEvaluador(selectedEvaluacionData, selectedEvaluacionEjes);
             }
         });
+}
+
+export function editarCompromisoEvaluador(id) {
+    const compromiso = compromisosActuales.find(c => c.id_compromiso == id);
+    if (!compromiso) return;
+    const contenedor = document.getElementById(`editar-compromiso-contenedor-${id}`);
+    if (!contenedor) return;
+
+    const metasTexto = (compromiso.metas || []).join(', ');
+    contenedor.innerHTML = `
+        <div class="rounded-2xl border border-[#B5A160]/40 bg-[#B5A160]/5 p-4 space-y-3">
+            <h4 class="text-[10px] font-black uppercase text-[#8a7b3c] tracking-wide">Editar compromiso</h4>
+            <div>
+                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Descripción del Compromiso</label>
+                <textarea id="edit-comp-descripcion-${id}" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" rows="2" required>${escapeHtml(compromiso.descripcion)}</textarea>
+            </div>
+            <div class="grid grid-cols-3 gap-2 items-end">
+                <div class="col-span-1">
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Peso (1% - 15%)</label>
+                    <input type="number" id="edit-comp-peso-${id}" min="1" max="15" step="0.1" value="${escapeHtml(String(compromiso.porcentaje_peso ?? ''))}" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" required />
+                </div>
+                <div class="col-span-2">
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Metas de Contribución</label>
+                    <input type="text" id="edit-comp-metas-${id}" value="${escapeHtml(metasTexto)}" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Separadas por comas (ej: PDI, Manual)" required />
+                </div>
+            </div>
+            <div class="flex gap-2">
+                <button type="button" onclick="guardarEdicionCompromisoEvaluador(${id})" class="flex-1 bg-[#00594E] text-white py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Guardar cambios</button>
+                <button type="button" onclick="cancelarEdicionCompromisoEvaluador(${id})" class="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-xl text-xs font-bold hover:border-[#00594E] transition">Cancelar</button>
+            </div>
+        </div>`;
+    contenedor.classList.remove('hidden');
+}
+
+export function cancelarEdicionCompromisoEvaluador(id) {
+    const contenedor = document.getElementById(`editar-compromiso-contenedor-${id}`);
+    if (contenedor) contenedor.classList.add('hidden');
+}
+
+export function guardarEdicionCompromisoEvaluador(id) {
+    const descripcion = document.getElementById(`edit-comp-descripcion-${id}`)?.value?.trim();
+    const peso = parseFloat(document.getElementById(`edit-comp-peso-${id}`)?.value || '0');
+    const metas = (document.getElementById(`edit-comp-metas-${id}`)?.value || '').split(',').map(m => m.trim()).filter(Boolean);
+
+    if (!descripcion || !peso || !metas.length) {
+        alert('Completa la descripción, el peso y al menos una meta.');
+        return;
+    }
+
+    fetchJson(`/compromisos/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ descripcion, porcentaje_peso: peso, metas }),
+    })
+        .then(async res => {
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo guardar el compromiso.'));
+            if (selectedEvaluacionData) cargarCompromisosEvaluador(selectedEvaluacionData, selectedEvaluacionEjes);
+        })
+        .catch(error => alert(error.message));
 }
 
 export function renderTarjetaRecurso(r, contexto) {
@@ -1119,6 +1193,9 @@ window.abrirConcertacionEvaluador = abrirConcertacionEvaluador;
 window.cambiarTabEvaluador = cambiarTabEvaluador;
 window.agregarCompromisoEvaluador = agregarCompromisoEvaluador;
 window.eliminarCompromisoEvaluador = eliminarCompromisoEvaluador;
+window.editarCompromisoEvaluador = editarCompromisoEvaluador;
+window.cancelarEdicionCompromisoEvaluador = cancelarEdicionCompromisoEvaluador;
+window.guardarEdicionCompromisoEvaluador = guardarEdicionCompromisoEvaluador;
 window.aprobarEvidencia = aprobarEvidencia;
 window.guardarObservacionCompromiso = guardarObservacionCompromiso;
 window.confirmarObservacionCompromiso = confirmarObservacionCompromiso;
