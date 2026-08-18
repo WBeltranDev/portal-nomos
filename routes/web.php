@@ -1438,6 +1438,8 @@ Route::post('/admin/delegaciones/{id}/finalizar', function (int $id) {
 Route::get('/admin/delegaciones', function () {
     abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
 
+    $today = \Carbon\Carbon::now()->startOfDay();
+
     return DB::table('delegacion as d')
         ->leftJoin('vinculacion as vd', 'vd.id_vinculacion', '=', 'd.id_vinc_delegante')
         ->leftJoin('funcionario as fd', 'fd.id_funcionario', '=', 'vd.id_funcionario')
@@ -1447,15 +1449,30 @@ Route::get('/admin/delegaciones', function () {
             'd.*',
             'fd.nombres as delegante_nombres',
             'fd.apellidos as delegante_apellidos',
+            'fd.numero_doc as delegante_documento',
+            'fd.correo_cargo as delegante_correo',
             'vd.cargo as delegante_cargo',
+            'vd.area as delegante_area',
             'fg.nombres as delegado_nombres',
             'fg.apellidos as delegado_apellidos',
-            'vg.cargo as delegado_cargo'
+            'fg.numero_doc as delegado_documento',
+            'fg.correo_cargo as delegado_correo',
+            'vg.cargo as delegado_cargo',
+            'vg.area as delegado_area'
         )
         ->orderByDesc('d.id_delegacion')
         ->get()
-        ->map(function ($r) {
+        ->map(function ($r) use ($today) {
             $r->detalle_transferencia = $r->detalle_transferencia ? json_decode($r->detalle_transferencia, true) : null;
+            $fechaFin = \Carbon\Carbon::parse($r->fecha_fin)->startOfDay();
+            $diasRestantes = (int) $today->diffInDays($fechaFin, false);
+
+            $r->dias_restantes = $diasRestantes;
+            $r->alerta_vencimiento_un_dia = ($r->estado === 'ACTIVA' && $diasRestantes === 1);
+            $r->alerta_vencimiento_hoy = ($r->estado === 'ACTIVA' && $diasRestantes === 0);
+            $r->alerta_vencida = ($r->estado === 'ACTIVA' && $diasRestantes < 0);
+            $r->fecha_inicio_formateada = \Carbon\Carbon::parse($r->fecha_inicio)->format('d/m/Y');
+            $r->fecha_fin_formateada = \Carbon\Carbon::parse($r->fecha_fin)->format('d/m/Y');
 
             return $r;
         });
