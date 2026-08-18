@@ -201,6 +201,9 @@ export function navegarMenu(button, seccion) {
     if (target) target.classList.remove('hidden');
     document.querySelectorAll('.sidebar-link').forEach(btn => btn.classList.remove('active'));
     if (button) button.classList.add('active');
+    if (targetSeccion === 'delegaciones' && typeof window.cargarDelegacionesAdmin === 'function') {
+        window.cargarDelegacionesAdmin();
+    }
     if (window.innerWidth < 1024) toggleSidebar();
 }
 

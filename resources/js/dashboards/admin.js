@@ -399,6 +399,25 @@ export function verAuditoriaPeriodo(btn) {
 }
 
 // --- S8: DELEGACIONES DE FUNCIONES DEL CARGO ---
+export function calcularDiasRestantes(fechaFinStr) {
+    if (!fechaFinStr) return null;
+    const parts = String(fechaFinStr).substring(0, 10).split('-');
+    if (parts.length !== 3) return null;
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
+
+    const fin = new Date(year, month, day);
+    fin.setHours(0, 0, 0, 0);
+
+    const now = new Date();
+    const hoy = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    hoy.setHours(0, 0, 0, 0);
+
+    const diffMs = fin.getTime() - hoy.getTime();
+    return Math.round(diffMs / (1000 * 60 * 60 * 24));
+}
+
 export function finalizarDelegacion(id) {
     if (!confirm('¿Finalizar esta delegación? El titular (delegante) retomará sus evaluaciones pendientes y la responsabilidad de la firma final.')) return;
     fetchJson(`/admin/delegaciones/${id}/finalizar`, { method: 'POST' })
@@ -412,6 +431,156 @@ export function finalizarDelegacion(id) {
         .catch(error => alert(error.message));
 }
 
+export function renderNotificacionesDelegaciones(items) {
+    const container = document.getElementById('delegaciones-alertas-container');
+    const sidebarBadge = document.getElementById('sidebar-delegaciones-badge');
+
+    const alertas1Dia = items.filter(d => d.estado === 'ACTIVA' && d.dias_restantes === 1);
+    const alertasHoy = items.filter(d => d.estado === 'ACTIVA' && d.dias_restantes === 0);
+    const alertasVencidas = items.filter(d => d.estado === 'ACTIVA' && d.dias_restantes < 0);
+
+    // Actualizar badge en la barra lateral
+    if (sidebarBadge) {
+        const totalAvisos = alertas1Dia.length + alertasHoy.length + alertasVencidas.length;
+        if (totalAvisos > 0) {
+            sidebarBadge.innerText = alertas1Dia.length > 0 ? `${alertas1Dia.length} mañana` : `${totalAvisos}`;
+            sidebarBadge.className = 'ml-auto px-2 py-0.5 text-[10px] font-black rounded-full bg-amber-500 text-white shadow-sm animate-pulse';
+            sidebarBadge.classList.remove('hidden');
+        } else {
+            sidebarBadge.classList.add('hidden');
+        }
+    }
+
+    if (!container) return;
+
+    // Si no hay alertas de ningún tipo
+    if (alertas1Dia.length === 0 && alertasHoy.length === 0 && alertasVencidas.length === 0) {
+        container.innerHTML = `
+            <div class="rounded-3xl border border-slate-200 bg-white/90 backdrop-blur-sm p-4 sm:p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div class="flex items-center gap-3.5">
+                    <div class="w-10 h-10 rounded-2xl bg-[#EAF2EF] text-[#00594E] flex items-center justify-center font-black shrink-0">
+                        <span class="material-symbols-outlined text-2xl">event_available</span>
+                    </div>
+                    <div>
+                        <h4 class="text-sm font-black text-slate-900">Estado de delegaciones: Sin retornos urgentes</h4>
+                        <p class="text-xs text-slate-500">No hay funcionarios a 1 día de cumplir vigencia para volver al trabajo. Las delegaciones activas están al día.</p>
+                    </div>
+                </div>
+                <span class="inline-flex items-center gap-1.5 text-[10px] font-extrabold uppercase rounded-full px-3 py-1.5 bg-[#EAF2EF] text-[#00594E] border border-[#00594E]/20 self-start sm:self-auto">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500"></span> Todo al día
+                </span>
+            </div>
+        `;
+        return;
+    }
+
+    let html = '';
+
+    // Prioridad 1: Notificaciones de 1 DÍA para vencer (Requerimiento Principal)
+    if (alertas1Dia.length > 0) {
+        html += `
+            <div class="rounded-3xl border-2 border-amber-400 bg-gradient-to-br from-amber-50/95 via-amber-50/40 to-white p-5 sm:p-6 shadow-lg shadow-amber-500/10 space-y-4">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-amber-200/80 pb-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-11 h-11 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-md shadow-amber-500/30 shrink-0 animate-bounce">
+                            <span class="material-symbols-outlined text-2xl">notification_important</span>
+                        </div>
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <h3 class="text-base sm:text-lg font-black text-amber-950">Notificación de Retorno: Vencimiento en 1 Día</h3>
+                                <span class="bg-amber-500 text-white text-[10px] font-black uppercase px-2 py-0.5 rounded-full shadow-sm">Urgente</span>
+                            </div>
+                            <p class="text-xs text-amber-800 mt-0.5">Los siguientes funcionarios titulares están a <b>1 día de vencer</b> su periodo de delegación y deben retornar a sus labores y evaluaciones.</p>
+                        </div>
+                    </div>
+                    <span class="inline-flex items-center gap-1.5 text-xs font-black rounded-full px-3.5 py-1.5 bg-amber-100 text-amber-900 border border-amber-300 self-start sm:self-auto">
+                        <span class="material-symbols-outlined text-sm">alarm</span> ${alertas1Dia.length} caso${alertas1Dia.length === 1 ? '' : 's'} por vencer mañana
+                    </span>
+                </div>
+
+                <div class="grid gap-3.5 sm:grid-cols-1 ${alertas1Dia.length > 1 ? 'lg:grid-cols-2' : ''}">
+                    ${alertas1Dia.map(d => {
+                        const cantEvaluados = Array.isArray(d.detalle_transferencia?.evaluados_transferidos) ? d.detalle_transferencia.evaluados_transferidos.length : 0;
+                        return `
+                            <div class="rounded-2xl border border-amber-200 bg-white p-4 space-y-3 shadow-sm hover:shadow-md transition">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <div class="flex items-center gap-2 mb-1.5">
+                                            <span class="text-[10px] font-extrabold uppercase rounded-md px-2 py-0.5 bg-amber-100 text-amber-900 border border-amber-200 flex items-center gap-1">
+                                                <span class="material-symbols-outlined text-[12px]">schedule</span> Vence mañana (${escapeHtml(d.fecha_fin)})
+                                            </span>
+                                        </div>
+                                        <h4 class="text-sm font-black text-slate-900 leading-snug">👤 ${escapeHtml(d.delegante_nombres || '')} ${escapeHtml(d.delegante_apellidos || '')}</h4>
+                                        <p class="text-xs font-medium text-slate-500">Titular del cargo · ${escapeHtml(d.delegante_cargo || 'Funcionario')}${d.delegante_area ? ' · ' + escapeHtml(d.delegante_area) : ''}</p>
+                                    </div>
+                                    <div class="text-right shrink-0">
+                                        <span class="text-xs font-black text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-xl block">1 día restante</span>
+                                    </div>
+                                </div>
+
+                                <div class="rounded-xl border border-slate-100 bg-slate-50/80 p-3 space-y-2 text-xs">
+                                    <div class="flex items-center gap-2 text-slate-700">
+                                        <span class="material-symbols-outlined text-base text-[#00594E]">supervised_user_circle</span>
+                                        <span class="min-w-0 font-medium">Delegado que asumió: <b>${escapeHtml(d.delegado_nombres || '')} ${escapeHtml(d.delegado_apellidos || '')}</b> (${escapeHtml(d.delegado_cargo || '')})</span>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-2 text-[11px] text-slate-600 border-t border-slate-200/60 pt-2">
+                                        <div><span class="font-bold text-slate-700">Vigencia:</span> ${escapeHtml(d.fecha_inicio)} al ${escapeHtml(d.fecha_fin)}</div>
+                                        <div><span class="font-bold text-slate-700">Evaluados temporales:</span> ${cantEvaluados} persona${cantEvaluados === 1 ? '' : 's'}</div>
+                                    </div>
+                                    ${d.motivo ? `<div class="text-[11px] text-slate-500 italic border-t border-slate-200/60 pt-1.5"><span class="font-bold not-italic text-slate-600">Motivo:</span> "${escapeHtml(d.motivo)}"</div>` : ''}
+                                </div>
+
+                                <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-1">
+                                    <p class="text-[10px] text-slate-500 italic">Al finalizar, el titular retomará la firma de sus evaluaciones pendientes.</p>
+                                    <button type="button" onclick="finalizarDelegacion(${d.id_delegacion})" class="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs shadow-sm transition shrink-0">
+                                        <span class="material-symbols-outlined text-sm">assignment_return</span> Finalizar delegación ahora
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    // Alertas complementarias: Vencen hoy o vencidas pendientes de cierre
+    if (alertasHoy.length > 0 || alertasVencidas.length > 0) {
+        const otros = [...alertasHoy, ...alertasVencidas];
+        html += `
+            <div class="rounded-3xl border border-rose-200 bg-rose-50/50 p-5 sm:p-6 shadow-sm space-y-3">
+                <div class="flex items-center justify-between gap-3">
+                    <div class="flex items-center gap-2.5">
+                        <span class="material-symbols-outlined text-rose-600 text-xl">warning</span>
+                        <h4 class="text-sm font-black text-rose-950">Otras delegaciones pendientes de retorno / cierre (${otros.length})</h4>
+                    </div>
+                </div>
+                <div class="grid gap-3 sm:grid-cols-2">
+                    ${otros.map(d => `
+                        <div class="rounded-2xl border border-rose-200/80 bg-white p-3.5 text-xs space-y-2 shadow-sm">
+                            <div class="flex items-start justify-between gap-2">
+                                <div class="min-w-0">
+                                    <p class="font-bold text-slate-900 truncate">👤 ${escapeHtml(d.delegante_nombres || '')} ${escapeHtml(d.delegante_apellidos || '')}</p>
+                                    <p class="text-[10px] text-slate-500 truncate">${escapeHtml(d.delegante_cargo || '')}${d.delegante_area ? ' · ' + escapeHtml(d.delegante_area) : ''}</p>
+                                </div>
+                                <span class="text-[10px] font-black uppercase rounded-full px-2 py-0.5 ${d.dias_restantes === 0 ? 'bg-orange-100 text-orange-800 border border-orange-200' : 'bg-rose-100 text-rose-800 border border-rose-200'} shrink-0">
+                                    ${d.dias_restantes === 0 ? 'Vence hoy' : `Vencida (${Math.abs(d.dias_restantes)}d)`}
+                                </span>
+                            </div>
+                            <p class="text-[11px] text-slate-600">Fin vigencia: <b>${escapeHtml(d.fecha_fin)}</b> · Delegado: ${escapeHtml(d.delegado_nombres || '')}</p>
+                            <button type="button" onclick="finalizarDelegacion(${d.id_delegacion})" class="w-full text-center py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl font-bold text-[11px] transition">
+                                Finalizar delegación (retomar titularidad)
+                            </button>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    container.innerHTML = html;
+}
+
 export function cargarDelegacionesAdmin() {
     const lista = document.getElementById('delegaciones-admin-lista');
     const contador = document.getElementById('delegaciones-admin-contador');
@@ -419,37 +588,72 @@ export function cargarDelegacionesAdmin() {
     fetchJson('/admin/delegaciones')
         .then(res => res.json())
         .then(delegaciones => {
-            const items = Array.isArray(delegaciones) ? delegaciones : [];
+            const rawItems = Array.isArray(delegaciones) ? delegaciones : [];
+            const items = rawItems.map(d => {
+                const dias = (typeof d.dias_restantes === 'number') ? d.dias_restantes : calcularDiasRestantes(d.fecha_fin);
+                return { ...d, dias_restantes: dias };
+            });
+
+            // Renderizar notificaciones de retorno arriba
+            renderNotificacionesDelegaciones(items);
+
             if (contador) contador.innerText = `${items.length} delegacion${items.length === 1 ? '' : 'es'}`;
             if (!items.length) {
                 lista.innerHTML = '<div class="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-xs text-slate-500 text-center">No hay delegaciones registradas.</div>';
                 return;
             }
-            lista.innerHTML = items.map(d => `
-                <div class="rounded-2xl border border-slate-100 bg-white p-4 space-y-2">
-                    <div class="flex items-start justify-between gap-3">
-                        <div class="min-w-0">
-                            <p class="text-xs font-black text-slate-800 truncate">${escapeHtml(d.delegante_nombres || '')} ${escapeHtml(d.delegante_apellidos || '')}</p>
-                            <p class="text-[10px] text-slate-400">Titular del cargo · ${escapeHtml(d.delegante_cargo || '')}</p>
+
+            lista.innerHTML = items.map(d => {
+                const es1Dia = d.estado === 'ACTIVA' && d.dias_restantes === 1;
+                const esHoy = d.estado === 'ACTIVA' && d.dias_restantes === 0;
+                const esVencida = d.estado === 'ACTIVA' && d.dias_restantes < 0;
+
+                let badgeEstado = '';
+                let borderCls = 'border-slate-100 bg-white';
+                if (d.estado === 'FINALIZADA') {
+                    badgeEstado = '<span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-slate-100 text-slate-500">FINALIZADA</span>';
+                } else if (es1Dia) {
+                    borderCls = 'border-amber-300 bg-amber-50/30 ring-2 ring-amber-200/60 shadow-sm';
+                    badgeEstado = '<span class="text-[10px] font-extrabold uppercase rounded-full px-2.5 py-1 bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1"><span class="material-symbols-outlined text-xs">alarm</span> Vence en 1 día</span>';
+                } else if (esHoy) {
+                    borderCls = 'border-orange-300 bg-orange-50/30 ring-1 ring-orange-200';
+                    badgeEstado = '<span class="text-[10px] font-extrabold uppercase rounded-full px-2.5 py-1 bg-orange-100 text-orange-800">Vence hoy</span>';
+                } else if (esVencida) {
+                    borderCls = 'border-rose-300 bg-rose-50/30 ring-1 ring-rose-200';
+                    badgeEstado = `<span class="text-[10px] font-extrabold uppercase rounded-full px-2.5 py-1 bg-rose-100 text-rose-800">Vencida (${Math.abs(d.dias_restantes)}d)</span>`;
+                } else {
+                    badgeEstado = `<span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-emerald-50 text-emerald-700">ACTIVA (${d.dias_restantes}d)</span>`;
+                }
+
+                return `
+                    <div class="rounded-2xl border ${borderCls} p-4 space-y-2 transition">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <p class="text-xs font-black text-slate-800 truncate">${escapeHtml(d.delegante_nombres || '')} ${escapeHtml(d.delegante_apellidos || '')}</p>
+                                <p class="text-[10px] text-slate-400">Titular del cargo · ${escapeHtml(d.delegante_cargo || '')}${d.delegante_area ? ' · ' + escapeHtml(d.delegante_area) : ''}</p>
+                            </div>
+                            ${badgeEstado}
                         </div>
-                        <span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 ${d.estado === 'ACTIVA' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}">${d.estado}</span>
-                    </div>
-                    <div class="flex items-center gap-2 text-xs text-slate-600 rounded-xl border border-slate-100 bg-slate-50/50 p-3">
-                        <span class="material-symbols-outlined text-base text-[#B5A160]">arrow_right_alt</span>
-                        <div class="min-w-0">
-                            <p class="font-bold truncate">${escapeHtml(d.delegado_nombres || '')} ${escapeHtml(d.delegado_apellidos || '')}</p>
-                            <p class="text-[10px] text-slate-400 truncate">Delegado · ${escapeHtml(d.delegado_cargo || '')}</p>
+                        <div class="flex items-center gap-2 text-xs text-slate-600 rounded-xl border border-slate-100 bg-slate-50/50 p-3">
+                            <span class="material-symbols-outlined text-base text-[#B5A160]">arrow_right_alt</span>
+                            <div class="min-w-0">
+                                <p class="font-bold truncate">${escapeHtml(d.delegado_nombres || '')} ${escapeHtml(d.delegado_apellidos || '')}</p>
+                                <p class="text-[10px] text-slate-400 truncate">Delegado · ${escapeHtml(d.delegado_cargo || '')}</p>
+                            </div>
                         </div>
+                        <div class="grid grid-cols-2 gap-2 text-[10px]">
+                            <p class="text-slate-500"><span class="font-bold text-slate-600">Vigencia:</span> ${escapeHtml(d.fecha_inicio || '')} → ${escapeHtml(d.fecha_fin || '')}</p>
+                            <p class="text-slate-500"><span class="font-bold text-slate-600">Evaluados:</span> ${Array.isArray(d.detalle_transferencia?.evaluados_transferidos) ? d.detalle_transferencia.evaluados_transferidos.length : 0}</p>
+                        </div>
+                        ${d.motivo ? `<p class="text-[10px] text-slate-400 italic">${escapeHtml(d.motivo)}</p>` : ''}
+                        ${d.estado === 'ACTIVA' ? `
+                            <button type="button" onclick="finalizarDelegacion(${d.id_delegacion})" class="w-full ${es1Dia ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-sm' : 'bg-red-50 text-red-700 border border-red-100 hover:bg-red-100'} rounded-xl py-2 text-xs font-bold transition">
+                                Finalizar delegación (el titular retoma)
+                            </button>
+                        ` : ''}
                     </div>
-                    <div class="grid grid-cols-2 gap-2 text-[10px]">
-                        <p class="text-slate-500"><span class="font-bold text-slate-600">Vigencia:</span> ${escapeHtml(d.fecha_inicio || '')} → ${escapeHtml(d.fecha_fin || '')}</p>
-                        <p class="text-slate-500"><span class="font-bold text-slate-600">Evaluados:</span> ${Array.isArray(d.detalle_transferencia?.evaluados_transferidos) ? d.detalle_transferencia.evaluados_transferidos.length : 0}</p>
-                    </div>
-                    ${d.motivo ? `<p class="text-[10px] text-slate-400 italic">${escapeHtml(d.motivo)}</p>` : ''}
-                    ${d.estado === 'ACTIVA' ? `
-                        <button type="button" onclick="finalizarDelegacion(${d.id_delegacion})" class="w-full bg-red-50 text-red-700 border border-red-100 rounded-xl py-2 text-xs font-bold hover:bg-red-100 transition">Finalizar delegación (el titular retoma)</button>
-                    ` : ''}
-                </div>`).join('');
+                `;
+            }).join('');
         })
         .catch(() => {
             if (contador) contador.innerText = 'Error';
@@ -468,6 +672,7 @@ window.abrirEditarPeriodo = abrirEditarPeriodo;
 window.cerrarEditarPeriodo = cerrarEditarPeriodo;
 window.verAuditoriaPeriodo = verAuditoriaPeriodo;
 window.finalizarDelegacion = finalizarDelegacion;
+window.cargarDelegacionesAdmin = cargarDelegacionesAdmin;
 
 window.addEventListener('DOMContentLoaded', () => {
     navegarMenu(null, 'usuarios');
