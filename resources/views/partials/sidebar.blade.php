@@ -30,7 +30,8 @@
         </button>
         <button type="button" class="sidebar-link w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-slate-700 transition" onclick="navegarMenu(this, 'delegaciones')">
             <span class="material-symbols-outlined">supervisor_account</span>
-            Delegaciones
+            <span class="flex-1 text-left">Delegaciones</span>
+            <span id="sidebar-delegaciones-badge" class="hidden px-2 py-0.5 text-[10px] font-black rounded-full bg-amber-500 text-white shadow-sm animate-pulse" title="Funcionarios a 1 día de retornar al trabajo">0</span>
         </button>
         @endif
 

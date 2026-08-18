@@ -632,6 +632,13 @@
 
             <!-- SECTION: DELEGACIONES (Admin Only) -->
             <section id="section-delegaciones" class="section-content hidden space-y-6">
+                <!-- CONTENEDOR DE NOTIFICACIONES: Vencimiento de delegaciones y reintegro al trabajo -->
+                <div id="delegaciones-alertas-container" class="space-y-4">
+                    <div class="rounded-3xl border border-slate-200 bg-white/60 p-4 text-xs text-slate-400 text-center animate-pulse">
+                        Verificando alertas de vencimiento de delegaciones y reintegro al trabajo...
+                    </div>
+                </div>
+
                 <div class="grid gap-6 lg:grid-cols-[1.1fr_0.9fr] items-start">
                     <div class="panel-card rounded-3xl p-6">
                         <div class="flex items-center gap-2 mb-1">
