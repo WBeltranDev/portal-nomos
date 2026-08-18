@@ -137,9 +137,19 @@ export function renderResultado(calculo, containerId, contexto = 'evaluador', ev
         NO_SATISFACTORIO: 'bg-red-50 text-red-600',
     }[calculo.categoria] || 'bg-slate-100 text-slate-600';
 
-    const ejeMisionalHtml = `
-        <div class="flex justify-between text-xs text-slate-600"><span>Eje misional</span><span class="font-bold">${calculo.subtotal_ejes_total ?? 0}</span></div>
-    `;
+    const tieneEjes = String(calculo.sistema || '').toUpperCase() === 'ACUERDO_GESTION'
+        && Array.isArray(calculo.ejes_activos)
+        && calculo.ejes_activos.length > 0;
+
+    let ejeMisionalHtml = '';
+    if (tieneEjes) {
+        const pesoEjesTotal = calculo.pesos?.ejes
+            ? Object.values(calculo.pesos.ejes).reduce((a, b) => a + Number(b || 0), 0)
+            : (calculo.subtotal_ejes_total ? 20 : 0);
+        ejeMisionalHtml = `
+            <div class="flex justify-between text-xs text-slate-600"><span>Ejes misionales (${pesoEjesTotal}%)</span><span class="font-bold">${calculo.subtotal_ejes_total ?? 0}</span></div>
+        `;
+    }
 
     const prorrateoHtml = (calculo.nota_prorrateo !== null && calculo.nota_prorrateo !== undefined) ? `
         <div class="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-600">
