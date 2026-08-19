@@ -57,6 +57,7 @@ if (!function_exists('getPonderacionesConfig')) {
 }
 
 
+if (!function_exists('getTargetCompromisosWeight')) {
 function getTargetCompromisosWeight($id_evaluacion) {
     $evaluacion = DB::table('evaluacion as ev')
         ->join('vinculacion as ve', 've.id_vinculacion', '=', 'ev.id_vinc_evaluado')
@@ -93,7 +94,9 @@ function getTargetCompromisosWeight($id_evaluacion) {
 
     return max(0.0, $target);
 }
+}
 
+if (!function_exists('resolveOpenPeriodForVinculacion')) {
 function resolveOpenPeriodForVinculacion(int $idVinculacion, ?int $idPeriodo = null, ?string $tipoEvaluacion = null) {
     $vinculacion = DB::table('vinculacion')->where('id_vinculacion', $idVinculacion)->first();
     if (! $vinculacion || ! $vinculacion->sistema_evaluacion) {
@@ -125,7 +128,9 @@ function resolveOpenPeriodForVinculacion(int $idVinculacion, ?int $idPeriodo = n
 
     return $query->select('p.*')->orderByDesc('p.id_periodo')->first();
 }
+}
 
+if (!function_exists('getEvaluadorAsignaciones')) {
 function getEvaluadorAsignaciones(): array {
     if (!Schema::hasTable('evaluador_asignacion')) {
         return [];
@@ -141,7 +146,9 @@ function getEvaluadorAsignaciones(): array {
         ])
         ->all();
 }
+}
 
+if (!function_exists('evaluadorTieneEvaluadoAsignado')) {
 function evaluadorTieneEvaluadoAsignado(int $idVincEvaluador, int $idVincEvaluado): bool {
     if (!Schema::hasTable('evaluador_asignacion')) {
         return false;
@@ -152,7 +159,9 @@ function evaluadorTieneEvaluadoAsignado(int $idVincEvaluador, int $idVincEvaluad
         ->where('id_vinc_evaluado', $idVincEvaluado)
         ->exists();
 }
+}
 
+if (!function_exists('guardarEvaluadorAsignacion')) {
 function guardarEvaluadorAsignacion(int $idVincEvaluador, int $idVincEvaluado): void {
     if (!Schema::hasTable('evaluador_asignacion')) {
         return;
@@ -164,8 +173,10 @@ function guardarEvaluadorAsignacion(int $idVincEvaluador, int $idVincEvaluado): 
         'fecha_asignacion' => now(),
     ]);
 }
+}
 
 // --- S8: AUDITORIA DE PERIODOS ---
+if (!function_exists('registrarAuditoriaPeriodo')) {
 function registrarAuditoriaPeriodo(int $idPeriodo, string $accion, ?array $cambios = null): void {
     if (!Schema::hasTable('periodo_auditoria')) {
         return;
@@ -178,8 +189,10 @@ function registrarAuditoriaPeriodo(int $idPeriodo, string $accion, ?array $cambi
         'cambios' => $cambios ? json_encode($cambios) : null,
     ]);
 }
+}
 
 // --- S8: DELEGACIONES DE FUNCIONES DEL CARGO ---
+if (!function_exists('nombreFuncionarioVinc')) {
 function nombreFuncionarioVinc(int $idVinc): string {
     $r = DB::table('vinculacion as v')
         ->leftJoin('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
@@ -195,22 +208,36 @@ function nombreFuncionarioVinc(int $idVinc): string {
 
     return trim($nombre . ($r->cargo ? " ({$r->cargo})" : ''));
 }
-
-function delegacionActivaTraslapada(int $idDelegante, string $fechaInicio, string $fechaFin, int $exceptId = 0): bool {
-    return DB::table('delegacion')
-        ->where('id_vinc_delegante', $idDelegante)
-        ->where('estado', 'ACTIVA')
-        ->where('id_delegacion', '!=', $exceptId)
-        ->where(function ($q) use ($fechaInicio, $fechaFin) {
-            $q->whereBetween('fecha_inicio', [$fechaInicio, $fechaFin])
-                ->orWhereBetween('fecha_fin', [$fechaInicio, $fechaFin])
-                ->orWhere(function ($q2) use ($fechaInicio, $fechaFin) {
-                    $q2->where('fecha_inicio', '<=', $fechaInicio)->where('fecha_fin', '>=', $fechaFin);
-                });
-        })
-        ->exists();
 }
 
+if (!function_exists('delegacionActivaTraslapada')) {
+function delegacionActivaTraslapada(int $idDelegante, string $fechaInicio, ?string $fechaFin = null, int $exceptId = 0): bool {
+    $query = DB::table('delegacion')
+        ->where('id_vinc_delegante', $idDelegante)
+        ->where('estado', 'ACTIVA')
+        ->where('id_delegacion', '!=', $exceptId);
+
+    if (empty($fechaFin)) {
+        return $query->where(function ($q) use ($fechaInicio) {
+            $q->whereNull('fecha_fin')
+                ->orWhere('fecha_fin', '>=', $fechaInicio);
+        })->exists();
+    }
+
+    return $query->where(function ($q) use ($fechaInicio, $fechaFin) {
+        $q->where(function ($q1) use ($fechaFin) {
+            $q1->whereNull('fecha_fin')
+                ->where('fecha_inicio', '<=', $fechaFin);
+        })->orWhere(function ($q2) use ($fechaInicio, $fechaFin) {
+            $q2->whereNotNull('fecha_fin')
+                ->where('fecha_inicio', '<=', $fechaFin)
+                ->where('fecha_fin', '>=', $fechaInicio);
+        });
+    })->exists();
+}
+}
+
+if (!function_exists('activarDelegacion')) {
 function activarDelegacion($delegacion): void {
     $idDelegante = (int) $delegacion->id_vinc_delegante;
     $idDelegado = (int) $delegacion->id_vinc_delegado;
@@ -246,35 +273,45 @@ function activarDelegacion($delegacion): void {
 
     // 3) Periodo parcial por cada evaluado transferido (tramo de la delegación),
     //    para que el delegado pueda abrir una PARCIAL prorrateada por su tramo.
-    $sistema = DB::table('vinculacion')->where('id_vinculacion', $idDelegante)->value('sistema_evaluacion');
-    $periodoBase = null;
-    if ($sistema) {
-        $periodoBase = DB::table('periodo')
-            ->whereRaw('UPPER(TRIM(sistema)) = ?', [strtoupper(trim((string) $sistema))])
-            ->where('estado', 'ABIERTO')
-            ->whereDate('fecha_inicio', '<=', $delegacion->fecha_inicio)
-            ->whereDate('fecha_fin', '>=', $delegacion->fecha_inicio)
-            ->orderByDesc('id_periodo')
-            ->first();
-        if (! $periodoBase) {
+    $referenciaBase = 'Delegación de ' . nombreFuncionarioVinc($idDelegante)
+        . (!empty($delegacion->motivo) ? ' - ' . $delegacion->motivo : '');
+    $periodoParcialIds = [];
+
+    foreach ($transferidos as $idEvaluado) {
+        $sistema = DB::table('vinculacion')->where('id_vinculacion', $idEvaluado)->value('sistema_evaluacion')
+            ?: DB::table('vinculacion')->where('id_vinculacion', $idDelegante)->value('sistema_evaluacion');
+        $periodoBase = null;
+        if ($sistema) {
             $periodoBase = DB::table('periodo')
                 ->whereRaw('UPPER(TRIM(sistema)) = ?', [strtoupper(trim((string) $sistema))])
                 ->where('estado', 'ABIERTO')
+                ->whereDate('fecha_inicio', '<=', $delegacion->fecha_inicio)
+                ->where(function ($q) use ($delegacion) {
+                    $q->whereDate('fecha_fin', '>=', $delegacion->fecha_inicio);
+                })
                 ->orderByDesc('id_periodo')
                 ->first();
+            if (! $periodoBase) {
+                $periodoBase = DB::table('periodo')
+                    ->whereRaw('UPPER(TRIM(sistema)) = ?', [strtoupper(trim((string) $sistema))])
+                    ->where('estado', 'ABIERTO')
+                    ->orderByDesc('id_periodo')
+                    ->first();
+            }
         }
-    }
 
-    $referenciaBase = 'Delegación de ' . nombreFuncionarioVinc($idDelegante)
-        . ($delegacion->motivo ? ' - ' . $delegacion->motivo : '');
-    $periodoParcialIds = [];
-
-    if ($periodoBase) {
-        $fechaI = max((string) $delegacion->fecha_inicio, (string) $periodoBase->fecha_inicio);
-        $fechaF = min((string) $delegacion->fecha_fin, (string) $periodoBase->fecha_fin);
-
-        foreach ($transferidos as $idEvaluado) {
+        if ($periodoBase) {
             if (DB::table('periodo_parcial')->where('id_vinc_funcionario', $idEvaluado)->where('estado', 'ABIERTO')->exists()) {
+                continue;
+            }
+
+            $fechaI = max((string) $delegacion->fecha_inicio, (string) $periodoBase->fecha_inicio);
+            $fechaF = !empty($delegacion->fecha_fin)
+                ? min((string) $delegacion->fecha_fin, (string) $periodoBase->fecha_fin)
+                : (string) $periodoBase->fecha_fin;
+
+            $diasTramo = \Carbon\Carbon::parse($fechaI)->diffInDays(\Carbon\Carbon::parse($fechaF)) + 1;
+            if ($diasTramo < 30) {
                 continue;
             }
 
@@ -299,7 +336,9 @@ function activarDelegacion($delegacion): void {
         'updated_at' => now(),
     ]);
 }
+}
 
+if (!function_exists('revertirDelegacion')) {
 function revertirDelegacion($delegacion): void {
     $detalle = $delegacion->detalle_transferencia ? json_decode($delegacion->detalle_transferencia, true) : [];
     $evaluados = $detalle['evaluados_transferidos'] ?? [];
@@ -330,7 +369,9 @@ function revertirDelegacion($delegacion): void {
         DB::table('periodo_parcial')->where('id_periodo_parcial', $ppId)->update(['estado' => 'CERRADO']);
     }
 }
+}
 
+if (!function_exists('getEvaluacionEjes')) {
 function getEvaluacionEjes(int $idEvaluacion): array {
     if (!Schema::hasTable('evaluacion_eje')) {
         return ['investigacion' => false, 'proyeccion_social' => false];
@@ -343,7 +384,9 @@ function getEvaluacionEjes(int $idEvaluacion): array {
         'proyeccion_social' => (bool) ($row->proyeccion_social ?? false),
     ];
 }
+}
 
+if (!function_exists('guardarEvaluacionEjes')) {
 function guardarEvaluacionEjes(int $idEvaluacion, bool $investigacion, bool $proyeccionSocial): void {
     if (!Schema::hasTable('evaluacion_eje')) {
         return;
@@ -357,7 +400,9 @@ function guardarEvaluacionEjes(int $idEvaluacion, bool $investigacion, bool $pro
         ]
     );
 }
+}
 
+if (!function_exists('getEvaluacionObservaciones')) {
 function getEvaluacionObservaciones(int $idEvaluacion): array {
     if (!Schema::hasTable('compromiso_observacion')) {
         return [];
@@ -381,7 +426,9 @@ function getEvaluacionObservaciones(int $idEvaluacion): array {
         ])
         ->toArray();
 }
+}
 
+if (!function_exists('guardarEvaluacionObservacion')) {
 function guardarEvaluacionObservacion(int $idEvaluacion, int $idCompromiso, int $idVincEvaluador, string $texto, bool $confirmar = false): array {
     abort_unless(Schema::hasTable('compromiso_observacion'), 500, 'Falta ejecutar la migración de observaciones.');
 
@@ -419,6 +466,7 @@ function guardarEvaluacionObservacion(int $idEvaluacion, int $idCompromiso, int 
         ->where('id_evaluacion', $idEvaluacion)
         ->where('id_compromiso', $idCompromiso)
         ->first();
+}
 }
 
 Route::get('/', function () {
@@ -483,14 +531,21 @@ Route::post('/login', function (Request $request) {
             ->where('activa', 1)
             ->get();
 
-        $tieneVinculacionActiva = $vinculaciones->isNotEmpty();
-        $esEvaluadorActivo = $vinculaciones->contains('es_evaluador', 1);
-
+        $esDelegadoActivo = false;
+        $tieneAsignacionesEvaluador = false;
         if ($tieneVinculacionActiva) {
             $roles[] = 'evaluado';
+            $vincIds = $vinculaciones->pluck('id_vinculacion')->all();
+            $esDelegadoActivo = DB::table('delegacion')
+                ->whereIn('id_vinc_delegado', $vincIds)
+                ->where('estado', 'ACTIVA')
+                ->exists();
+            $tieneAsignacionesEvaluador = DB::table('evaluador_asignacion')
+                ->whereIn('id_vinc_evaluador', $vincIds)
+                ->exists();
         }
 
-        if ($esEvaluadorActivo || $user->rol === 'EVALUADOR') {
+        if ($esEvaluadorActivo || $user->rol === 'EVALUADOR' || $esDelegadoActivo || $tieneAsignacionesEvaluador) {
             $roles[] = 'evaluador';
         }
     }
@@ -689,6 +744,10 @@ Route::post('/evaluador/asignaciones', function (Request $request) {
         if ($diasLaborados === null && $periodoParcial->fecha_inicio && $periodoParcial->fecha_fin) {
             $diasLaborados = max(1, \Carbon\Carbon::parse($periodoParcial->fecha_inicio)->diffInDays(\Carbon\Carbon::parse($periodoParcial->fecha_fin)) + 1);
         }
+
+        if ($diasLaborados !== null && $diasLaborados < 30) {
+            return back()->withErrors(['asignaciones' => 'No se puede concertar ni crear una evaluación parcial con un período evaluable inferior a 30 días (duración calculada: ' . $diasLaborados . ' días). La normativa institucional exige un mínimo de 30 días de servicio para ser evaluable.']);
+        }
     }
 
     $evaluacionId = DB::table('evaluacion')->insertGetId([
@@ -879,6 +938,11 @@ Route::post('/admin/periodos-parciales', function (Request $request) {
 
     if (strtoupper(trim((string) $funcionario->sistema_evaluacion)) !== strtoupper(trim((string) $periodo->sistema))) {
         return back()->withErrors(['periodo_parcial' => 'El sistema de evaluación del funcionario no coincide con el del periodo base seleccionado.']);
+    }
+
+    $diasPeriodoParcial = \Carbon\Carbon::parse($data['fecha_inicio'])->diffInDays(\Carbon\Carbon::parse($data['fecha_fin'])) + 1;
+    if ($diasPeriodoParcial < 30) {
+        return back()->withErrors(['periodo_parcial' => "El período parcial debe tener una duración mínima de 30 días evaluables (duración ingresada: {$diasPeriodoParcial} días). Según la regla funcional, no se permiten evaluaciones parciales inferiores a 30 días."]);
     }
 
     $existe = DB::table('periodo_parcial')
@@ -1170,7 +1234,10 @@ Route::post('/admin/traslados', function (Request $request) {
             $fechaTraslado = $fechaFin;
         }
 
-        $diasLaborados = max(1, min($fechaInicio->diff($fechaTraslado)->days + 1, $diasPeriodo));
+        // Regla: la fecha registrada es el primer día en la nueva área;
+        // el tramo anterior finaliza el día inmediatamente anterior.
+        $diasLaborados = $fechaInicio->diff($fechaTraslado)->days; // Días laborados en origen
+        $diasNuevoCargo = max(0, $diasPeriodo - $diasLaborados);   // Días restantes en nuevo cargo
 
         // La evaluación SEMESTRE vigente del ciclo (concertada o no) queda bloqueada
         // por traslado: se etiqueta y solo se puede consultar. Sus compromisos se
@@ -1189,40 +1256,44 @@ Route::post('/admin/traslados', function (Request $request) {
                 ->update(['es_traslado' => 1]);
         }
 
-        if ($diasLaborados < $diasPeriodo) {
-            $existeParcialOrigen = DB::table('evaluacion')
-                ->where('id_periodo', $periodo->id_periodo)
-                ->where('id_vinc_evaluado', $data['id_vinc_funcionario'])
-                ->where('id_vinc_evaluador', $evaluadorOrigenId)
-                ->where('tipo_evaluacion', 'PARCIAL')
-                ->exists();
+        $tramosInferiores30 = [];
 
-            if (! $existeParcialOrigen) {
-                $idEvaluacionParcial = DB::table('evaluacion')->insertGetId([
-                    'id_periodo' => $periodo->id_periodo,
-                    'id_vinc_evaluado' => $data['id_vinc_funcionario'],
-                    'id_vinc_evaluador' => $evaluadorOrigenId,
-                    'tipo_evaluacion' => 'PARCIAL',
-                    'fase_actual' => 1,
-                    'concertacion_firmada' => 0,
-                    'estado' => 'EN_PROCESO',
-                    'es_parcial' => 1,
-                    'dias_laborados' => $diasLaborados,
-                    'referencia' => trim($data['referencia'] ?? '') ?: null,
-                ]);
+        if ($diasLaborados < $diasPeriodo && $diasLaborados > 0) {
+            if ($diasLaborados >= 30) {
+                $existeParcialOrigen = DB::table('evaluacion')
+                    ->where('id_periodo', $periodo->id_periodo)
+                    ->where('id_vinc_evaluado', $data['id_vinc_funcionario'])
+                    ->where('id_vinc_evaluador', $evaluadorOrigenId)
+                    ->where('tipo_evaluacion', 'PARCIAL')
+                    ->exists();
 
-                // La PARCIAL de origen hereda los compromisos de la SEMESTRE cerrada.
-                if ($semestreOrigen) {
-                    copiarCompromisosEvaluacion($semestreOrigen->id_evaluacion, $idEvaluacionParcial);
+                if (! $existeParcialOrigen) {
+                    $idEvaluacionParcial = DB::table('evaluacion')->insertGetId([
+                        'id_periodo' => $periodo->id_periodo,
+                        'id_vinc_evaluado' => $data['id_vinc_funcionario'],
+                        'id_vinc_evaluador' => $evaluadorOrigenId,
+                        'tipo_evaluacion' => 'PARCIAL',
+                        'fase_actual' => 1,
+                        'concertacion_firmada' => 0,
+                        'estado' => 'EN_PROCESO',
+                        'es_parcial' => 1,
+                        'dias_laborados' => $diasLaborados,
+                        'referencia' => trim($data['referencia'] ?? '') ?: null,
+                    ]);
+
+                    // La PARCIAL de origen hereda los compromisos de la SEMESTRE cerrada.
+                    if ($semestreOrigen) {
+                        copiarCompromisosEvaluacion($semestreOrigen->id_evaluacion, $idEvaluacionParcial);
+                    }
                 }
+            } else {
+                $tramosInferiores30[] = "origen ({$diasLaborados} días)";
             }
         }
 
-        // PARCIAL para el nuevo evaluador: días laborados en el nuevo cargo (no
-        // inició allí desde el inicio del semestre). Hereda los compromisos del
-        // evaluado anterior del puesto.
-        $diasNuevoCargo = max(0, $diasPeriodo - $diasLaborados);
-        if ($diasNuevoCargo >= 1) {
+        // PARCIAL para el nuevo evaluador: días laborados en el nuevo cargo.
+        // Paso 26: La copia de compromisos es OPCIONAL si se especificó un funcionario reemplazado compatible.
+        if ($diasNuevoCargo >= 30) {
             $existeParcialNuevo = DB::table('evaluacion')
                 ->where('id_periodo', $periodo->id_periodo)
                 ->where('id_vinc_evaluado', $data['id_vinc_funcionario'])
@@ -1246,30 +1317,24 @@ Route::post('/admin/traslados', function (Request $request) {
 
                 $anteriorDelPuesto = null;
                 if (! empty($data['id_vinc_reemplazado'])) {
-                    // Si se indicó a quién reemplaza, heredar de su SEMESTRE
-                    // (el titular suele estar retirado pero conserva evaluaciones).
-                    $anteriorDelPuesto = DB::table('evaluacion')
-                        ->where('id_periodo', $periodo->id_periodo)
-                        ->where('id_vinc_evaluado', (int) $data['id_vinc_reemplazado'])
-                        ->whereIn('tipo_evaluacion', ['SEMESTRE_1', 'SEMESTRE_2'])
-                        ->orderByDesc('id_evaluacion')
-                        ->first();
-                }
-
-                if (! $anteriorDelPuesto) {
-                    $anteriorDelPuesto = evaluacionAnteriorEvaluadoPuesto(
-                        (int) $data['id_vinc_evaluador_nuevo'],
-                        (int) $data['id_vinc_funcionario'],
-                        $periodo->id_periodo,
-                        $data['cargo_nuevo'] ?? null,
-                        $data['area_nuevo'] ?? null
-                    );
+                    // Validar compatibilidad del reemplazo (mismo sistema de evaluación)
+                    $vincReemplazado = DB::table('vinculacion')->where('id_vinculacion', (int)$data['id_vinc_reemplazado'])->first();
+                    if ($vincReemplazado && strtoupper(trim((string)($vincReemplazado->sistema_evaluacion ?? ''))) === $sistemaEvaluado) {
+                        $anteriorDelPuesto = DB::table('evaluacion')
+                            ->where('id_periodo', $periodo->id_periodo)
+                            ->where('id_vinc_evaluado', (int) $data['id_vinc_reemplazado'])
+                            ->whereIn('tipo_evaluacion', ['SEMESTRE_1', 'SEMESTRE_2', 'PARCIAL'])
+                            ->orderByDesc('id_evaluacion')
+                            ->first();
+                    }
                 }
 
                 if ($anteriorDelPuesto) {
                     copiarCompromisosEvaluacion($anteriorDelPuesto->id_evaluacion, $idEvaluacionParcialNuevo);
                 }
             }
+        } elseif ($diasNuevoCargo > 0 && $diasNuevoCargo < 30) {
+            $tramosInferiores30[] = "nuevo cargo ({$diasNuevoCargo} días)";
         }
     }
 
@@ -1313,7 +1378,12 @@ Route::post('/admin/traslados', function (Request $request) {
         'id_usuario_registra' => session('usuario_autenticado.id_usuario') ?? null,
     ]);
 
-    return back()->with('success_traslado', 'Traslado registrado correctamente.');
+    $msg = 'Traslado registrado correctamente.';
+    if (!empty($tramosInferiores30)) {
+        $msg .= ' (Nota: El tramo de ' . implode(' y ', $tramosInferiores30) . ' no genera evaluación parcial por ser inferior a 30 días según la regla funcional).';
+    }
+
+    return back()->with('success_traslado', $msg);
 })->name('admin.traslados.store');
 
 // --- GET: Histórico de traslados (admin) ---
@@ -1363,8 +1433,12 @@ Route::post('/admin/delegaciones', function (Request $request) {
         'id_vinc_delegante' => ['required', 'integer', 'exists:vinculacion,id_vinculacion'],
         'id_vinc_delegado' => ['required', 'integer', 'exists:vinculacion,id_vinculacion'],
         'motivo' => ['nullable', 'string', 'max:500'],
+        'acto_administrativo' => ['nullable', 'string', 'max:255'],
+        'acto_administrativo_numero' => ['nullable', 'string', 'max:100'],
+        'acto_administrativo_fecha' => ['nullable', 'date'],
+        'acto_administrativo_url' => ['nullable', 'string', 'max:1000'],
         'fecha_inicio' => ['required', 'date'],
-        'fecha_fin' => ['required', 'date', 'after_or_equal:fecha_inicio'],
+        'fecha_fin' => ['nullable', 'date', 'after_or_equal:fecha_inicio'],
     ]);
 
     $delegante = DB::table('vinculacion')->where('id_vinculacion', $data['id_vinc_delegante'])->where('activa', 1)->first();
@@ -1376,13 +1450,11 @@ Route::post('/admin/delegaciones', function (Request $request) {
     if ($delegante->id_vinculacion === $delegado->id_vinculacion) {
         return back()->withErrors(['delegaciones' => 'El delegante y el delegado no pueden ser el mismo funcionario.']);
     }
-    if (strtoupper(trim((string) $delegante->sistema_evaluacion)) !== strtoupper(trim((string) $delegado->sistema_evaluacion))) {
-        return back()->withErrors(['delegaciones' => 'Ambos funcionarios deben pertenecer al mismo sistema de evaluación.']);
-    }
     if (! DB::table('evaluador_asignacion')->where('id_vinc_evaluador', $delegante->id_vinculacion)->exists()) {
         return back()->withErrors(['delegaciones' => 'El delegante no tiene personas a cargo para delegar.']);
     }
-    if (delegacionActivaTraslapada($delegante->id_vinculacion, $data['fecha_inicio'], $data['fecha_fin'])) {
+    $fechaFin = !empty($data['fecha_fin']) ? $data['fecha_fin'] : null;
+    if (delegacionActivaTraslapada($delegante->id_vinculacion, $data['fecha_inicio'], $fechaFin)) {
         return back()->withErrors(['delegaciones' => 'El delegante ya tiene una delegación activa que se traslapa con estas fechas.']);
     }
 
@@ -1406,16 +1478,90 @@ Route::post('/admin/delegaciones', function (Request $request) {
         'id_vinc_delegante' => $delegante->id_vinculacion,
         'id_vinc_delegado' => $delegado->id_vinculacion,
         'motivo' => trim($data['motivo'] ?? '') ?: null,
+        'acto_administrativo' => trim($data['acto_administrativo'] ?? '') ?: null,
+        'acto_administrativo_numero' => trim($data['acto_administrativo_numero'] ?? '') ?: null,
+        'acto_administrativo_fecha' => $data['acto_administrativo_fecha'] ?? null,
+        'acto_administrativo_url' => trim($data['acto_administrativo_url'] ?? '') ?: null,
         'fecha_inicio' => $data['fecha_inicio'],
-        'fecha_fin' => $data['fecha_fin'],
+        'fecha_fin' => $fechaFin,
         'estado' => 'ACTIVA',
         'id_usuario_registra' => session('usuario_autenticado.id_usuario') ?? null,
+        'created_at' => now(),
+        'updated_at' => now(),
     ]);
 
-    activarDelegacion((object) ['id_delegacion' => $idDelegacion, 'id_vinc_delegante' => $delegante->id_vinculacion, 'id_vinc_delegado' => $delegado->id_vinculacion, 'fecha_inicio' => $data['fecha_inicio'], 'fecha_fin' => $data['fecha_fin'], 'motivo' => trim($data['motivo'] ?? '') ?: null]);
+    activarDelegacion((object) [
+        'id_delegacion' => $idDelegacion,
+        'id_vinc_delegante' => $delegante->id_vinculacion,
+        'id_vinc_delegado' => $delegado->id_vinculacion,
+        'fecha_inicio' => $data['fecha_inicio'],
+        'fecha_fin' => $fechaFin,
+        'motivo' => trim($data['motivo'] ?? '') ?: null,
+    ]);
 
     return back()->with('success_delegacion', 'Delegación activada correctamente.');
 })->name('admin.delegaciones.store');
+
+// --- Actualizar o ampliar vigencia / datos de una delegacion (D-01, D-02) ---
+Route::match(['put', 'post'], '/admin/delegaciones/{id}', function (Request $request, int $id) {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
+
+    $delegacion = DB::table('delegacion')->where('id_delegacion', $id)->first();
+    abort_unless($delegacion, 404);
+
+    $data = $request->validate([
+        'fecha_inicio' => ['sometimes', 'nullable', 'date'],
+        'fecha_fin' => ['nullable', 'date'],
+        'motivo' => ['nullable', 'string', 'max:500'],
+        'acto_administrativo' => ['nullable', 'string', 'max:255'],
+        'acto_administrativo_numero' => ['nullable', 'string', 'max:100'],
+        'acto_administrativo_fecha' => ['nullable', 'date'],
+        'acto_administrativo_url' => ['nullable', 'string', 'max:1000'],
+    ]);
+
+    $fechaInicio = !empty($data['fecha_inicio']) ? $data['fecha_inicio'] : $delegacion->fecha_inicio;
+    $fechaFin = !empty($data['fecha_fin']) ? $data['fecha_fin'] : null;
+
+    if ($fechaFin && $fechaFin < $fechaInicio) {
+        if ($request->wantsJson() || $request->ajax()) {
+            return response()->json(['message' => 'La fecha final debe ser posterior o igual a la fecha de inicio.'], 422);
+        }
+        return back()->withErrors(['delegaciones' => 'La fecha final debe ser posterior o igual a la fecha de inicio.']);
+    }
+
+    if ($delegacion->estado === 'ACTIVA' && delegacionActivaTraslapada($delegacion->id_vinc_delegante, $fechaInicio, $fechaFin, $id)) {
+        if ($request->wantsJson() || $request->ajax()) {
+            return response()->json(['message' => 'La nueva vigencia se traslapa con otra delegación activa del mismo titular.'], 422);
+        }
+        return back()->withErrors(['delegaciones' => 'La nueva vigencia se traslapa con otra delegación activa del mismo titular.']);
+    }
+
+    DB::table('delegacion')->where('id_delegacion', $id)->update([
+        'fecha_inicio' => $fechaInicio,
+        'fecha_fin' => $fechaFin,
+        'motivo' => array_key_exists('motivo', $data) ? (trim((string) $data['motivo']) ?: null) : $delegacion->motivo,
+        'acto_administrativo' => array_key_exists('acto_administrativo', $data) ? (trim((string) $data['acto_administrativo']) ?: null) : $delegacion->acto_administrativo,
+        'acto_administrativo_numero' => array_key_exists('acto_administrativo_numero', $data) ? (trim((string) $data['acto_administrativo_numero']) ?: null) : $delegacion->acto_administrativo_numero,
+        'acto_administrativo_fecha' => array_key_exists('acto_administrativo_fecha', $data) ? ($data['acto_administrativo_fecha'] ?: null) : $delegacion->acto_administrativo_fecha,
+        'acto_administrativo_url' => array_key_exists('acto_administrativo_url', $data) ? (trim((string) $data['acto_administrativo_url']) ?: null) : $delegacion->acto_administrativo_url,
+        'updated_at' => now(),
+    ]);
+
+    // Si hay tramos de periodo parcial asociados, sincronizar fecha_fin
+    if ($fechaFin && $delegacion->detalle_transferencia) {
+        $detalle = json_decode($delegacion->detalle_transferencia, true);
+        $ppIds = $detalle['periodo_parcial_ids'] ?? [];
+        if (!empty($ppIds)) {
+            DB::table('periodo_parcial')->whereIn('id_periodo_parcial', $ppIds)->update(['fecha_fin' => $fechaFin]);
+        }
+    }
+
+    if ($request->wantsJson() || $request->ajax()) {
+        return response()->json(['success' => true, 'message' => 'Delegación actualizada correctamente.']);
+    }
+
+    return back()->with('success_delegacion', 'Delegación actualizada correctamente.');
+})->name('admin.delegaciones.update');
 
 // --- Finalizar una delegacion: el titular retoma sus evaluaciones pendientes ---
 Route::post('/admin/delegaciones/{id}/finalizar', function (int $id) {
@@ -1453,42 +1599,52 @@ Route::get('/admin/delegaciones', function () {
             'fd.correo_cargo as delegante_correo',
             'vd.cargo as delegante_cargo',
             'vd.area as delegante_area',
+            'vd.nivel_jerarquico as delegante_nivel',
             'fg.nombres as delegado_nombres',
             'fg.apellidos as delegado_apellidos',
             'fg.numero_doc as delegado_documento',
             'fg.correo_cargo as delegado_correo',
             'vg.cargo as delegado_cargo',
-            'vg.area as delegado_area'
+            'vg.area as delegado_area',
+            'vg.nivel_jerarquico as delegado_nivel'
         )
         ->orderByDesc('d.id_delegacion')
         ->get()
         ->map(function ($r) use ($today) {
             $r->detalle_transferencia = $r->detalle_transferencia ? json_decode($r->detalle_transferencia, true) : null;
-            $fechaFin = \Carbon\Carbon::parse($r->fecha_fin)->startOfDay();
-            $diasRestantes = (int) $today->diffInDays($fechaFin, false);
+            if ($r->fecha_fin) {
+                $fechaFin = \Carbon\Carbon::parse($r->fecha_fin)->startOfDay();
+                $diasRestantes = (int) $today->diffInDays($fechaFin, false);
 
-            $r->dias_restantes = $diasRestantes;
-            $r->alerta_vencimiento_un_dia = ($r->estado === 'ACTIVA' && $diasRestantes === 1);
-            $r->alerta_vencimiento_hoy = ($r->estado === 'ACTIVA' && $diasRestantes === 0);
-            $r->alerta_vencida = ($r->estado === 'ACTIVA' && $diasRestantes < 0);
+                $r->dias_restantes = $diasRestantes;
+                $r->alerta_vencimiento_un_dia = ($r->estado === 'ACTIVA' && $diasRestantes === 1);
+                $r->alerta_vencimiento_hoy = ($r->estado === 'ACTIVA' && $diasRestantes === 0);
+                $r->alerta_vencida = ($r->estado === 'ACTIVA' && $diasRestantes < 0);
+                $r->fecha_fin_formateada = \Carbon\Carbon::parse($r->fecha_fin)->format('d/m/Y');
+            } else {
+                $r->dias_restantes = null;
+                $r->alerta_vencimiento_un_dia = false;
+                $r->alerta_vencimiento_hoy = false;
+                $r->alerta_vencida = false;
+                $r->fecha_fin_formateada = 'Vigencia abierta';
+            }
             $r->fecha_inicio_formateada = \Carbon\Carbon::parse($r->fecha_inicio)->format('d/m/Y');
-            $r->fecha_fin_formateada = \Carbon\Carbon::parse($r->fecha_fin)->format('d/m/Y');
+            $r->acto_administrativo_fecha_formateada = $r->acto_administrativo_fecha
+                ? \Carbon\Carbon::parse($r->acto_administrativo_fecha)->format('d/m/Y')
+                : null;
 
             return $r;
         });
 })->name('admin.delegaciones.index');
 
-// --- GET: Evaluadores disponibles (delegante/delegado candidatos, admin) ---
+// --- GET: Evaluadores disponibles (delegante/delegado candidatos, admin, D-03) ---
 Route::get('/admin/delegaciones/evaluadores', function () {
     abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
 
-    $ids = DB::table('evaluador_asignacion')->distinct()->pluck('id_vinc_evaluador')->all();
-
     return DB::table('vinculacion as v')
         ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
-        ->whereIn('v.id_vinculacion', $ids)
         ->where('v.activa', 1)
-        ->select('v.id_vinculacion', 'v.sistema_evaluacion', 'v.cargo', 'v.area', 'f.nombres', 'f.apellidos')
+        ->select('v.id_vinculacion', 'v.sistema_evaluacion', 'v.cargo', 'v.area', 'v.nivel_jerarquico', 'v.es_evaluador', 'f.nombres', 'f.apellidos')
         ->orderBy('f.nombres')
         ->get();
 })->name('admin.delegaciones.evaluadores');
@@ -2517,11 +2673,110 @@ if (!function_exists('calcularNotaEvaluacion')) {
 }
 }
 
+if (!function_exists('obtenerNotaSemestreConsolidada')) {
+    /**
+     * S8 - P-03: Consolidación proporcional de evaluaciones parciales y semestrales.
+     * Retorna la nota consolidada de un semestre para un evaluado (año, sistema, semestre).
+     * Si existen evaluaciones parciales válidas (>= 30 días), consolida sumando sus notas prorrateadas.
+     */
+    function obtenerNotaSemestreConsolidada(int $idVincEvaluado, int $anio, string $sistema, int $semestreNumero): ?array
+    {
+        // 1. Buscar si hay una evaluación semestral ordinaria calificada (no anulada por traslado)
+        $evalSem = DB::table('evaluacion as ev')
+            ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
+            ->where('p.anio', $anio)
+            ->where('p.sistema', $sistema)
+            ->where('p.semestre', $semestreNumero)
+            ->where('ev.id_vinc_evaluado', $idVincEvaluado)
+            ->where('ev.tipo_evaluacion', 'SEMESTRE_' . $semestreNumero)
+            ->where('ev.estado', 'CALIFICADA')
+            ->where('ev.es_traslado', 0)
+            ->first();
+
+        // 2. Buscar evaluaciones parciales válidas (días >= 30) calificadas en este semestre
+        $parciales = DB::table('evaluacion as ev')
+            ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
+            ->where('p.anio', $anio)
+            ->where('p.sistema', $sistema)
+            ->where('p.semestre', $semestreNumero)
+            ->where('ev.id_vinc_evaluado', $idVincEvaluado)
+            ->where('ev.tipo_evaluacion', 'PARCIAL')
+            ->where('ev.estado', 'CALIFICADA')
+            ->get();
+
+        if ($parciales->isNotEmpty()) {
+            $sumaProrrateada = 0.0;
+            $totalDias = 0;
+            $detallesParciales = [];
+            foreach ($parciales as $p) {
+                $calc = calcularNotaEvaluacion((int) $p->id_evaluacion);
+                $dias = (int) ($calc['dias_laborados'] ?? 0);
+                if ($dias >= 30) {
+                    $notaTramo = (float) ($calc['nota_prorrateo'] ?? $calc['nota_definitiva'] ?? 0);
+                    $sumaProrrateada += $notaTramo;
+                    $totalDias += $dias;
+                    $detallesParciales[] = [
+                        'id_evaluacion' => $p->id_evaluacion,
+                        'dias_laborados' => $dias,
+                        'nota_final' => $calc['nota_final'] ?? 0,
+                        'nota_prorrateada' => $notaTramo,
+                    ];
+                }
+            }
+
+            if (!empty($detallesParciales)) {
+                return [
+                    'tipo' => 'PARCIALES_CONSOLIDADAS',
+                    'id_evaluacion' => $parciales->first()->id_evaluacion,
+                    'nota' => round($sumaProrrateada, 2),
+                    'dias_laborados' => $totalDias,
+                    'parciales' => $detallesParciales,
+                ];
+            }
+        }
+
+        if ($evalSem) {
+            $calc = calcularNotaEvaluacion((int) $evalSem->id_evaluacion);
+            return [
+                'tipo' => 'SEMESTRAL',
+                'id_evaluacion' => $evalSem->id_evaluacion,
+                'nota' => $calc['nota_definitiva'] ?? null,
+                'dias_laborados' => $calc['dias_laborados'] ?? null,
+                'parciales' => [],
+            ];
+        }
+
+        // Fallback por si la evaluación semestral fue marcada por traslado pero es la única calificada
+        $evalSemFallback = DB::table('evaluacion as ev')
+            ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
+            ->where('p.anio', $anio)
+            ->where('p.sistema', $sistema)
+            ->where('p.semestre', $semestreNumero)
+            ->where('ev.id_vinc_evaluado', $idVincEvaluado)
+            ->where('ev.tipo_evaluacion', 'SEMESTRE_' . $semestreNumero)
+            ->where('ev.estado', 'CALIFICADA')
+            ->first();
+
+        if ($evalSemFallback) {
+            $calc = calcularNotaEvaluacion((int) $evalSemFallback->id_evaluacion);
+            return [
+                'tipo' => 'SEMESTRAL',
+                'id_evaluacion' => $evalSemFallback->id_evaluacion,
+                'nota' => $calc['nota_definitiva'] ?? null,
+                'dias_laborados' => $calc['dias_laborados'] ?? null,
+                'parciales' => [],
+            ];
+        }
+
+        return null;
+    }
+}
+
 if (!function_exists('informeAnualDisponible')) {
     /**
      * Indica si el informe anual está disponible para una evaluación:
      * se requiere que AMBOS semestres (A y B) del mismo año/sistema/evaluado
-     * estén calificados.
+     * cuenten con calificaciones consolidadas válidas.
      */
     function informeAnualDisponible(int $idEvaluacion): bool
     {
@@ -2535,17 +2790,10 @@ if (!function_exists('informeAnualDisponible')) {
             return false;
         }
 
-        $tipos = DB::table('evaluacion as ev')
-            ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
-            ->where('ev.id_vinc_evaluado', $evaluacion->id_vinc_evaluado)
-            ->where('p.anio', $evaluacion->anio)
-            ->where('p.sistema', $evaluacion->sistema)
-            ->whereIn('ev.tipo_evaluacion', ['SEMESTRE_1', 'SEMESTRE_2'])
-            ->where('ev.estado', 'CALIFICADA')
-            ->pluck('ev.tipo_evaluacion')
-            ->unique();
+        $sem1 = obtenerNotaSemestreConsolidada((int)$evaluacion->id_vinc_evaluado, (int)$evaluacion->anio, (string)$evaluacion->sistema, 1);
+        $sem2 = obtenerNotaSemestreConsolidada((int)$evaluacion->id_vinc_evaluado, (int)$evaluacion->anio, (string)$evaluacion->sistema, 2);
 
-        return $tipos->contains('SEMESTRE_1') && $tipos->contains('SEMESTRE_2');
+        return ($sem1 !== null && $sem1['nota'] !== null) && ($sem2 !== null && $sem2['nota'] !== null);
     }
 }
 
@@ -3859,25 +4107,12 @@ if (!function_exists('prepararInformeAnual')) {
             'fecha_fin' => $evaluacion->fecha_fin,
         ];
 
-        // Buscar ambos semestres del mismo año/sistema/evaluado
-        // (cada semestre vive en un periodo distinto: id_periodo A y B)
-        $semestres = DB::table('evaluacion as ev')
-            ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
-            ->where('p.anio', $evaluacion->anio)
-            ->where('p.sistema', $evaluacion->sistema)
-            ->where('ev.id_vinc_evaluado', $evaluacion->id_vinc_evaluado)
-            ->whereIn('ev.tipo_evaluacion', ['SEMESTRE_1', 'SEMESTRE_2'])
-            ->where('ev.estado', 'CALIFICADA')
-            ->pluck('ev.id_evaluacion', 'ev.tipo_evaluacion');
+        // Obtener la calificación consolidada de ambos semestres (semestrales u horas parciales prorrateadas)
+        $sem1Data = obtenerNotaSemestreConsolidada((int) $evaluacion->id_vinc_evaluado, (int) $evaluacion->anio, $sistema, 1);
+        $sem2Data = obtenerNotaSemestreConsolidada((int) $evaluacion->id_vinc_evaluado, (int) $evaluacion->anio, $sistema, 2);
 
-        $idSemA = $semestres['SEMESTRE_1'] ?? (($evaluacion->tipo_evaluacion === 'SEMESTRE_1') ? $evaluacion->id_evaluacion : null);
-        $idSemB = $semestres['SEMESTRE_2'] ?? (($evaluacion->tipo_evaluacion === 'SEMESTRE_2') ? $evaluacion->id_evaluacion : null);
-
-        $calcSemA = $idSemA ? calcularNotaEvaluacion((int) $idSemA) : null;
-        $calcSemB = $idSemB ? calcularNotaEvaluacion((int) $idSemB) : null;
-
-        $notaSemA = $calcSemA['nota_definitiva'] ?? null;
-        $notaSemB = $calcSemB['nota_definitiva'] ?? null;
+        $notaSemA = $sem1Data['nota'] ?? null;
+        $notaSemB = $sem2Data['nota'] ?? null;
 
         $notaAnual = null;
         if ($notaSemA !== null && $notaSemB !== null) {
@@ -3897,7 +4132,10 @@ if (!function_exists('prepararInformeAnual')) {
             'periodo' => $periodo,
             'evaluador' => $evaluador,
             'evaluado' => $evaluado,
-            'tiene_semestre_a' => $idSemA !== null,
+            'tiene_semestre_a' => ($sem1Data !== null && $sem1Data['nota'] !== null),
+            'tiene_semestre_b' => ($sem2Data !== null && $sem2Data['nota'] !== null),
+            'id_evaluacion_semestre_a' => $sem1Data['id_evaluacion'] ?? null,
+            'id_evaluacion_semestre_b' => $sem2Data['id_evaluacion'] ?? null,
             'nota_semestre_a' => $notaSemA,
             'nota_semestre_b' => $notaSemB,
             'nota_anual' => $notaAnual,
