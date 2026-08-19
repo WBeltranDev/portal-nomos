@@ -24,7 +24,12 @@
 _ide_helper.php
 Homestead.json
 Homestead.yaml
+supervisord.pid
 Thumbs.db
 evaluacion_unitropico.sql
 Arbol jerarquico.txt/bootstrap/cache/*.php
 /bootstrap/cache/*.php
+database/seeders/PruebasRealesSemanas6y8Seeder.php
+tests/Feature/Sprint8E2ETest.php
+phpunit.xml
+bootstrap/app.php
