@@ -151,16 +151,15 @@ class DashboardController extends Controller
                 ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
                 ->where('v.activa', 1)
                 ->whereIn('v.id_vinculacion', $idsEvaluadoresDelegacion)
-                ->select('v.id_vinculacion', 'v.cargo', 'v.area', 'v.sistema_evaluacion', 'f.nombres', 'f.apellidos')
+                ->select('v.id_vinculacion', 'v.cargo', 'v.area', 'v.nivel_jerarquico', 'v.sistema_evaluacion', 'f.nombres', 'f.apellidos')
                 ->orderBy('f.apellidos')
                 ->get();
 
-            // Delegado: cualquier funcionario activo con rol de evaluador disponible para asumir la función.
+            // Delegado: cualquier funcionario activo disponible para asumir la delegación (niveles directivo, asesor, profesional, etc., D-03).
             $delegadosDisponibles = DB::table('vinculacion as v')
                 ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
                 ->where('v.activa', 1)
-                ->where('v.es_evaluador', 1)
-                ->select('v.id_vinculacion', 'v.cargo', 'v.area', 'v.sistema_evaluacion', 'f.nombres', 'f.apellidos')
+                ->select('v.id_vinculacion', 'v.cargo', 'v.area', 'v.nivel_jerarquico', 'v.sistema_evaluacion', 'v.es_evaluador', 'f.nombres', 'f.apellidos')
                 ->orderBy('f.apellidos')
                 ->get();
 

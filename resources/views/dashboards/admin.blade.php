@@ -301,7 +301,7 @@
                 <div class="panel-card rounded-3xl p-6">
                     <div>
                         <h3 class="text-lg font-bold text-slate-800">Crear Periodo Parcial</h3>
-                        <p class="text-xs text-slate-500 mt-1 mb-4">Registra un periodo parcial para un funcionario que no estuvo desde el inicio del semestre (ingreso o traslado).</p>
+                        <p class="text-xs text-slate-500 mt-1 mb-4">Registra un periodo parcial para un funcionario que no estuvo desde el inicio del semestre (ingreso o traslado). <span class="font-bold text-[#00594E]">Duración mínima requerida: 30 días evaluables.</span></p>
                     </div>
                     <form method="POST" action="{{ route('admin.periodos-parciales.store') }}" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-12">
                         @csrf
@@ -574,8 +574,9 @@
                             </div>
                             <div class="grid gap-3 sm:grid-cols-2">
                                 <div>
-                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Fecha del traslado</label>
+                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Fecha efectiva del traslado (Primer día en nueva área)</label>
                                     <input type="date" name="fecha_traslado" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" required />
+                                    <p class="text-[9px] text-slate-400 mt-1">El tramo con el evaluador anterior finaliza el día anterior.</p>
                                 </div>
                                 <div>
                                     <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Resolución (opcional)</label>
@@ -652,19 +653,19 @@
                                 <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Delegante — titular del cargo (Vinculación)</label>
                                 <input type="search" id="buscar-delegante" oninput="filtrarOpcionesAsignacion('buscar-delegante', 'select-delegante')" class="mb-2 w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Buscar evaluador por nombre o cargo" />
                                 <select name="id_vinc_delegante" id="select-delegante" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
-                                    <option value="">Selecciona un evaluador</option>
+                                    <option value="">Selecciona un evaluador titular</option>
                                     @foreach($evaluadoresDelegacion as $ed)
-                                        <option value="{{ $ed->id_vinculacion }}">{{ $ed->nombres }} {{ $ed->apellidos }} - {{ $ed->cargo }}</option>
+                                        <option value="{{ $ed->id_vinculacion }}">{{ $ed->nombres }} {{ $ed->apellidos }} - {{ $ed->cargo }} ({{ $ed->nivel_jerarquico ?? 'DIRECTIVO' }})</option>
                                     @endforeach
                                 </select>
                             </div>
                             <div>
-                                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Delegado (Vinculación)</label>
-                                <input type="search" id="buscar-delegado" oninput="filtrarOpcionesAsignacion('buscar-delegado', 'select-delegado')" class="mb-2 w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Buscar evaluador por nombre o cargo" />
+                                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Delegado — funcionario / profesional que asume (D-03)</label>
+                                <input type="search" id="buscar-delegado" oninput="filtrarOpcionesAsignacion('buscar-delegado', 'select-delegado')" class="mb-2 w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Buscar por nombre, cargo o nivel" />
                                 <select name="id_vinc_delegado" id="select-delegado" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
-                                    <option value="">Selecciona un evaluador</option>
+                                    <option value="">Selecciona un delegado (funcionario/profesional)</option>
                                     @foreach($delegadosDisponibles as $dd)
-                                        <option value="{{ $dd->id_vinculacion }}">{{ $dd->nombres }} {{ $dd->apellidos }} - {{ $dd->cargo }}</option>
+                                        <option value="{{ $dd->id_vinculacion }}">{{ $dd->nombres }} {{ $dd->apellidos }} - {{ $dd->cargo }} ({{ $dd->nivel_jerarquico ?? 'PROFESIONAL' }})</option>
                                     @endforeach
                                 </select>
                             </div>
@@ -674,14 +675,44 @@
                                     <input type="date" name="fecha_inicio" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" required />
                                 </div>
                                 <div>
-                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Fecha fin (vigencia)</label>
-                                    <input type="date" name="fecha_fin" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" required />
+                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Fecha fin (opcional — vigencia abierta)</label>
+                                    <input type="date" name="fecha_fin" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" />
+                                    <p class="text-[9px] text-slate-400 mt-0.5">Vacío = vigencia abierta / indefinida</p>
                                 </div>
                             </div>
                             <div>
                                 <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Motivo (opcional)</label>
-                                <input type="text" name="motivo" maxlength="500" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Ej. Vacaciones, comisión, licencia" />
+                                <input type="text" name="motivo" maxlength="500" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Ej. Vacaciones, comisión, licencia de maternidad" />
                             </div>
+
+                            <!-- ACTO ADMINISTRATIVO (D-02) -->
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-3">
+                                <div class="flex items-center gap-2 text-slate-700 font-bold text-xs border-b border-slate-200/80 pb-2">
+                                    <span class="material-symbols-outlined text-base text-[#00594E]">description</span>
+                                    <span>Acto Administrativo de la Delegación</span>
+                                </div>
+                                <div class="grid gap-3 sm:grid-cols-2">
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Tipo / Referencia de acto</label>
+                                        <input type="text" name="acto_administrativo" maxlength="255" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white outline-none focus:border-[#00594E]" placeholder="Ej: Resolución Rectoral, Decreto, Acta" />
+                                    </div>
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Número de acto</label>
+                                        <input type="text" name="acto_administrativo_numero" maxlength="100" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white outline-none focus:border-[#00594E]" placeholder="Ej: Res. No. 0450 de 2026" />
+                                    </div>
+                                </div>
+                                <div class="grid gap-3 sm:grid-cols-2">
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Fecha de expedición</label>
+                                        <input type="date" name="acto_administrativo_fecha" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white outline-none focus:border-[#00594E]" />
+                                    </div>
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Enlace al documento en Drive</label>
+                                        <input type="url" name="acto_administrativo_url" maxlength="1000" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white outline-none focus:border-[#00594E]" placeholder="https://drive.google.com/..." />
+                                    </div>
+                                </div>
+                            </div>
+
                             <button type="submit" class="w-full bg-[#B5A160] text-white rounded-xl py-2.5 text-xs font-bold hover:brightness-110 transition shadow-md shadow-[#B5A160]/20">Activar delegación</button>
                         </form>
                     </div>
@@ -704,6 +735,7 @@
     </div>
 </div>
 
+@include('partials.delegacion-modal')
 @include('partials.password-modal')
 @include('partials.temp-password-toast')
 

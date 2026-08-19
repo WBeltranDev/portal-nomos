@@ -96,8 +96,9 @@
                                     </select>
                                 </div>
                                 <div id="apertura-dias-laborados-wrap" class="hidden">
-                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Días laborados</label>
-                                    <input type="number" name="dias_laborados" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" placeholder="Opcional" />
+                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Días laborados (Mínimo 30 días)</label>
+                                    <input type="number" name="dias_laborados" min="30" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" placeholder="Mínimo 30 días (opcional si ya está definido en el período parcial)" />
+                                    <p class="text-[9px] text-slate-400 mt-1">Normativa: El período evaluable debe ser de al menos 30 días.</p>
                                 </div>
                                 <div id="apertura-referencia-wrap" class="hidden">
                                     <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Nombre o referencia</label>
