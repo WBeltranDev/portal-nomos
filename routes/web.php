@@ -531,6 +531,10 @@ Route::post('/login', function (Request $request) {
             ->where('activa', 1)
             ->get();
 
+        $tieneVinculacionActiva = $vinculaciones->isNotEmpty();
+        $esEvaluadorPorVinculacion = $vinculaciones->contains(
+            fn ($vinculacion) => (bool) $vinculacion->es_evaluador
+        );
         $esDelegadoActivo = false;
         $tieneAsignacionesEvaluador = false;
         if ($tieneVinculacionActiva) {
@@ -545,7 +549,8 @@ Route::post('/login', function (Request $request) {
                 ->exists();
         }
 
-        if ($esEvaluadorActivo || $user->rol === 'EVALUADOR' || $esDelegadoActivo || $tieneAsignacionesEvaluador) {
+        $esEvaluadorActivo = $user->rol === 'EVALUADOR';
+        if ($esEvaluadorActivo || $esEvaluadorPorVinculacion || $esDelegadoActivo || $tieneAsignacionesEvaluador) {
             $roles[] = 'evaluador';
         }
     }
