@@ -16,6 +16,7 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         // 1. Clear existing seed data if any
+        \Illuminate\Support\Facades\Schema::disableForeignKeyConstraints();
         if (\Illuminate\Support\Facades\Schema::hasTable('compromiso_observacion')) {
             \Illuminate\Support\Facades\DB::table('compromiso_observacion')->truncate();
         }
@@ -27,6 +28,7 @@ class DatabaseSeeder extends Seeder
         \Illuminate\Support\Facades\DB::table('funcionario')->truncate();
         \Illuminate\Support\Facades\DB::table('periodo')->truncate();
         \Illuminate\Support\Facades\DB::table('usuario')->where('id_usuario', '>', 1)->delete();
+        \Illuminate\Support\Facades\Schema::enableForeignKeyConstraints();
 
         // 2. Insert main Admin if not exists (handled by SQL dump, but ensure here)
         $adminEmail = 'wiliverbeltran.es@unitropico.edu.co';
