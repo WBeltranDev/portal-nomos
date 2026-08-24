@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
 
 class DashboardController extends Controller
@@ -39,6 +40,12 @@ class DashboardController extends Controller
         $vinculacionesReemplazo = collect();
         $evaluadoresDelegacion = collect();
         $delegadosDisponibles = collect();
+        $impedimentos = collect();
+        $cargosCatalogo = collect();
+        $dependenciasCatalogo = collect();
+        $funcionariosNoCalificados = collect();
+        $evaluacionesExtratiempo = collect();
+        $historialExtratiempo = collect();
 
         // 1. Data for Admin
         if ($rolActivo === 'admin') {
@@ -48,6 +55,8 @@ class DashboardController extends Controller
                     'u.id_usuario',
                     'u.username as correo_institucional',
                     'u.rol',
+                    'u.activo as usuario_activo',
+                    'f.id_funcionario',
                     'f.nombres',
                     'f.apellidos',
                     'f.tipo_documento',
@@ -71,13 +80,37 @@ class DashboardController extends Controller
                     'v.area as nombre_area',
                     'v.activa as activo',
                     'v.id_vinculacion',
-                    'v.es_evaluador'
+                    'v.es_evaluador',
+                    DB::raw('IFNULL(v.es_vacante, 0) as es_vacante')
                 )
                 ->orderBy('f.apellidos')
                 ->get();
 
-            // Todas las vinculaciones (activas e inactivas) para seleccionar a
-            // quién reemplaza el trasladado: el titular suele estar retirado.
+            // Catálogo de Cargos
+            if (Schema::hasTable('cargo')) {
+                $cargosCatalogo = DB::table('cargo')->orderBy('nombre')->get();
+            } else {
+                $cargosCatalogo = DB::table('vinculacion')
+                    ->whereNotNull('cargo')
+                    ->where('cargo', '!=', '')
+                    ->select('cargo as nombre', 'codigo_cargo', 'grado_cargo', 'nivel_jerarquico', DB::raw('1 as activo'))
+                    ->distinct()
+                    ->get();
+            }
+
+            // Catálogo de Dependencias / Áreas
+            if (Schema::hasTable('dependencia')) {
+                $dependenciasCatalogo = DB::table('dependencia')->orderBy('nombre')->get();
+            } else {
+                $dependenciasCatalogo = DB::table('vinculacion')
+                    ->whereNotNull('area')
+                    ->where('area', '!=', '')
+                    ->select('area as nombre', DB::raw('1 as activa'))
+                    ->distinct()
+                    ->get();
+            }
+
+            // Vinculaciones para selección de traslados
             $vinculacionesReemplazo = DB::table('vinculacion as v')
                 ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
                 ->select(
@@ -101,6 +134,8 @@ class DashboardController extends Controller
                 ->select(
                     'ev.id_evaluacion',
                     'ev.estado',
+                    'ev.fase_actual',
+                    'ev.concertacion_firmada',
                     'p.anio',
                     'p.semestre',
                     'p.fecha_inicio',
@@ -117,6 +152,59 @@ class DashboardController extends Controller
                 ->get();
 
             $periodos = DB::table('periodo')->orderByDesc('id_periodo')->get();
+
+            // Lista de Funcionarios No Calificados / Sin Concertación
+            $periodoAbiertoIds = DB::table('periodo')->where('estado', 'ABIERTO')->pluck('id_periodo')->all();
+            $vincsConEvaluacion = DB::table('evaluacion')
+                ->whereIn('id_periodo', $periodoAbiertoIds)
+                ->pluck('id_vinc_evaluado')
+                ->all();
+
+            $funcionariosNoCalificados = DB::table('vinculacion as v')
+                ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
+                ->where('v.activa', 1)
+                ->whereNotIn('v.id_vinculacion', $vincsConEvaluacion)
+                ->select(
+                    'f.nombres',
+                    'f.apellidos',
+                    'f.numero_doc',
+                    'f.correo_cargo',
+                    'v.id_vinculacion',
+                    'v.cargo',
+                    'v.area',
+                    'v.sistema_evaluacion'
+                )
+                ->orderBy('f.apellidos')
+                ->get();
+
+            $evaluacionesExtratiempo = DB::table('evaluacion as e')
+                ->join('vinculacion as v', 'v.id_vinculacion', '=', 'e.id_vinc_evaluado')
+                ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
+                ->join('periodo as p', 'p.id_periodo', '=', 'e.id_periodo')
+                ->select(
+                    'e.id_evaluacion',
+                    'e.estado',
+                    'f.nombres',
+                    'f.apellidos',
+                    'v.cargo',
+                    'p.sistema',
+                    'p.anio',
+                    'p.semestre'
+                )
+                ->whereIn('p.estado', ['ABIERTO'])
+                ->orderByDesc('e.id_evaluacion')
+                ->get();
+
+            $historialExtratiempo = [];
+            if (Schema::hasTable('concertacion_extratiempo')) {
+                $historialExtratiempo = DB::table('concertacion_extratiempo as ce')
+                    ->join('evaluacion as e', 'e.id_evaluacion', '=', 'ce.id_evaluacion')
+                    ->join('vinculacion as v', 'v.id_vinculacion', '=', 'e.id_vinc_evaluado')
+                    ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
+                    ->select('ce.*', 'f.nombres', 'f.apellidos', 'v.cargo')
+                    ->orderByDesc('ce.id_extratiempo')
+                    ->get();
+            }
 
             $periodosParciales = DB::table('periodo_parcial as pp')
                 ->join('periodo as p', 'p.id_periodo', '=', 'pp.id_periodo')
@@ -144,8 +232,7 @@ class DashboardController extends Controller
                 ->orderBy('f.apellidos')
                 ->get();
 
-            // Evaluadores disponibles para delegación de funciones del cargo (S8).
-            // Delegante: evaluadores que actualmente tienen personas asignadas a cargo.
+            // Evaluadores disponibles para delegación (S8)
             $idsEvaluadoresDelegacion = DB::table('evaluador_asignacion')->distinct()->pluck('id_vinc_evaluador')->all();
             $evaluadoresDelegacion = DB::table('vinculacion as v')
                 ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
@@ -155,7 +242,7 @@ class DashboardController extends Controller
                 ->orderBy('f.apellidos')
                 ->get();
 
-            // Delegado: cualquier funcionario activo disponible para asumir la delegación (niveles directivo, asesor, profesional, etc., D-03).
+            // Delegado: cualquier funcionario activo disponible
             $delegadosDisponibles = DB::table('vinculacion as v')
                 ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
                 ->where('v.activa', 1)
@@ -169,6 +256,22 @@ class DashboardController extends Controller
                 $ponderacionesList[] = (object) array_merge(['sistema' => $sistema], $vals);
             }
             $ponderaciones = collect($ponderacionesList);
+
+            if (Schema::hasTable('impedimento_recusacion')) {
+                $impedimentos = DB::table('impedimento_recusacion as ir')
+                    ->join('evaluacion as ev', 'ev.id_evaluacion', '=', 'ir.id_evaluacion')
+                    ->join('vinculacion as vs', 'vs.id_vinculacion', '=', 'ir.id_vinc_solicitante')
+                    ->join('funcionario as fs', 'fs.id_funcionario', '=', 'vs.id_funcionario')
+                    ->select(
+                        'ir.*',
+                        'fs.nombres as solicitante_nombres',
+                        'fs.apellidos as solicitante_apellidos',
+                        'vs.cargo as solicitante_cargo',
+                        'ev.estado as estado_evaluacion'
+                    )
+                    ->orderByDesc('ir.id_impedimento')
+                    ->get();
+            }
         }
 
         // 2. Data for Evaluador or Instancia Externa
@@ -193,6 +296,10 @@ class DashboardController extends Controller
                 ->leftJoin('firma as f_er', function ($join) {
                     $join->on('f_er.id_evaluacion', '=', 'ev.id_evaluacion')
                         ->where('f_er.tipo_firma', '=', 'CONCERTACION_EVALUADOR');
+                })
+                ->leftJoin('firma as f_no', function ($join) {
+                    $join->on('f_no.id_evaluacion', '=', 'ev.id_evaluacion')
+                        ->where('f_no.tipo_firma', '=', 'NOTIFICACION_EVALUADO');
                 })
                 ->leftJoin('vinculacion as vs', 'vs.id_vinculacion', '=', 'ev.id_vinc_suplente')
                 ->leftJoin('funcionario as fs', 'fs.id_funcionario', '=', 'vs.id_funcionario')
@@ -220,8 +327,12 @@ class DashboardController extends Controller
                     'ev.fase_actual',
                     've.aplica_eje_misional',
                     'ev.concertacion_firmada',
+                    'ev.desacuerdo_evaluado',
                     DB::raw('IF(f_ev.id_firma IS NOT NULL, 1, 0) as evaluado_firmado'),
-                    DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado')
+                    DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado'),
+                    DB::raw('IF(f_no.id_firma IS NOT NULL, 1, 0) as notificacion_firmada'),
+                    DB::raw('IF(f_no.renuencia = 1, 1, 0) as notificacion_renuencia'),
+                    DB::raw('(SELECT COUNT(*) FROM concertacion_extratiempo ce WHERE ce.id_evaluacion = ev.id_evaluacion AND ce.activo = 1) as tiene_extratiempo')
                 )
                 ->orderByDesc('ev.id_evaluacion')
                 ->get();
@@ -232,8 +343,16 @@ class DashboardController extends Controller
                 ->join('vinculacion as ve', 've.id_vinculacion', '=', 'ev.id_vinc_evaluado')
                 ->join('funcionario as fe', 'fe.id_funcionario', '=', 've.id_funcionario')
                 ->leftJoin('plan_mejoramiento as pm', 'pm.id_evaluacion', '=', 'ev.id_evaluacion')
+                ->leftJoin('firma as f_no', function ($join) {
+                    $join->on('f_no.id_evaluacion', '=', 'ev.id_evaluacion')
+                        ->where('f_no.tipo_firma', '=', 'NOTIFICACION_EVALUADO');
+                })
                 ->where('va.id_funcionario', $usuario['id_funcionario'])
                 ->where('ev.estado', 'CALIFICADA')
+                // Plan solo se habilita si no hubo renuencia y fue notificada/firmada
+                ->where(function ($q) {
+                    $q->whereNull('f_no.renuencia')->orWhere('f_no.renuencia', 0);
+                })
                 ->where(function ($q) {
                     $q->where('ev.categoria_final', 'NO_SATISFACTORIO')
                       ->orWhere(function ($q2) {
@@ -360,18 +479,22 @@ class DashboardController extends Controller
                     've.nivel_jerarquico as evaluado_nivel_jerarquico',
                     'ev.concertacion_firmada',
                     'ev.fase_actual',
+                    'ev.desacuerdo_evaluado',
                     've.aplica_eje_misional',
                     DB::raw('IF(f_ev.id_firma IS NOT NULL, 1, 0) as evaluado_firmado'),
                     DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado'),
                     DB::raw('IF(f_no.id_firma IS NOT NULL, 1, 0) as notificacion_firmada'),
-                    DB::raw('IF(f_no.renuencia, 1, 0) as notificacion_renuencia'),
-                    'f_no.fecha_firma as notificacion_fecha'
+                    DB::raw('IF(f_no.renuencia = 1, 1, 0) as notificacion_renuencia'),
+                    DB::raw('(SELECT COUNT(*) FROM concertacion_extratiempo ce WHERE ce.id_evaluacion = ev.id_evaluacion AND ce.activo = 1) as tiene_extratiempo'),
+                    'f_no.fecha_firma as notificacion_fecha',
+                    'f_no.testigo_nombre',
+                    'f_no.testigo_documento',
+                    'f_no.observacion_renuencia'
                 )
                 ->orderByDesc('ev.id_evaluacion')
                 ->get();
 
-            // Marcar en qué evaluaciones el informe anual está disponible
-            // (ambos semestres del mismo año/sistema calificados).
+            // Marcar disponibilidad de informe anual
             $clavesConInformeAnual = [];
             if ($evaluacionesEvaluado->isNotEmpty()) {
                 $gruposSemestres = DB::table('evaluacion as ev')
@@ -385,7 +508,7 @@ class DashboardController extends Controller
 
                 foreach ($gruposSemestres as $clave => $filas) {
                     $tipos = $filas->pluck('tipo_evaluacion');
-                    if ($tipos->contains('SEMESTRE_1') && $tipos->contains('SEMESTRE_2')) {
+                    if (($tipos->contains('SEMESTRE_1') && $tipos->contains('SEMESTRE_2')) || $tipos->contains('SEMESTRE_2')) {
                         $clavesConInformeAnual[] = $clave;
                     }
                 }
@@ -426,7 +549,8 @@ class DashboardController extends Controller
             'evaluadosDisponibles', 'miVinculacionEvaluador', 'acuerdosRL', 'acuerdosAG',
             'ponderacionesConfig', 'evaluacionesInstanciaExterna', 'planesPendientesEvaluador',
             'periodosParciales', 'funcionariosParaPeriodoParcial', 'vinculacionesReemplazo',
-            'evaluadoresDelegacion', 'delegadosDisponibles'
+            'evaluadoresDelegacion', 'delegadosDisponibles', 'impedimentos',
+            'cargosCatalogo', 'dependenciasCatalogo', 'funcionariosNoCalificados', 'evaluacionesExtratiempo', 'historialExtratiempo'
         );
 
         return match ($rolActivo) {
