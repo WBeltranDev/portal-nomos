@@ -70,7 +70,7 @@ export function actualizarPeriodoSeleccionado(persona) {
 
     if (periodo) {
         if (aperturaIdPeriodo) aperturaIdPeriodo.value = periodo.id_periodo;
-        if (aperturaPeriodo) aperturaPeriodo.innerText = `${periodo.sistema} (${periodo.anio}-${String(periodo.semestre).padStart(2, '0')})`;
+        if (aperturaPeriodo) aperturaPeriodo.innerText = `${periodo.sistema} (${periodo.anio}-${Number(periodo.semestre) === 1 ? 'A' : 'B'})`;
         if (aperturaVigencia) aperturaVigencia.innerText = `${periodo.fecha_inicio || '-'} a ${periodo.fecha_fin || '-'}`;
         if (aperturaCiclo && cicloSelect) aperturaCiclo.innerText = cicloSelect.options[cicloSelect.selectedIndex].text;
         if (aperturaAviso) aperturaAviso.innerText = 'El periodo se asigna automáticamente según el tipo de acuerdo y ciclo.';
@@ -118,32 +118,26 @@ export function seleccionarPersonaEvaluador(card, persona) {
 
     if (aperturaIdVinc) aperturaIdVinc.value = persona.id_vinculacion || '';
     if (cicloSelect) cicloSelect.value = 'SEMESTRE_1';
-    const aperturaRef = document.getElementById('apertura-referencia-input');
-    if (aperturaRef) aperturaRef.value = '';
-    const aperturaOpcionParcial = document.getElementById('apertura-opcion-parcial');
-    if (aperturaOpcionParcial) aperturaOpcionParcial.classList.toggle('hidden', !persona.tiene_periodo_parcial);
-
+    if (cicloSelect) {
+        const opcionParcial = cicloSelect.querySelector('option[value="PARCIAL"]');
+        if (persona.tiene_periodo_parcial && !opcionParcial) {
+            const nuevaOpcionParcial = document.createElement('option');
+            nuevaOpcionParcial.value = 'PARCIAL';
+            nuevaOpcionParcial.textContent = 'Parcial';
+            cicloSelect.appendChild(nuevaOpcionParcial);
+        } else if (!persona.tiene_periodo_parcial && opcionParcial) {
+            opcionParcial.remove();
+        }
+    }
     if (aperturaEjeInv) aperturaEjeInv.checked = false;
     if (aperturaEjeProy) aperturaEjeProy.checked = false;
     if (aperturaEjes) {
         aperturaEjes.classList.toggle('hidden', !(sistema === 'ACUERDO_GESTION' && !!persona.aplica_eje_misional));
     }
 
-    toggleAperturaDiasLaborados();
+    actualizarPeriodoSeleccionado(selectedEvaluacionData);
     document.querySelectorAll('.evaluado-card').forEach(el => el.classList.remove('ring-[#00594E]', 'ring-2'));
     if (card) card.classList.add('ring-2', 'ring-[#00594E]');
-}
-
-export function toggleAperturaDiasLaborados() {
-    const select = document.getElementById('apertura-ciclo-select');
-    const wrap = document.getElementById('apertura-dias-laborados-wrap');
-    const refWrap = document.getElementById('apertura-referencia-wrap');
-    if (select && wrap) wrap.classList.toggle('hidden', select.value !== 'PARCIAL');
-    if (select && refWrap) refWrap.classList.toggle('hidden', select.value !== 'PARCIAL');
-
-    if (selectedEvaluacionData) {
-        actualizarPeriodoSeleccionado(selectedEvaluacionData);
-    }
 }
 
 export function cambiarTabEvaluador(tab) {
@@ -184,6 +178,17 @@ export function abrirConcertacionEvaluador(card, ev) {
     const formFirmar = document.getElementById('form-firmar-evaluacion');
     if (formFirmar) formFirmar.action = `/evaluaciones/${ev.id_evaluacion}/firmar`;
 
+    // El impedimento solo procede antes de cerrar la concertación. Nunca debe
+    // estar disponible durante seguimiento, evidencias o calificación.
+    const btnImpedimento = document.getElementById('btn-impedimento-evaluador');
+    const modalImpedimento = document.getElementById('modal-impedimento');
+    const puedeDeclararImpedimento = ev.estado === 'EN_PROCESO'
+        && !ev.concertacion_firmada
+        && Number(ev.fase_actual || 1) <= 2
+        && !ev.es_traslado;
+    if (btnImpedimento) btnImpedimento.classList.toggle('hidden', !puedeDeclararImpedimento);
+    if (!puedeDeclararImpedimento && modalImpedimento) modalImpedimento.classList.add('hidden');
+
     const avisoTraslado = document.getElementById('aviso-traslado-evaluador');
     if (avisoTraslado) avisoTraslado.classList.toggle('hidden', !ev.es_traslado);
 
@@ -193,6 +198,22 @@ export function abrirConcertacionEvaluador(card, ev) {
         const label = document.getElementById('delegacion-titular-nombre');
         if (label) label.textContent = titular;
         avisoDelegacion.classList.toggle('hidden', !ev.id_vinc_suplente);
+    }
+    
+    // Remueve mensaje de desacuerdo anterior si existe
+    const oldDesacuerdo = document.getElementById('aviso-desacuerdo-evaluador');
+    if (oldDesacuerdo) oldDesacuerdo.remove();
+    
+    if (ev.desacuerdo_evaluado && avisoTraslado) {
+        avisoTraslado.insertAdjacentHTML('beforebegin', `
+            <div id="aviso-desacuerdo-evaluador" class="mt-4 flex items-start gap-2 rounded-2xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">
+                <span class="material-symbols-outlined text-base shrink-0">gavel</span>
+                <div>
+                    <p class="font-bold uppercase tracking-wider text-[10px] text-red-500 mb-0.5">El evaluado reportó un desacuerdo</p>
+                    <p class="whitespace-pre-wrap">${escapeHtml(ev.desacuerdo_evaluado)}</p>
+                </div>
+            </div>
+        `);
     }
 
     const formNuevoComp = document.getElementById('compromiso-formulario-evaluador-contenedor');
@@ -424,13 +445,16 @@ export function cargarCompromisosEvaluador(ev, ejes = {}) {
                         </div>`)
                     : '';
                 return `
-                <div class="rounded-2xl border border-slate-100 bg-slate-50/50 p-4 space-y-3">
-                    <div class="flex items-center justify-between gap-3">
-                        <div class="min-w-0">
-                            <span class="text-[10px] font-black uppercase text-[#00594E] tracking-wide">Compromiso #${idx + 1}</span>
-                            <p class="text-xs font-semibold text-slate-800 mt-0.5">${escapeHtml(c.descripcion)}</p>
+                <div class="rounded-2xl border border-slate-200 bg-white p-4 space-y-3 shadow-sm transition hover:border-[#00594E]/40">
+                    <div class="flex items-center justify-between gap-3 cursor-pointer select-none" onclick="document.getElementById('detalle-comp-evaluador-${c.id_compromiso}')?.classList.toggle('hidden'); document.getElementById('icon-chevron-evaluador-${c.id_compromiso}')?.classList.toggle('rotate-180');">
+                        <div class="min-w-0 flex items-center gap-2">
+                            <span id="icon-chevron-evaluador-${c.id_compromiso}" class="material-symbols-outlined text-[#00594E] text-base transition-transform duration-200">expand_more</span>
+                            <div>
+                                <span class="text-[10px] font-black uppercase text-[#00594E] tracking-wide">Compromiso #${idx + 1}</span>
+                                <p class="text-xs font-semibold text-slate-800 mt-0.5">${escapeHtml(c.descripcion)}</p>
+                            </div>
                         </div>
-                        <div class="flex items-center gap-2 shrink-0">
+                        <div class="flex items-center gap-2 shrink-0" onclick="event.stopPropagation()">
                             ${calificacionControl}
                             <span class="text-xs font-black rounded-xl px-2.5 py-1 bg-[#EAF2EF] text-[#00594E]">${c.porcentaje_peso}%</span>
                             ${!ev.concertacion_firmada && !ev.es_traslado ? `
@@ -442,13 +466,15 @@ export function cargarCompromisosEvaluador(ev, ejes = {}) {
                             </button>` : ''}
                         </div>
                     </div>
-                    <p class="text-[11px] text-slate-500"><span class="font-bold">Metas:</span> ${(c.metas || []).join(', ') || '-'}</p>
-                    <div id="editar-compromiso-contenedor-${c.id_compromiso}" class="hidden"></div>
-                    <div class="pt-2 border-t border-slate-100">
-                        <p class="text-[10px] font-bold uppercase text-slate-400 mb-1">Evidencias</p>
-                        ${renderEvidenciasEvaluadorAccion(gruposEvidencias[String(c.id_compromiso)] || [], !ev.concertacion_firmada || ev.estado === 'CALIFICADA' || !!ev.es_traslado)}
+                    <div id="detalle-comp-evaluador-${c.id_compromiso}" class="space-y-3 pt-2 border-t border-slate-100">
+                        <p class="text-[11px] text-slate-500"><span class="font-bold">Metas:</span> ${(c.metas || []).join(', ') || '-'}</p>
+                        <div id="editar-compromiso-contenedor-${c.id_compromiso}" class="hidden"></div>
+                        <div class="pt-2 border-t border-slate-100">
+                            <p class="text-[10px] font-bold uppercase text-slate-400 mb-1">Evidencias Registradas</p>
+                            ${renderEvidenciasEvaluadorAccion(gruposEvidencias[String(c.id_compromiso)] || [], !ev.concertacion_firmada || ev.estado === 'CALIFICADA' || !!ev.es_traslado)}
+                        </div>
+                        ${renderObservacionEvaluador(c, gruposObservaciones[String(c.id_compromiso)], !ev.concertacion_firmada)}
                     </div>
-                    ${renderObservacionEvaluador(c, gruposObservaciones[String(c.id_compromiso)], !ev.concertacion_firmada)}
                 </div>
             `;
             }).join('');
@@ -688,21 +714,32 @@ export function cargarPlanMejoramientoEvaluador(ev) {
     return fetchJson(`/evaluaciones/${ev.id_evaluacion}/plan-mejoramiento`)
         .then(res => res.json())
         .then(payload => {
-            const requiere = !!payload.requiere_plan;
-            bloque.classList.toggle('hidden', !requiere);
-            if (!requiere) return payload;
+            const habilitado = !!payload.habilitado;
+            bloque.classList.toggle('hidden', !habilitado);
+            if (!habilitado) return payload;
             const plan = payload.plan;
             selectedPlanData = plan;
+            const congelado = !!(plan && plan.estado === 'CONCERTADO');
             const estado = document.getElementById('plan-estado-evaluador');
             if (estado) {
                 estado.classList.remove('hidden');
                 estado.innerText = plan && plan.firmado_evaluador && plan.firmado_evaluado ? 'CONCERTADO' : (plan ? (plan.estado || 'PENDIENTE') : 'PENDIENTE');
             }
             const textarea = document.getElementById('plan-temas-evaluador');
-            if (textarea) textarea.value = plan ? (plan.descripcion_temas || '') : '';
+            if (textarea) {
+                textarea.value = plan ? (plan.descripcion_temas || '') : '';
+                textarea.readOnly = congelado;
+                textarea.classList.toggle('bg-slate-100', congelado);
+                textarea.classList.toggle('cursor-not-allowed', congelado);
+            }
+            const btnGuardar = document.getElementById('btn-guardar-plan-evaluador');
+            if (btnGuardar) {
+                btnGuardar.disabled = congelado;
+                btnGuardar.classList.toggle('hidden', congelado);
+            }
             const btnFirmar = document.getElementById('btn-firmar-plan-evaluador');
             if (btnFirmar) {
-                btnFirmar.classList.toggle('hidden', !(plan && !plan.firmado_evaluador));
+                btnFirmar.classList.toggle('hidden', congelado || !(plan && !plan.firmado_evaluador));
             }
             const firmas = document.getElementById('plan-firmas-evaluador');
             if (firmas) firmas.innerHTML = renderFirmasPlan(plan);
@@ -992,20 +1029,36 @@ export function calcularNotaFinal() {
         .then(async res => {
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo calcular la nota final.'));
-            showInlineMessage('compromisos-calificacion-mensaje-evaluador', data.message || 'Nota final calculada.');
+            showInlineMessage('compromisos-calificacion-mensaje-evaluador', `${data.message || 'Nota final calculada.'} El evaluado ya puede firmar la notificación de la calificación o registrar renuencia.`);
+            if (selectedEvaluacionData) {
+                selectedEvaluacionData = { ...selectedEvaluacionData, estado: 'CALIFICADA' };
+            }
             const resultado = document.getElementById('resultado-calculo-evaluador');
             if (resultado && data.calculo) {
                 resultado.classList.remove('hidden');
                 renderResultado(data.calculo, 'resultado-calculo-evaluador', 'evaluador');
             }
-            if (selectedEvaluacionData) {
-                const ev = { ...selectedEvaluacionData, estado: 'CALIFICADA' };
-                abrirConcertacionEvaluador(null, ev);
-            }
         })
         .catch(error => showInlineMessage('compromisos-calificacion-mensaje-evaluador', error.message, true));
 }
 
+export function mostrarModalRenuencia() {
+    const modal = document.getElementById('modal-renuencia');
+    const form = document.getElementById('form-renuencia-accion');
+    if (modal && form) {
+        modal.classList.toggle('hidden');
+        form.action = `/evaluaciones/${selectedEvaluacionId}/renuencia`;
+    }
+}
+
+export function mostrarModalImpedimento() {
+    const modal = document.getElementById('modal-impedimento');
+    const form = document.getElementById('form-impedimento-accion');
+    if (modal && form) {
+        modal.classList.toggle('hidden');
+        form.action = `/evaluacion/${selectedEvaluacionId}/impedimento`;
+    }
+}
 // --- Instancia Externa Functions ---
 export function cargarListaInstanciaExterna() {
     const contenedor = document.getElementById('instancia-externa-lista');
@@ -1188,7 +1241,6 @@ export function seleccionarEvaluacionPorId(idEvaluacion, targetTab = 'recursos')
 // Global window exposure
 window.seleccionarEvaluacionPorId = seleccionarEvaluacionPorId;
 window.seleccionarPersonaEvaluador = seleccionarPersonaEvaluador;
-window.toggleAperturaDiasLaborados = toggleAperturaDiasLaborados;
 window.abrirConcertacionEvaluador = abrirConcertacionEvaluador;
 window.cambiarTabEvaluador = cambiarTabEvaluador;
 window.agregarCompromisoEvaluador = agregarCompromisoEvaluador;
@@ -1211,7 +1263,8 @@ window.previsualizarCalculoEvaluador = previsualizarCalculoEvaluador;
 window.cargarListaInstanciaExterna = cargarListaInstanciaExterna;
 window.abrirInstanciaExterna = abrirInstanciaExterna;
 window.guardarNotasInstanciaExterna = guardarNotasInstanciaExterna;
-
+window.mostrarModalRenuencia = mostrarModalRenuencia;
+window.mostrarModalImpedimento = mostrarModalImpedimento;
 window.addEventListener('DOMContentLoaded', () => {
     const activeRole = window.APP_CONFIG?.activeRole || 'evaluador';
     if (activeRole === 'instancia_externa') {

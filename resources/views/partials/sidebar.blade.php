@@ -12,6 +12,14 @@
             <span class="material-symbols-outlined">badge</span>
             Empleados
         </button>
+        <button type="button" class="sidebar-link w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-slate-700 transition" onclick="navegarMenu(this, 'cargos-dependencias')">
+            <span class="material-symbols-outlined">work</span>
+            Cargos y Dependencias
+        </button>
+        <button type="button" class="sidebar-link w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-slate-700 transition" onclick="navegarMenu(this, 'no-calificados')">
+            <span class="material-symbols-outlined">summarize</span>
+            Parciales y No Calificados
+        </button>
         <button type="button" class="sidebar-link w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-slate-700 transition" onclick="navegarMenu(this, 'periodos')">
             <span class="material-symbols-outlined">calendar_today</span>
             Periodos
@@ -24,9 +32,17 @@
             <span class="material-symbols-outlined">gavel</span>
             Recursos y planes
         </button>
+        <button type="button" class="sidebar-link w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-slate-700 transition" onclick="navegarMenu(this, 'impedimentos-admin')">
+            <span class="material-symbols-outlined">shield_person</span>
+            Impedimentos y Recusaciones
+        </button>
         <button type="button" class="sidebar-link w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-slate-700 transition" onclick="navegarMenu(this, 'traslados')">
             <span class="material-symbols-outlined">swap_horiz</span>
             Traslados
+        </button>
+        <button type="button" class="sidebar-link w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-slate-700 transition" onclick="navegarMenu(this, 'extratiempo')">
+            <span class="material-symbols-outlined">history_toggle_off</span>
+            Extratiempo
         </button>
         <button type="button" class="sidebar-link w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-slate-700 transition" onclick="navegarMenu(this, 'delegaciones')">
             <span class="material-symbols-outlined">supervisor_account</span>

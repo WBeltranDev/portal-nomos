@@ -49,6 +49,11 @@
         border-left: 4px solid #B5A160;
     }
 
+    .sidebar-link {
+        justify-content: flex-start;
+        text-align: left;
+    }
+
     .evaluado-tab-btn,
     .evaluador-tab-btn {
         display: inline-flex;

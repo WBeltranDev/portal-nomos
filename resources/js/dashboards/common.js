@@ -196,9 +196,13 @@ export function navegarMenu(button, seccion) {
     if (activeRole !== 'admin' && (seccion === 'usuarios' || seccion === 'empleados' || seccion === 'periodos' || seccion === 'ponderaciones')) {
         targetSeccion = (activeRole === 'evaluador' && seccion === 'usuarios') ? 'usuarios-evaluador' : 'evaluaciones';
     }
-    document.querySelectorAll('.section-content').forEach(el => el.classList.add('hidden'));
     const target = document.getElementById(`section-${targetSeccion}`);
-    if (target) target.classList.remove('hidden');
+    // No ocultar el contenido actual si un enlace apunta a una sección que no
+    // existe en el tablero cargado.
+    if (!target) return;
+
+    document.querySelectorAll('.section-content').forEach(el => el.classList.add('hidden'));
+    target.classList.remove('hidden');
     document.querySelectorAll('.sidebar-link').forEach(btn => btn.classList.remove('active'));
     if (button) button.classList.add('active');
     if (targetSeccion === 'delegaciones' && typeof window.cargarDelegacionesAdmin === 'function') {

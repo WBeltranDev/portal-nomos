@@ -89,20 +89,10 @@
                                 <input type="hidden" name="id_periodo" id="apertura-id-periodo" />
                                 <div>
                                     <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Tipo de ciclo</label>
-                                    <select name="tipo_evaluacion" id="apertura-ciclo-select" onchange="toggleAperturaDiasLaborados()" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
+                                    <select name="tipo_evaluacion" id="apertura-ciclo-select" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
                                         <option value="SEMESTRE_1">Primer Semestre</option>
                                         <option value="SEMESTRE_2">Segundo Semestre</option>
-                                        <option value="PARCIAL" id="apertura-opcion-parcial">Parcial</option>
                                     </select>
-                                </div>
-                                <div id="apertura-dias-laborados-wrap" class="hidden">
-                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Días laborados (Mínimo 30 días)</label>
-                                    <input type="number" name="dias_laborados" min="30" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" placeholder="Mínimo 30 días (opcional si ya está definido en el período parcial)" />
-                                    <p class="text-[9px] text-slate-400 mt-1">Normativa: El período evaluable debe ser de al menos 30 días.</p>
-                                </div>
-                                <div id="apertura-referencia-wrap" class="hidden">
-                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Nombre o referencia</label>
-                                    <input type="text" name="referencia" id="apertura-referencia-input" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" placeholder="Identifica el funcionario asociado al periodo parcial" />
                                 </div>
                                 <div id="apertura-ejes-misionales" class="hidden rounded-2xl border border-slate-100 bg-slate-50/50 p-4">
                                     <h4 class="text-xs font-bold text-slate-800 uppercase tracking-wide mb-2">Ejes misionales adicionales</h4>
@@ -185,18 +175,42 @@
                                             <div class="flex items-center gap-2">
                                                 <h4 class="font-bold text-slate-900 text-sm leading-snug">{{ $ev->evaluado_nombres }} {{ $ev->evaluado_apellidos }}</h4>
                                                 @if($ev->es_traslado)
-                                                    <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-200 text-slate-600">Traslado</span>
+                                                    <span class="inline-flex items-center gap-1 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-200 text-slate-600" title="Evaluación bloqueada por traslado">
+                                                        <span class="material-symbols-outlined text-[13px]">swap_horiz</span>
+                                                        Traslado
+                                                    </span>
+                                                @endif
+                                                @if($ev->tipo_nombre === 'PARCIAL')
+                                                    <span class="inline-flex items-center gap-1 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-sky-100 text-sky-700" title="Evaluación correspondiente a un tramo parcial">
+                                                        <span class="material-symbols-outlined text-[13px]">timelapse</span>
+                                                        Parcial
+                                                    </span>
                                                 @endif
                                                 @if($ev->id_vinc_suplente)
-                                                    <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-[#B5A160]/20 text-[#8a7b3c]">Delegación</span>
+                                                    <span class="inline-flex items-center gap-1 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-[#B5A160]/20 text-[#8a7b3c]" title="Evaluación asignada temporalmente por delegación">
+                                                        <span class="material-symbols-outlined text-[13px]">assignment_ind</span>
+                                                        Delegación
+                                                    </span>
+                                                @endif
+                                                @if(isset($ev->tiene_extratiempo) && $ev->tiene_extratiempo)
+                                                    <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200">Extratiempo</span>
                                                 @endif
                                             </div>
                                             <p class="text-xs text-slate-500 mt-0.5">{{ $ev->evaluado_cargo }} - {{ $ev->evaluado_area }}</p>
+                                            @if($ev->es_traslado)
+                                                <p class="mt-1 text-[10px] font-semibold text-slate-600">Traslado registrado: esta evaluación es solo de consulta.</p>
+                                            @endif
+                                            @if($ev->tipo_nombre === 'PARCIAL')
+                                                <p class="mt-1 text-[10px] font-semibold text-sky-700">Evaluación parcial por tramo de servicio{{ $ev->referencia ? ': ' . $ev->referencia : '.' }}</p>
+                                            @endif
+                                            @if($ev->id_vinc_suplente)
+                                                <p class="mt-1 text-[10px] font-semibold text-[#8a7b3c]">Delegación activa de {{ $ev->suplente_nombres }} {{ $ev->suplente_apellidos }}.</p>
+                                            @endif
                                             @if($ev->tipo_nombre === 'PARCIAL' && $ev->referencia)
                                                 <p class="text-[10px] font-semibold text-[#00594E] mt-1">{{ $ev->referencia }}</p>
                                             @endif
                                             <div class="mt-2 space-y-0.5 text-[10px] text-slate-500">
-                                                <p><span class="font-semibold text-slate-600">Período de evaluación:</span> {{ $ev->anio }} · Semestre {{ $ev->semestre }}</p>
+                                                <p><span class="font-semibold text-slate-600">Período de evaluación:</span> {{ $ev->anio }}-{{ (int) $ev->semestre === 1 ? 'A' : 'B' }}</p>
                                                 <p><span class="font-semibold text-slate-600">Fechas de calificación:</span> {{ \Carbon\Carbon::parse($ev->fecha_inicio)->format('d/m/Y') }} al {{ \Carbon\Carbon::parse($ev->fecha_fin)->format('d/m/Y') }}</p>
                                             </div>
                                         </div>
@@ -296,7 +310,7 @@
                                                 <span id="compromisos-calificacion-mensaje-evaluador" class="hidden text-xs font-semibold"></span>
                                                 <button type="button" onclick="guardarCalificacionesCompromisos()" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Guardar compromisos</button>
                                                 <button type="button" onclick="previsualizarCalculoEvaluador()" class="bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs font-bold hover:border-[#00594E] transition">Ver cálculo</button>
-                                                <button type="button" onclick="calcularNotaFinal()" class="bg-[#B5A160] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Calcular nota final</button>
+                                                <button type="button" onclick="calcularNotaFinal()" class="bg-[#B5A160] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Confirmar nota final del funcionario</button>
                                             </div>
                                         </div>
                                     </div>
@@ -310,8 +324,38 @@
                                     <form id="form-firmar-evaluacion" method="POST" action="" onsubmit="firmarConcertacion(event, 'evaluador')" class="shrink-0">
                                         @csrf
                                         <button type="submit" id="btn-firmar-evaluador" class="bg-[#00594E] text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:brightness-110 transition disabled:opacity-50" disabled>Firmar concertación</button>
+                                        
+                                        <!-- Botón de Renuencia -->
+                                        <button type="button" id="btn-renuencia-evaluador" onclick="mostrarModalRenuencia()" class="bg-amber-600 text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-amber-700 transition hidden ml-2">Registrar Renuencia</button>
+                                        
+                                        <!-- Botón de Impedimento/Recusación -->
+                                        <button type="button" id="btn-impedimento-evaluador" onclick="mostrarModalImpedimento()" class="bg-red-600 text-white px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-red-700 transition ml-2 hidden">Declarar Impedimento</button>
                                     </form>
                                 </div>
+                            </div>
+
+                            <!-- Formularios modales dinámicos (ocultos inicialmente) -->
+                            <div id="modal-renuencia" class="hidden mt-4 bg-amber-50 p-4 border border-amber-200 rounded-xl">
+                                <h4 class="font-bold text-amber-800 text-sm mb-2">Registrar Renuencia a Firmar</h4>
+                                <form method="POST" action="" id="form-renuencia-accion" class="space-y-3">
+                                    @csrf
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <div><label class="text-[10px] font-bold text-amber-700 uppercase">Nombre Testigo</label><input type="text" name="testigo_nombre" class="w-full text-xs p-2 rounded border" required></div>
+                                        <div><label class="text-[10px] font-bold text-amber-700 uppercase">Documento Testigo</label><input type="text" name="testigo_documento" class="w-full text-xs p-2 rounded border" required></div>
+                                    </div>
+                                    <div><label class="text-[10px] font-bold text-amber-700 uppercase">Observación</label><textarea name="observacion_renuencia" class="w-full text-xs p-2 rounded border" required></textarea></div>
+                                    <button type="submit" class="bg-amber-700 text-white px-4 py-2 rounded-xl text-xs font-bold w-full">Guardar Renuencia y Notificar</button>
+                                </form>
+                            </div>
+
+                            <div id="modal-impedimento" class="hidden mt-4 bg-red-50 p-4 border border-red-200 rounded-xl">
+                                <h4 class="font-bold text-red-800 text-sm mb-2">Declarar Impedimento / Recusación</h4>
+                                <form method="POST" action="" id="form-impedimento-accion" class="space-y-3">
+                                    @csrf
+                                    <input type="hidden" name="tipo" value="IMPEDIMENTO">
+                                    <div><label class="text-[10px] font-bold text-red-700 uppercase">Motivo y Evidencia (Justificación)</label><textarea name="motivo" class="w-full text-xs p-2 rounded border" required></textarea></div>
+                                    <button type="submit" class="bg-red-700 text-white px-4 py-2 rounded-xl text-xs font-bold w-full">Enviar a Talento Humano</button>
+                                </form>
                             </div>
 
                             <div id="tab-evaluador-competencias" class="evaluador-tab-panel hidden">

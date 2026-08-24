@@ -22,18 +22,39 @@
                                     <div class="flex items-center gap-2">
                                         <h4 class="font-bold text-slate-900 text-sm leading-snug">{{ $ev->tipo_nombre }}</h4>
                                         @if($ev->es_traslado)
-                                            <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-200 text-slate-600">Traslado</span>
+                                            <span class="inline-flex items-center gap-1 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-200 text-slate-600" title="Evaluación bloqueada por traslado">
+                                                <span class="material-symbols-outlined text-[13px]">swap_horiz</span>
+                                                Traslado
+                                            </span>
+                                        @endif
+                                        @if($ev->tipo_nombre === 'PARCIAL')
+                                            <span class="inline-flex items-center gap-1 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-sky-100 text-sky-700" title="Evaluación correspondiente a un tramo parcial">
+                                                <span class="material-symbols-outlined text-[13px]">timelapse</span>
+                                                Parcial
+                                            </span>
                                         @endif
                                         @if($ev->id_vinc_suplente)
-                                            <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-[#B5A160]/20 text-[#8a7b3c]">Delegación</span>
+                                            <span class="inline-flex items-center gap-1 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-[#B5A160]/20 text-[#8a7b3c]" title="Evaluación atendida temporalmente por delegación">
+                                                <span class="material-symbols-outlined text-[13px]">assignment_ind</span>
+                                                Delegación
+                                            </span>
+                                        @endif
+                                        @if(isset($ev->tiene_extratiempo) && $ev->tiene_extratiempo)
+                                            <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200">Extratiempo</span>
                                         @endif
                                     </div>
+                                    @if($ev->es_traslado)
+                                        <p class="mt-1 text-[10px] font-semibold text-slate-600">Traslado registrado: esta evaluación es solo de consulta.</p>
+                                    @endif
+                                    @if($ev->tipo_nombre === 'PARCIAL')
+                                        <p class="mt-1 text-[10px] font-semibold text-sky-700">Evaluación parcial por tramo de servicio{{ $ev->referencia ? ': ' . $ev->referencia : '.' }}</p>
+                                    @endif
                                     @if($ev->tipo_nombre === 'PARCIAL' && $ev->referencia)
                                         <p class="text-[10px] font-semibold text-[#00594E] mt-1">{{ $ev->referencia }}</p>
                                     @endif
                                     <p class="text-xs text-slate-500 mt-0.5">Quién lo evaluó: {{ $ev->evaluador_nombres ?? 'Mi Evaluador' }} {{ $ev->evaluador_apellidos ?? '' }}@if($ev->id_vinc_suplente) (en delegación de {{ $ev->suplente_nombres }} {{ $ev->suplente_apellidos }})@endif</p>
                                     <div class="mt-2 space-y-0.5 text-[10px] text-slate-500">
-                                        <p><span class="font-semibold text-slate-600">Período de evaluación:</span> {{ $ev->anio }} · Semestre {{ $ev->semestre }}</p>
+                                        <p><span class="font-semibold text-slate-600">Período de evaluación:</span> {{ $ev->anio }}-{{ (int) $ev->semestre === 1 ? 'A' : 'B' }}</p>
                                         <p><span class="font-semibold text-slate-600">Fechas de calificación:</span> {{ \Carbon\Carbon::parse($ev->fecha_inicio)->format('d/m/Y') }} al {{ \Carbon\Carbon::parse($ev->fecha_fin)->format('d/m/Y') }}</p>
                                     </div>
                                     <div class="flex justify-between items-center mt-3">
@@ -153,9 +174,32 @@
                                     <form id="form-firmar-evaluado" method="POST" action="" onsubmit="firmarConcertacion(event, 'evaluado')" class="shrink-0">
                                         @csrf
                                         <button type="submit" id="btn-firmar-evaluado" class="bg-[#00594E] text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:brightness-110 transition disabled:opacity-50" disabled>Firmar Concertación</button>
+                                        <button type="button" id="btn-recusacion-evaluado" onclick="mostrarModalRecusacion()" class="bg-red-600 text-white px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-red-700 transition ml-2 hidden">Declarar Recusación</button>
                                     </form>
                                 </div>
                                 <div id="firmas-concertacion-evaluado" class="mt-3 hidden"></div>
+                            </div>
+                            
+                            <!-- Bloque: Desacuerdo durante la concertación -->
+                            <div id="bloque-desacuerdo-evaluado" class="mt-6 pt-4 border-t border-slate-100 hidden">
+                                <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2 mb-2">Desacuerdo con la concertación</h4>
+                                <form id="form-desacuerdo-evaluacion" method="POST" action="" class="space-y-3">
+                                    @csrf
+                                    <p class="text-[11px] text-slate-500">Disponible mientras la concertación esté pendiente de firma. Una vez firmada o calificada, podrás usar el trámite de recursos cuando corresponda.</p>
+                                    <textarea name="desacuerdo" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" placeholder="Escribe los motivos de tu desacuerdo con los compromisos propuestos..." required></textarea>
+                                    <button type="submit" class="bg-amber-600 text-white px-4 py-2 rounded-xl text-xs font-bold w-full md:w-auto">Enviar desacuerdo al evaluador</button>
+                                </form>
+                            </div>
+                            
+                            <!-- Modal: Recusación -->
+                            <div id="modal-recusacion" class="hidden mt-4 bg-red-50 p-4 border border-red-200 rounded-xl">
+                                <h4 class="font-bold text-red-800 text-sm mb-2">Declarar Recusación contra el Evaluador</h4>
+                                <form method="POST" action="" id="form-recusacion-accion" class="space-y-3">
+                                    @csrf
+                                    <input type="hidden" name="tipo" value="RECUSACION">
+                                    <div><label class="text-[10px] font-bold text-red-700 uppercase">Motivo y Evidencia (Justificación)</label><textarea name="motivo" class="w-full text-xs p-2 rounded border" required></textarea></div>
+                                    <button type="submit" class="bg-red-700 text-white px-4 py-2 rounded-xl text-xs font-bold w-full">Radicar en Talento Humano</button>
+                                </form>
                             </div>
                         </div>
 

@@ -14,6 +14,17 @@ export function filtrarEmpleados() {
     });
 }
 
+export function filtrarUsuarios() {
+    const texto = (document.getElementById('buscador-usuarios')?.value || '').trim().toLowerCase();
+    document.querySelectorAll('.usuario-card').forEach(card => {
+        const nombre = card.dataset.nombre || '';
+        const cedula = card.dataset.cedula || '';
+        const correo = card.dataset.correo || '';
+        const match = !texto || nombre.includes(texto) || cedula.includes(texto) || correo.includes(texto);
+        card.style.display = match ? 'block' : 'none';
+    });
+}
+
 export function seleccionarEmpleado(card, empleado) {
     const setText = (id, value) => {
         const node = document.getElementById(id);
@@ -25,7 +36,30 @@ export function seleccionarEmpleado(card, empleado) {
     setText('empleado-correo', empleado.correo_institucional || 'Sin correo');
     setText('empleado-documento', `${empleado.tipo_documento || ''} ${empleado.documento_identidad || ''}`.trim());
     setText('empleado-area', empleado.nombre_area || 'Sin área');
-    setText('empleado-estado', empleado.activo ? 'Activo' : 'Inactivo');
+    setText('empleado-estado', empleado.es_vacante ? 'Vacante' : (empleado.activo ? 'Activo' : 'Inactivo'));
+    
+    const bloqueAcciones = document.getElementById('bloque-acciones-empleado');
+    if (bloqueAcciones) {
+        bloqueAcciones.classList.remove('hidden');
+        const formDisable = document.getElementById('form-inhabilitar-empleado');
+        if (formDisable && empleado.id_funcionario) {
+            formDisable.action = `/admin/funcionarios/${empleado.id_funcionario}/disable`;
+        }
+        const formVacancia = document.getElementById('form-vacancia-empleado');
+        const btnVacancia = document.getElementById('btn-toggle-vacancia');
+        const inputVacancia = document.getElementById('vacancia-valor');
+        if (formVacancia && empleado.id_vinculacion) {
+            formVacancia.action = `/admin/vinculaciones/${empleado.id_vinculacion}/vacancia`;
+            if (empleado.es_vacante) {
+                if (btnVacancia) btnVacancia.innerText = 'Cerrar / Desactivar Vacante';
+                if (inputVacancia) inputVacancia.value = '0';
+            } else {
+                if (btnVacancia) btnVacancia.innerText = 'Declarar Vacante en este Cargo';
+                if (inputVacancia) inputVacancia.value = '1';
+            }
+        }
+    }
+
     document.querySelectorAll('.empleado-card').forEach(el => el.classList.remove('ring-2', 'ring-[#00594E]'));
     if (card) card.classList.add('ring-2', 'ring-[#00594E]');
 }
@@ -114,11 +148,16 @@ export function renderFirmasPlan(plan) {
         + row('Evaluado', !!plan.firmado_evaluado, plan.fecha_firma_evaluado);
 }
 
-export function enviarDecisionRecurso(id, decision, motivacion) {
+export function enviarDecisionRecurso(id, decision, motivacion, id_vinc_nuevo_evaluador = null) {
+    const bodyParams = { decision, motivacion };
+    if (id_vinc_nuevo_evaluador) {
+        bodyParams.id_vinc_nuevo_evaluador = id_vinc_nuevo_evaluador;
+    }
+
     fetchJson(`/recursos/${id}/decision`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decision, motivacion }),
+        body: JSON.stringify(bodyParams),
     })
         .then(async res => {
             const payload = await res.json().catch(() => ({}));
@@ -129,18 +168,44 @@ export function enviarDecisionRecurso(id, decision, motivacion) {
         .catch(error => alert(error.message));
 }
 
-export function decidirRecursoAdmin(id) {
+export function decidirRecursoAdmin(id, esApelacion) {
     const decision = document.getElementById(`decision-admin-${id}`)?.value;
-    const motivacion = prompt('Escribe la motivación de la decisión (Talento Humano) sobre el recurso:');
+    const motivacion = prompt('Escribe la motivación de la decisión sobre el recurso:');
     if (motivacion === null) return;
     if (!motivacion.trim()) { alert('La motivación es obligatoria para decidir el recurso.'); return; }
-    enviarDecisionRecurso(id, decision, motivacion);
+
+    let id_vinc_nuevo_evaluador = null;
+    if (esApelacion && decision === 'APROBADO') {
+        id_vinc_nuevo_evaluador = document.getElementById(`nuevo-evaluador-apelacion-${id}`)?.value;
+        if (!id_vinc_nuevo_evaluador) {
+            alert('Para aprobar una apelación, debes asignar un evaluador de Talento Humano u otro designado que hará la recalificación.');
+            return;
+        }
+    }
+
+    enviarDecisionRecurso(id, decision, motivacion, id_vinc_nuevo_evaluador);
+}
+
+export function toggleNuevoEvaluador(id) {
+    const select = document.getElementById(`decision-admin-${id}`);
+    const box = document.getElementById(`box-nuevo-evaluador-${id}`);
+    if (box) {
+        if (select?.value === 'APROBADO') {
+            box.classList.remove('hidden');
+        } else {
+            box.classList.add('hidden');
+        }
+    }
 }
 
 export function cargarRecursosAdmin() {
     const lista = document.getElementById('recursos-admin-lista');
     const contador = document.getElementById('recursos-admin-contador');
     if (!lista) return;
+    
+    const evaluadores = window.APP_CONFIG?.evaluadores || [];
+    const options = evaluadores.map(e => `<option value="${e.id_vinculacion}">${escapeHtml(e.nombre_completo)} - ${escapeHtml(e.cargo)}</option>`).join('');
+
     fetchJson('/recursos')
         .then(res => res.json())
         .then(payload => {
@@ -173,12 +238,22 @@ export function cargarRecursosAdmin() {
                             </a>`).join('')}
                     </div>` : ''}
                     ${r.decision === 'PENDIENTE' ? `
-                    <div class="pt-2 border-t border-slate-100 grid sm:grid-cols-2 gap-2">
-                        <select id="decision-admin-${r.id_recurso}" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white outline-none focus:border-[#00594E]">
-                            <option value="APROBADO">Aprobado</option>
-                            <option value="NEGADO">Negado</option>
-                        </select>
-                        <button onclick="decidirRecursoAdmin(${r.id_recurso})" class="bg-[#00594E] text-white px-3 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition" type="button">Registrar decisión</button>
+                    <div class="pt-2 border-t border-slate-100 space-y-2">
+                        <div class="grid sm:grid-cols-2 gap-2">
+                            <select id="decision-admin-${r.id_recurso}" onchange="toggleNuevoEvaluador(${r.id_recurso})" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white outline-none focus:border-[#00594E]">
+                                <option value="APROBADO">Aprobado (Declarar fundado)</option>
+                                <option value="NEGADO" selected>Negado (Declarar infundado)</option>
+                            </select>
+                            <button onclick="decidirRecursoAdmin(${r.id_recurso}, ${r.tipo_recurso === 'APELACION'})" class="bg-[#00594E] text-white px-3 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition" type="button">Registrar decisión</button>
+                        </div>
+                        ${r.tipo_recurso === 'APELACION' ? `
+                        <div id="box-nuevo-evaluador-${r.id_recurso}" class="hidden mt-2 border-t border-slate-100 pt-2">
+                            <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Nuevo evaluador asignado (Talento Humano)</label>
+                            <select id="nuevo-evaluador-apelacion-${r.id_recurso}" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white outline-none focus:border-[#00594E]">
+                                <option value="">-- Seleccionar evaluador para recalificar --</option>
+                                ${options}
+                            </select>
+                        </div>` : ''}
                     </div>` : ''}
                 </div>`).join('');
         })
@@ -308,12 +383,14 @@ export function abrirEditarPeriodo(btn) {
     setVal('editar-periodo-id', id);
     setVal('editar-periodo-inicio', btn.dataset.inicio);
     setVal('editar-periodo-fin', btn.dataset.fin);
+    setVal('editar-periodo-inicio-concertacion', btn.dataset.inicio_concertacion);
+    setVal('editar-periodo-fin-concertacion', btn.dataset.fin_concertacion);
     setVal('editar-periodo-descripcion', btn.dataset.descripcion);
     const estadoSelect = document.getElementById('editar-periodo-estado');
     if (estadoSelect) estadoSelect.value = btn.dataset.estado;
 
     const titulo = document.getElementById('editar-periodo-titulo');
-    if (titulo) titulo.innerText = `${btn.dataset.sistema} · ${btn.dataset.anio} · Semestre ${btn.dataset.semestre}`;
+    if (titulo) titulo.innerText = `${btn.dataset.sistema} · ${btn.dataset.anio}-${Number(btn.dataset.semestre) === 1 ? 'A' : 'B'}`;
 
     const form = document.getElementById('form-editar-periodo');
     if (form) form.action = `/admin/periodos/${id}`;
@@ -325,6 +402,13 @@ export function abrirEditarPeriodo(btn) {
 }
 
 export function cerrarEditarPeriodo() {
+    const modal = document.getElementById('modal-editar-periodo');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
+
+    // Compatibilidad con el panel usado por versiones anteriores del tablero.
     const panel = document.getElementById('panel-editar-periodo');
     if (panel) panel.classList.add('hidden');
 }
@@ -795,6 +879,7 @@ export function cargarDelegacionesAdmin() {
 
 // Global window exposure
 window.filtrarEmpleados = filtrarEmpleados;
+window.filtrarUsuarios = filtrarUsuarios;
 window.seleccionarEmpleado = seleccionarEmpleado;
 window.filtrarOpcionesAsignacion = filtrarOpcionesAsignacion;
 window.contarAsignados = contarAsignados;
@@ -817,6 +902,7 @@ window.addEventListener('DOMContentLoaded', () => {
     cargarRenuenciasAdmin();
     cargarTrasladosAdmin();
     cargarDelegacionesAdmin();
+    cargarImpedimentosAdmin();
 
     const firstCard = document.querySelector('.empleado-card');
     if (firstCard) {
@@ -833,3 +919,136 @@ window.addEventListener('DOMContentLoaded', () => {
         seleccionarEmpleado(firstCard, raw);
     }
 });
+
+export function cargarImpedimentosAdmin() {
+    const lista = document.getElementById('impedimentos-admin-lista');
+    if (!lista) return;
+
+    const impedimentos = window.APP_CONFIG?.impedimentos || [];
+
+    if (!impedimentos.length) {
+        lista.innerHTML = '<div class="col-span-full rounded-xl border border-dashed border-slate-200 bg-white p-8 text-xs text-slate-500 text-center">No hay impedimentos o recusaciones registrados.</div>';
+        return;
+    }
+
+    const evaluadores = window.APP_CONFIG?.evaluadores || [];
+    const options = evaluadores.map(e => `<option value="${e.id_vinculacion}">${escapeHtml(e.nombre_completo)} - ${escapeHtml(e.cargo)}</option>`).join('');
+
+    lista.innerHTML = impedimentos.map(r => `
+        <div class="rounded-2xl border border-slate-100 bg-white p-4 space-y-2 relative">
+            <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                    <p class="text-xs font-black text-slate-800 truncate">${r.tipo === 'IMPEDIMENTO' ? 'Impedimento' : 'Recusación'}</p>
+                    <p class="text-[10px] text-slate-400">Solicitante: ${escapeHtml(r.solicitante_nombres || '')} ${escapeHtml(r.solicitante_apellidos || '')}</p>
+                </div>
+                ${r.estado === 'PENDIENTE' ? '<span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-amber-50 text-amber-700">Pendiente</span>' : ''}
+                ${r.estado === 'APROBADO' ? '<span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-emerald-50 text-emerald-700">Aprobado</span>' : ''}
+                ${r.estado === 'RECHAZADO' ? '<span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-red-50 text-red-600">Rechazado</span>' : ''}
+            </div>
+            <p class="text-xs text-slate-600 whitespace-pre-wrap mt-2"><b>Motivo:</b> ${escapeHtml(r.motivo || '')}</p>
+            ${r.evidencia_url ? `
+                <a href="${escapeHtml(r.evidencia_url)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 text-xs text-[#00594E] hover:underline min-w-0 mt-2">
+                    <span class="material-symbols-outlined text-sm shrink-0">open_in_new</span>
+                    <span class="truncate">Ver Evidencia Anexa</span>
+                </a>` : ''}
+
+            ${r.estado === 'PENDIENTE' ? `
+            <div class="mt-4 pt-3 border-t border-slate-100 space-y-3">
+                <div>
+                    <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Respuesta (Talento Humano)</label>
+                    <textarea id="respuesta-impedimento-${r.id_impedimento}" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white outline-none focus:border-[#00594E]" rows="2" placeholder="Argumento de la decisión..."></textarea>
+                </div>
+                <div id="reasingar-box-${r.id_impedimento}" class="hidden">
+                    <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Reasignar a Evaluador Alterno</label>
+                    <select id="reasignar-impedimento-${r.id_impedimento}" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white outline-none focus:border-[#00594E]">
+                        <option value="">-- Seleccionar nuevo evaluador --</option>
+                        ${options}
+                    </select>
+                </div>
+                <div class="flex gap-2">
+                    <button type="button" onclick="document.getElementById('reasingar-box-${r.id_impedimento}').classList.remove('hidden'); this.style.display='none'; document.getElementById('btn-aprobar-${r.id_impedimento}').classList.remove('hidden');" class="flex-1 text-center py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl font-bold text-xs transition">
+                        Aprobar Solicitud
+                    </button>
+                    <button id="btn-aprobar-${r.id_impedimento}" type="button" onclick="decidirImpedimentoAdmin(${r.id_impedimento}, 'APROBADO')" class="hidden flex-1 text-center py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs transition">
+                        Confirmar y Reasignar
+                    </button>
+                    <button type="button" onclick="decidirImpedimentoAdmin(${r.id_impedimento}, 'RECHAZADO')" class="flex-1 text-center py-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-xl font-bold text-xs transition">
+                        Rechazar Solicitud
+                    </button>
+                </div>
+            </div>` : `
+            <div class="mt-3 pt-2 border-t border-slate-100">
+                <p class="text-[10px] font-bold uppercase text-slate-500">Respuesta</p>
+                <p class="text-xs text-slate-600 whitespace-pre-wrap">${escapeHtml(r.respuesta_admin || '')}</p>
+            </div>
+            `}
+        </div>`).join('');
+}
+
+export function decidirImpedimentoAdmin(id, estado) {
+    const respuesta = document.getElementById(`respuesta-impedimento-${id}`)?.value?.trim();
+    if (!respuesta) {
+        alert('Debe justificar la decisión (Respuesta obligatoria).');
+        return;
+    }
+
+    const payload = { estado, respuesta };
+
+    if (estado === 'APROBADO') {
+        const reasignar = document.getElementById(`reasignar-impedimento-${id}`)?.value;
+        if (!reasignar) {
+            alert('Debe seleccionar el nuevo evaluador.');
+            return;
+        }
+        payload.id_vinc_nuevo_evaluador = reasignar;
+    }
+
+    if (!confirm('¿Confirma guardar la decisión y notificar a los implicados?')) return;
+
+    fetchJson(`/admin/impedimentos/${id}/resolver`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(async res => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo resolver la solicitud.'));
+        alert('Solicitud resuelta con éxito.');
+        window.location.reload();
+    })
+    .catch(err => alert(err.message));
+}
+
+window.cargarImpedimentosAdmin = cargarImpedimentosAdmin;
+window.decidirImpedimentoAdmin = decidirImpedimentoAdmin;
+
+export function actualizarFormularioPeriodoParcial() {
+    const periodo = document.getElementById('periodo-parcial-periodo');
+    const funcionario = document.getElementById('periodo-parcial-funcionario');
+    const inicio = document.getElementById('periodo-parcial-inicio');
+    const fin = document.getElementById('periodo-parcial-fin');
+    if (!periodo || !funcionario || !inicio || !fin) return;
+
+    const opcion = periodo.options[periodo.selectedIndex];
+    const sistema = opcion?.dataset?.sistema || '';
+    const inicioPeriodo = opcion?.dataset?.inicio || '';
+    const finPeriodo = opcion?.dataset?.fin || '';
+    const seleccionadoSigueDisponible = funcionario.selectedOptions[0]?.dataset?.sistema === sistema;
+
+    funcionario.disabled = !sistema;
+    inicio.disabled = !sistema;
+    fin.disabled = !sistema;
+    inicio.min = inicioPeriodo;
+    inicio.max = finPeriodo;
+    fin.min = inicioPeriodo;
+    fin.max = finPeriodo;
+    if (!seleccionadoSigueDisponible) funcionario.value = '';
+
+    Array.from(funcionario.options).forEach((option) => {
+        if (!option.value) return;
+        option.hidden = option.dataset.sistema !== sistema;
+        option.disabled = option.dataset.sistema !== sistema;
+    });
+}
+
+window.actualizarFormularioPeriodoParcial = actualizarFormularioPeriodoParcial;

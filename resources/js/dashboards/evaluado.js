@@ -102,7 +102,9 @@ export function abrirConcertacionEvaluado(card, ev) {
 
     const tabBtnRecursos = document.getElementById('tabbtn-evaluado-recursos');
     if (tabBtnRecursos) {
-        const puedeRecursos = !!ev.notificacion_firmada && ev.estado === 'CALIFICADA' && ev.categoria_final === 'NO_SATISFACTORIO';
+        const esNoSatisfactorio = ev.categoria_final === 'NO_SATISFACTORIO'
+            || (Number.isFinite(Number(ev.calificacion_final)) && Number(ev.calificacion_final) <= 70);
+        const puedeRecursos = !!ev.notificacion_firmada && ev.estado === 'CALIFICADA' && esNoSatisfactorio;
         tabBtnRecursos.classList.toggle('hidden', !puedeRecursos);
     }
 
@@ -137,6 +139,33 @@ export function abrirConcertacionEvaluado(card, ev) {
 }
 
 export function cargarResultadoEvaluado(ev) {
+    const firmarSec = document.getElementById('firma-evaluado-seccion');
+    if (firmarSec) firmarSec.classList.toggle('hidden', !!ev.concertacion_firmada || ev.estado === 'CALIFICADA');
+
+    // Bloque Desacuerdo y Recusación
+    const bloqueDesacuerdo = document.getElementById('bloque-desacuerdo-evaluado');
+    const formDesacuerdo = document.getElementById('form-desacuerdo-evaluacion');
+    if (bloqueDesacuerdo && formDesacuerdo) {
+        // El desacuerdo solo procede mientras la concertación está abierta. Después
+        // de firmarla, o de calificarla, el trámite aplicable es el recurso.
+        const puedeManifestarDesacuerdo = !ev.es_traslado
+            && !ev.concertacion_firmada
+            && ev.estado !== 'CALIFICADA';
+        bloqueDesacuerdo.classList.toggle('hidden', !puedeManifestarDesacuerdo);
+        formDesacuerdo.action = `/evaluacion/${ev.id_evaluacion}/desacuerdo`;
+    }
+
+    const recBtn = document.getElementById('btn-recusacion-evaluado');
+    const formRec = document.getElementById('form-recusacion-accion');
+    const modalRec = document.getElementById('modal-recusacion');
+    const puedeDeclararRecusacion = ev.estado === 'EN_PROCESO'
+        && !ev.concertacion_firmada
+        && Number(ev.fase_actual || 1) <= 2
+        && !ev.es_traslado;
+    if (recBtn) recBtn.classList.toggle('hidden', !puedeDeclararRecusacion);
+    if (!puedeDeclararRecusacion && modalRec) modalRec.classList.add('hidden');
+    if (formRec) formRec.action = `/evaluacion/${ev.id_evaluacion}/impedimento`;
+
     const resultado = document.getElementById('resultado-calculo-evaluado');
     if (!resultado) return;
     const visible = !!ev.concertacion_firmada || ev.estado === 'CALIFICADA';
@@ -217,21 +246,26 @@ export function cargarCompromisosEvaluado(ev) {
                         </div>
                     </form>` : '';
                 return `
-                <div class="rounded-2xl border border-slate-100 bg-slate-50/50 p-4 space-y-3">
-                    <div class="flex items-start justify-between gap-3">
-                        <div class="min-w-0">
-                            <span class="text-[10px] font-black uppercase text-[#00594E] tracking-wide">Compromiso #${idx + 1}</span>
-                            <p class="text-xs font-semibold text-slate-800 mt-0.5">${escapeHtml(c.descripcion)}</p>
+                <div class="rounded-2xl border border-slate-200 bg-white p-4 space-y-3 shadow-sm transition hover:border-[#00594E]/40">
+                    <div class="flex items-start justify-between gap-3 cursor-pointer select-none" onclick="document.getElementById('detalle-comp-evaluado-${c.id_compromiso}')?.classList.toggle('hidden'); document.getElementById('icon-chevron-evaluado-${c.id_compromiso}')?.classList.toggle('rotate-180');">
+                        <div class="min-w-0 flex items-center gap-2">
+                            <span id="icon-chevron-evaluado-${c.id_compromiso}" class="material-symbols-outlined text-[#00594E] text-base transition-transform duration-200">expand_more</span>
+                            <div>
+                                <span class="text-[10px] font-black uppercase text-[#00594E] tracking-wide">Compromiso #${idx + 1}</span>
+                                <p class="text-xs font-semibold text-slate-800 mt-0.5">${escapeHtml(c.descripcion)}</p>
+                            </div>
                         </div>
                         <span class="text-xs font-black rounded-xl px-2.5 py-1 bg-[#EAF2EF] text-[#00594E] shrink-0">${c.porcentaje_peso}%</span>
                     </div>
-                    <p class="text-[11px] text-slate-500"><span class="font-bold">Metas:</span> ${(c.metas || []).join(', ') || '-'}</p>
-                    <div class="pt-2 border-t border-slate-100">
-                        <p class="text-[10px] font-bold uppercase text-slate-400 mb-1">Evidencias</p>
-                        ${renderEvidenciasCompactas(gruposEvidencias[String(c.id_compromiso)] || [])}
+                    <div id="detalle-comp-evaluado-${c.id_compromiso}" class="space-y-3 pt-2 border-t border-slate-100">
+                        <p class="text-[11px] text-slate-500"><span class="font-bold">Metas:</span> ${(c.metas || []).join(', ') || '-'}</p>
+                        <div class="pt-2 border-t border-slate-100">
+                            <p class="text-[10px] font-bold uppercase text-slate-400 mb-1">Evidencias Registradas</p>
+                            ${renderEvidenciasCompactas(gruposEvidencias[String(c.id_compromiso)] || [])}
+                        </div>
+                        ${renderObservacionEvaluado(gruposObservaciones[String(c.id_compromiso)])}
+                        ${formularioEvidencia}
                     </div>
-                    ${renderObservacionEvaluado(gruposObservaciones[String(c.id_compromiso)])}
-                    ${formularioEvidencia}
                 </div>
             `;
             }).join('');
@@ -345,7 +379,12 @@ export function cargarRecursosEvaluado(ev) {
             const recursos = payload.recursos || [];
             const estado = payload.estado;
             const categoria = payload.categoria_final;
-            const esNoSatisfactorio = !!payload.notificacion_firmada && estado === 'CALIFICADA' && categoria === 'NO_SATISFACTORIO';
+            const notaFinal = Number(payload.calificacion_final);
+            const categoriaNoSatisfactoria = categoria === 'NO_SATISFACTORIO'
+                || (Number.isFinite(notaFinal) && notaFinal <= 70);
+            const esNoSatisfactorio = !!payload.notificacion_firmada
+                && estado === 'CALIFICADA'
+                && categoriaNoSatisfactoria;
             const tabBtnRecursos = document.getElementById('tabbtn-evaluado-recursos');
             if (tabBtnRecursos) tabBtnRecursos.classList.toggle('hidden', !esNoSatisfactorio);
             if (!esNoSatisfactorio) {
@@ -477,9 +516,9 @@ export function cargarPlanMejoramientoEvaluado(ev) {
     fetchJson(`/evaluaciones/${ev.id_evaluacion}/plan-mejoramiento`)
         .then(res => res.json())
         .then(payload => {
-            const requiere = !!payload.requiere_plan;
-            bloque.classList.toggle('hidden', !requiere);
-            if (!requiere) return;
+            const habilitado = !!payload.habilitado;
+            bloque.classList.toggle('hidden', !habilitado);
+            if (!habilitado) return;
             const plan = payload.plan;
             selectedPlanData = plan;
             const estado = document.getElementById('plan-estado-evaluado');
@@ -647,16 +686,28 @@ export function renderNotificacionEvaluado(ev) {
             const estado = payload.estado || {};
             const testigos = estado.testigos_notificacion || [];
             const evidencias = estado.evidencias_notificacion || [];
+            const obsRenuencia = ev.observacion_renuencia || '';
+            const testigoDirecto = (ev.testigo_nombre || ev.testigo_documento) ? `${ev.testigo_nombre || ''} (${ev.testigo_documento || ''})`.trim() : '';
+
+            let testigosHtml = testigos.length ? testigos.map(t => `<p class="text-[11px] text-slate-600"><b>${escapeHtml(t.nombre_testigo)}</b> — ${escapeHtml(t.cargo_testigo)}</p>`).join('') : '';
+            if (testigoDirecto && !testigosHtml) {
+                testigosHtml = `<p class="text-[11px] text-slate-600"><b>${escapeHtml(testigoDirecto)}</b></p>`;
+            }
+            if (!testigosHtml) {
+                testigosHtml = '<p class="text-[11px] text-slate-400">Sin testigos registrados.</p>';
+            }
+
             detalle.innerHTML = base + `
-                <div class="pt-1 space-y-1">
-                    <p class="text-[10px] font-bold uppercase text-slate-500">Testigos</p>
-                    ${testigos.length ? testigos.map(t => `<p class="text-[11px] text-slate-600"><b>${escapeHtml(t.nombre_testigo)}</b> — ${escapeHtml(t.cargo_testigo)}</p>`).join('') : '<p class="text-[11px] text-slate-400">Sin testigos registrados.</p>'}
-                    <p class="text-[10px] font-bold uppercase text-slate-500 pt-1">Acta digitalizada (PDF)</p>
+                <div class="pt-1 space-y-1 bg-amber-50/70 p-3 rounded-xl border border-amber-200/60 mt-2">
+                    <p class="text-[10px] font-bold uppercase text-amber-800">Testigo Institucional Asignado por el Evaluador</p>
+                    ${testigosHtml}
+                    ${obsRenuencia ? `<p class="text-[10px] font-bold uppercase text-amber-800 pt-1">Observación del Proceso</p><p class="text-[11px] text-slate-700 italic">${escapeHtml(obsRenuencia)}</p>` : ''}
+                    <p class="text-[10px] font-bold uppercase text-amber-800 pt-1">Acta digitalizada (PDF)</p>
                     ${evidencias.length ? evidencias.map(evi => `
                         <a href="${escapeHtml(evi.url)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 text-[11px] text-[#00594E] hover:underline min-w-0">
                             <span class="material-symbols-outlined text-sm shrink-0">open_in_new</span>
                             <span class="truncate">${escapeHtml(evi.descripcion || evi.url)}</span>
-                        </a>`).join('') : '<p class="text-[11px] text-slate-400">Sin evidencia registrada.</p>'}
+                        </a>`).join('') : '<p class="text-[11px] text-slate-400">Sin archivo adjunto.</p>'}
                 </div>`;
         })
         .catch(() => {
@@ -677,8 +728,10 @@ export function firmarNotificacionEvaluado(e) {
             if (!res.ok) throw new Error(parseErrorMessage(payload, 'No se pudo firmar la notificación.'));
             alert(payload.message || 'Notificación firmada con éxito.');
             if (selectedEvaluacionData) {
-                renderNotificacionEvaluado({ ...selectedEvaluacionData, notificacion_firmada: true, notificacion_renuencia: false });
-                cargarRecursosEvaluado({ ...selectedEvaluacionData, notificacion_firmada: true });
+                selectedEvaluacionData = { ...selectedEvaluacionData, notificacion_firmada: true, notificacion_renuencia: false };
+                renderNotificacionEvaluado(selectedEvaluacionData);
+                cargarRecursosEvaluado(selectedEvaluacionData);
+                cargarPlanMejoramientoEvaluado(selectedEvaluacionData);
             }
         })
         .catch(error => alert(error.message));
@@ -802,13 +855,24 @@ export function registrarRenuenciaEvaluado(e) {
             if (!res.ok) throw new Error(parseErrorMessage(payload, 'No se pudo registrar la renuencia.'));
             if (mensaje) { mensaje.classList.remove('hidden'); mensaje.className = 'text-xs font-semibold text-[#00594E]'; mensaje.innerText = payload.message || 'Renuencia registrada.'; }
             if (selectedEvaluacionData) {
-                renderNotificacionEvaluado({ ...selectedEvaluacionData, notificacion_firmada: true, notificacion_renuencia: true });
-                cargarRecursosEvaluado({ ...selectedEvaluacionData, notificacion_firmada: true });
+                selectedEvaluacionData = { ...selectedEvaluacionData, notificacion_firmada: true, notificacion_renuencia: true };
+                renderNotificacionEvaluado(selectedEvaluacionData);
+                cargarRecursosEvaluado(selectedEvaluacionData);
+                cargarPlanMejoramientoEvaluado(selectedEvaluacionData);
             }
         })
         .catch(error => {
             if (mensaje) { mensaje.classList.remove('hidden'); mensaje.className = 'text-xs font-semibold text-red-600'; mensaje.innerText = error.message; }
         });
+}
+
+export function mostrarModalRecusacion() {
+    const modal = document.getElementById('modal-recusacion');
+    const form = document.getElementById('form-recusacion-accion');
+    if (modal && form && selectedEvaluacionId) {
+        modal.classList.toggle('hidden');
+        form.action = `/evaluacion/${selectedEvaluacionId}/impedimento`;
+    }
 }
 
 // Global window exposure
@@ -828,6 +892,7 @@ window.eliminarTestigoRenuencia = eliminarTestigoRenuencia;
 window.agregarEvidenciaRenuencia = agregarEvidenciaRenuencia;
 window.eliminarEvidenciaRenuencia = eliminarEvidenciaRenuencia;
 window.registrarRenuenciaEvaluado = registrarRenuenciaEvaluado;
+window.mostrarModalRecusacion = mostrarModalRecusacion;
 
 window.addEventListener('DOMContentLoaded', () => {
     navegarMenu(null, 'evaluaciones');

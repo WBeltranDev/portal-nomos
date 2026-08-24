@@ -9,6 +9,21 @@
         ? round($info['compromisos']->avg('calificacion_definitiva'), 1)
         : '-';
     $calculo = $info['calculo'];
+    $pesos = $calculo['pesos'] ?? [];
+    $pesoCompromisos = (float) ($pesos['compromisos'] ?? 0);
+    $pesoComun = (float) ($pesos['comun'] ?? 0);
+    $pesoNivel = (float) ($pesos['nivel_jerarquico'] ?? 0);
+    $pesoCompetencias = $pesoComun + $pesoNivel;
+    $notaComun = (float) ($calculo['nota_comp_comun_raw'] ?? 0);
+    $notaNivel = (float) ($calculo['nota_comp_nivel_raw'] ?? 0);
+    $notaCompetencias = $pesoCompetencias > 0
+        ? round((($notaComun * $pesoComun) + ($notaNivel * $pesoNivel)) / $pesoCompetencias, 2)
+        : 0;
+    $ponderadoCompetencias = round((float) ($calculo['subtotal_comun'] ?? 0) + (float) ($calculo['subtotal_nivel'] ?? 0), 2);
+    $pesosEjes = $pesos['ejes'] ?? [];
+    $notasEjes = $calculo['notas_ejes_raw'] ?? [];
+    $ponderadosEjes = $calculo['subtotales_ejes'] ?? [];
+    $etiquetasEjes = ['DOCENCIA' => 'Docencia', 'INVESTIGACION' => 'Investigación', 'PROYECCION_SOCIAL' => 'Proyección Social'];
     $catLabel = [
         'SOBRESALIENTE' => 'Sobresaliente (91-100)',
         'BUENO' => 'Bueno (81-90)',
@@ -65,32 +80,41 @@
 <div class="subinfo">Periodo: {{ \Carbon\Carbon::parse($info['periodo']->fecha_inicio)->format('d/m/Y') }} al {{ \Carbon\Carbon::parse($info['periodo']->fecha_fin)->format('d/m/Y') }}</div>
 <div class="subinfo" style="color:#64748b; font-style:italic;">Documento generado el {{ $generadoEn->format('d/m/Y') }} a las {{ $generadoEn->format('H:i') }}</div>
 
-{{-- ============ INFORMACIÓN EVALUADOR ============ --}}
-<table>
-    <tr><th colspan="2" class="cab">Información Evaluador</th></tr>
+{{-- ============ INFORMACIÓN GENERAL (EVALUADO Y EVALUADOR) ============ --}}
+<table style="margin-bottom: 8px;">
     <tr>
-        <td class="info-cell" style="width:22%;"><b>Nombre de evaluador</b></td>
-        <td class="info-cell">{{ $info['evaluador']->nombres }} {{ $info['evaluador']->apellidos }}</td>
+        <th colspan="2" class="cab" style="width:50%;">Información del Evaluado</th>
+        <th colspan="2" class="cab" style="width:50%;">Información del Evaluador</th>
     </tr>
     <tr>
-        <td class="info-cell"><b>Cargo de evaluador</b></td>
+        <td class="info-cell" style="width:16%;"><b>Funcionario</b></td>
+        <td class="info-cell" style="width:34%;">{{ $info['evaluado']->nombres }} {{ $info['evaluado']->apellidos }}</td>
+        <td class="info-cell" style="width:16%;"><b>Evaluador</b></td>
+        <td class="info-cell" style="width:34%;">{{ $info['evaluador']->nombres }} {{ $info['evaluador']->apellidos }}</td>
+    </tr>
+    <tr>
+        <td class="info-cell"><b>Documento</b></td>
+        <td class="info-cell">{{ $info['evaluado']->numero_doc ?? '-' }}</td>
+        <td class="info-cell"><b>Cargo</b></td>
         <td class="info-cell">{{ $info['evaluador']->cargo }}</td>
     </tr>
     <tr>
-        <td class="info-cell"><b>Área</b></td>
+        <td class="info-cell"><b>Cargo</b></td>
+        <td class="info-cell">{{ $info['evaluado']->cargo }}</td>
+        <td class="info-cell"><b>Área / Dependencia</b></td>
         <td class="info-cell">{{ $info['evaluador']->area }}</td>
     </tr>
     <tr>
-        <td class="info-cell"><b>Nivel</b></td>
+        <td class="info-cell"><b>Área / Dependencia</b></td>
+        <td class="info-cell">{{ $info['evaluado']->area }}</td>
+        <td class="info-cell"><b>Nivel Jerárquico</b></td>
         <td class="info-cell">{{ $info['evaluador']->nivel_jerarquico }}</td>
     </tr>
     <tr>
-        <td class="info-cell"><b>Código</b></td>
-        <td class="info-cell">{{ $info['evaluador']->codigo_cargo }}</td>
-    </tr>
-    <tr>
-        <td class="info-cell"><b>Grado</b></td>
-        <td class="info-cell">{{ $info['evaluador']->grado_cargo }}</td>
+        <td class="info-cell"><b>Nivel Jerárquico</b></td>
+        <td class="info-cell">{{ $info['evaluado']->nivel_jerarquico }}</td>
+        <td class="info-cell"><b>Código / Grado</b></td>
+        <td class="info-cell">{{ $info['evaluador']->codigo_cargo }} - Grado {{ $info['evaluador']->grado_cargo }}</td>
     </tr>
 </table>
 
@@ -148,181 +172,111 @@
     @forelse($info['compromisos'] as $comp)
         <tr>
             <td class="centro">{{ $comp->numero_orden }}</td>
-            <td>{{ $comp->descripcion }}</td>
-            <td class="centro">{{ is_null($comp->calificacion_definitiva) ? '' : $comp->calificacion_definitiva }}</td>
+            <td>{{ $comp->descripcion }} (<b>{{ $comp->porcentaje_peso }}%</b>)</td>
+            <td class="centro resaltado">{{ is_null($comp->calificacion_definitiva) ? '-' : $comp->calificacion_definitiva }}</td>
             <td style="font-size:7.5px;">
-                @foreach($comp->metas as $meta)
-                    <div>- {{ $meta }}</div>
-                @endforeach
+                @if(count($comp->metas))
+                    <ul style="margin:0; padding-left:10px;">
+                        @foreach($comp->metas as $m)
+                            <li>{{ $m }}</li>
+                        @endforeach
+                    </ul>
+                @else
+                    -
+                @endif
             </td>
-            <td style="font-size:7.5px;">{{ $comp->observacion }}</td>
-            <td style="font-size:7.5px; word-break:break-all;">
-                @foreach($comp->links as $link)
-                    <div>{{ $link }}</div>
-                @endforeach
+            <td style="font-size:7.5px;">{{ $comp->observacion ?: '-' }}</td>
+            <td style="font-size:7px; word-break:break-all;">
+                @if(count($comp->links))
+                    @foreach($comp->links as $link)
+                        <div><a href="{{ $link }}" target="_blank">{{ $link }}</a></div>
+                    @endforeach
+                @else
+                    -
+                @endif
             </td>
         </tr>
     @empty
         <tr><td colspan="6" class="centro">Sin compromisos registrados.</td></tr>
     @endforelse
     <tr>
-        <td class="negrita centro" colspan="2">Total</td>
-        <td class="negrita centro">Promedio</td>
-        <td class="resaltado centro" colspan="3">{{ $promCompromisos }}</td>
+        <td colspan="2" class="negrita centro">Promedio compromisos</td>
+        <td class="negrita centro"><span class="resaltado">{{ $promCompromisos }}</span></td>
+        <td colspan="3"></td>
     </tr>
 </table>
 
-{{-- ============ RESULTADO DE LA EVALUACIÓN ============ --}}
+{{-- ============ RESULTADOS Y PONDERACIONES ============ --}}
 <table>
-    <tr><th colspan="2" class="cab">Resultado de la Evaluación</th></tr>
+    <tr><th colspan="4" class="cab">Resultados del Periodo</th></tr>
     <tr>
-        <td class="info-cell" style="width:50%;"><b>Compromisos ({{ $calculo['pesos']['compromisos'] }}%)</b></td>
-        <td class="info-cell resaltado centro">{{ $calculo['subtotal_compromisos'] }}</td>
+        <th style="width:40%;">Componente</th>
+        <th style="width:20%;">Peso</th>
+        <th style="width:20%;">Nota</th>
+        <th style="width:20%;">Ponderado</th>
     </tr>
     <tr>
-        <td class="info-cell"><b>Competencias comunes ({{ $calculo['pesos']['comun'] }}%)</b></td>
-        <td class="info-cell resaltado centro">{{ $calculo['subtotal_comun'] }}</td>
+        <td>Compromisos Laborales</td>
+        <td class="centro">{{ $pesoCompromisos }}%</td>
+        <td class="centro">{{ $calculo['nota_compromisos_raw'] ?? 0 }}</td>
+        <td class="centro negrita">{{ $calculo['subtotal_compromisos'] ?? 0 }}</td>
     </tr>
     <tr>
-        <td class="info-cell"><b>Competencias nivel jerárquico ({{ $calculo['pesos']['nivel_jerarquico'] }}%)</b></td>
-        <td class="info-cell resaltado centro">{{ $calculo['subtotal_nivel'] }}</td>
+        <td>Competencias Comportamentales</td>
+        <td class="centro">{{ $pesoCompetencias }}%</td>
+        <td class="centro">{{ $notaCompetencias }}</td>
+        <td class="centro negrita">{{ $ponderadoCompetencias }}</td>
     </tr>
-    @foreach ($calculo['subtotales_ejes'] ?? [] as $tipoEje => $subtotal)
-        @php
-            $nombreEje = [
-                'DOCENCIA' => 'Docencia',
-                'INVESTIGACION' => 'Investigación',
-                'PROYECCION_SOCIAL' => 'Proyección social',
-            ][$tipoEje] ?? $tipoEje;
-            $pesoEje = $calculo['pesos']['ejes'][$tipoEje] ?? 0;
-        @endphp
-        <tr>
-            <td class="info-cell"><b>{{ $nombreEje }} ({{ $pesoEje }}%)</b></td>
-            <td class="info-cell resaltado centro">{{ $subtotal }}</td>
-        </tr>
-    @endforeach
-    <tr>
-        <td class="info-cell"><b>Categoría</b></td>
-        <td class="info-cell resaltado centro">{{ $catLabel }}</td>
+    @if ($sistema === 'Acuerdos de Gestión')
+        @foreach ($pesosEjes as $eje => $peso)
+            @if ($peso > 0)
+            <tr>
+                <td>{{ $etiquetasEjes[$eje] ?? $eje }}</td>
+                <td class="centro">{{ $peso }}%</td>
+                <td class="centro">{{ $notasEjes[$eje] ?? 0 }}</td>
+                <td class="centro negrita">{{ $ponderadosEjes[$eje] ?? 0 }}</td>
+            </tr>
+            @endif
+        @endforeach
+    @endif
+    <tr style="background:#EAF2EF; font-size:10px;">
+        <td class="negrita" colspan="3">CALIFICACIÓN DEFINITIVA SEMESTRAL</td>
+        <td class="centro negrita resaltado" style="font-size:11px;">{{ $calculo['nota_definitiva'] ?? 0 }}</td>
     </tr>
     <tr>
-        <td class="info-cell" style="background:#EAF2EF;"><b>NOTA DEFINITIVA</b></td>
-        <td class="info-cell resaltado centro" style="background:#EAF2EF; font-size:11px;">{{ $calculo['nota_definitiva'] }}</td>
+        <td class="negrita" colspan="3">CATEGORÍA FINAL</td>
+        <td class="centro negrita">{{ $catLabel }}</td>
     </tr>
 </table>
-
-<div style="margin:6px 0;"><b>Capacitaciones sugeridas:</b> {{ $info['capacitaciones'] }}</div>
 
 {{-- ============ PLAN DE MEJORAMIENTO ============ --}}
+@if ($info['requiere_plan'] && $info['plan'])
 <table>
+    <tr><th colspan="2" class="cab">Plan de Mejoramiento Concertado</th></tr>
     <tr>
-        <th colspan="5" class="cab">Plan de Mejoramiento</th>
+        <td class="info-cell" style="width:25%;"><b>Estado</b></td>
+        <td class="info-cell">{{ $info['plan']->estado }}</td>
     </tr>
     <tr>
-        <th style="width:10%;">Aplica</th>
-        <th style="width:26%;">Aspectos susceptibles de mejorar o potenciar</th>
-        <th style="width:26%;">Descripción del hecho a mejorar o potenciar</th>
-        <th style="width:19%;">Evidencias — soportes del cumplimiento</th>
-        <th style="width:19%;">Cumplimiento / Fecha de seguimiento o cierre</th>
+        <td class="info-cell"><b>Temas y Compromisos</b></td>
+        <td class="info-cell">{{ $info['plan']->descripcion_temas }}</td>
     </tr>
-    @if ($info['plan'])
-        <tr>
-            <td class="centro negrita">{{ $info['requiere_plan'] ? 'SI' : 'NO' }}</td>
-            <td colspan="4" style="font-size:8px;">{{ $info['plan']->descripcion_temas }}</td>
-        </tr>
-        <tr>
-            <td class="centro negrita">Estado</td>
-            <td colspan="4" style="font-size:8px;">{{ $info['plan']->estado }}
-                @if ($info['plan']->firmado_evaluado) · Firmado por el evaluado {{ \Carbon\Carbon::parse($info['plan']->fecha_firma_evaluado)->format('d/m/Y H:i') }}@endif
-                @if ($info['plan']->firmado_evaluador) · Firmado por el evaluador {{ \Carbon\Carbon::parse($info['plan']->fecha_firma_evaluador)->format('d/m/Y H:i') }}@endif
-            </td>
-        </tr>
-    @else
-        <tr>
-            <td class="centro negrita">{{ $info['requiere_plan'] ? 'SI' : 'NO' }}</td>
-            <td colspan="4"></td>
-        </tr>
-    @endif
 </table>
-
-{{-- ============ RECURSOS ============ --}}
-<table>
-    <tr><th colspan="7" class="cab">Recursos</th></tr>
-    <tr>
-        <th style="width:10%;">Tipo de recurso</th>
-        <th style="width:18%;">Cargo de quien recibe el recurso</th>
-        <th style="width:7%;">No. folios</th>
-        <th style="width:13%;">Fecha de interposición</th>
-        <th style="width:10%;">Decisión</th>
-        <th style="width:27%;">Motivación de la decisión</th>
-        <th style="width:15%;">Evidencias (links)</th>
-    </tr>
-    @forelse($info['recursos'] as $rec)
-        <tr>
-            <td class="centro">{{ ucfirst(strtolower($rec->tipo_recurso)) }}</td>
-            <td>{{ $rec->cargo_receptor }}</td>
-            <td class="centro">{{ $rec->numero_folios }}</td>
-            <td class="centro">{{ \Carbon\Carbon::parse($rec->fecha_recurso)->format('d/m/Y') }}</td>
-            <td class="centro">{{ $rec->decision }}</td>
-            <td style="font-size:7.5px;">{{ $rec->motivacion }}</td>
-            <td style="font-size:7.5px;">
-                @if(($rec->evidencias ?? null) && $rec->evidencias->isNotEmpty())
-                    @foreach($rec->evidencias as $ev)
-                        {{ $ev->descripcion ? $ev->descripcion . ': ' : '' }}{{ $ev->url }}<br>
-                    @endforeach
-                @else
-                    —
-                @endif
-            </td>
-        </tr>
-    @empty
-        <tr><td colspan="7" class="centro">Sin recursos radicados.</td></tr>
-    @endforelse
-</table>
+@endif
 
 {{-- ============ FIRMAS ============ --}}
-<table class="tabla-firmas" style="margin-top:16px;">
+<table class="tabla-firmas" style="margin-top:20px;">
     <tr>
         <td style="width:50%; text-align:left;">
             <div class="firma-box">FIRMA EVALUADO</div>
-            <div style="font-size:9px; text-align:center; margin-top:2px;">{{ $info['evaluado']->nombres }} {{ $info['evaluado']->apellidos }}</div>
+            <div style="font-size:8.5px; text-align:center; margin-top:2px;">{{ $info['evaluado']->nombres }} {{ $info['evaluado']->apellidos }}</div>
         </td>
         <td style="width:50%; text-align:right;">
             <div class="firma-box">FIRMA EVALUADOR</div>
-            <div style="font-size:9px; text-align:center; margin-top:2px;">{{ $info['evaluador']->nombres }} {{ $info['evaluador']->apellidos }}</div>
+            <div style="font-size:8.5px; text-align:center; margin-top:2px;">{{ $info['evaluador']->nombres }} {{ $info['evaluador']->apellidos }}</div>
         </td>
     </tr>
 </table>
-
-{{-- ============ RENUENCIA ============ --}}
-@if ($info['renuencias']->isNotEmpty())
-<table style="margin-top:14px;">
-    <tr><th colspan="3" class="cab">Renuencia del evaluado a la notificación de la calificación</th></tr>
-    <tr>
-        <th style="width:15%;">Fecha</th>
-        <th style="width:60%;">Datos del testigo</th>
-        <th style="width:25%;">Firma del testigo</th>
-    </tr>
-    @foreach($info['renuencias'] as $ren)
-        <tr>
-            <td class="centro">{{ \Carbon\Carbon::parse($ren->fecha_firma)->format('d/m/Y') }}</td>
-            <td>
-                @foreach($ren->testigos as $t)
-                    <div><b>{{ $t->nombre_testigo }}</b> — {{ $t->cargo_testigo }}</div>
-                @endforeach
-                @foreach($ren->evidencias ?? [] as $ev)
-                    <div style="margin-top:3px;">
-                        <a href="{{ $ev->url }}" target="_blank" rel="noopener noreferrer" style="color:#00594E;">
-                            {{ $ev->descripcion ?: 'Evidencia (acta digitalizada)' }} — {{ $ev->url }}
-                        </a>
-                    </div>
-                @endforeach
-            </td>
-            <td></td>
-        </tr>
-    @endforeach
-</table>
-@endif
 
 </body>
 </html>
