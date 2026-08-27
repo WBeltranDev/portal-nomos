@@ -620,6 +620,7 @@ Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard
 Route::post('/admin/usuarios', [UsuarioController::class, 'store'])->name('admin.usuarios.store');
 Route::post('/admin/funcionarios/{id}/disable', [UsuarioController::class, 'disable'])->name('admin.funcionarios.disable');
 Route::post('/admin/vinculaciones/{id}/vacancia', [UsuarioController::class, 'vacancia'])->name('admin.vinculaciones.vacancia');
+Route::post('/admin/vinculaciones/{id}/jefe', [UsuarioController::class, 'actualizarJefeSuperior'])->name('admin.vinculaciones.jefe');
 Route::post('/admin/cargos', [UsuarioController::class, 'storeCargo'])->name('admin.cargos.store');
 Route::post('/admin/cargos/{id}/toggle', [UsuarioController::class, 'toggleCargo'])->name('admin.cargos.toggle');
 Route::post('/admin/dependencias', [UsuarioController::class, 'storeDependencia'])->name('admin.dependencias.store');
@@ -1795,9 +1796,54 @@ Route::post('/admin/impedimentos/{id}/resolver', function (Request $request, int
 
         // 2. Si se aprueba y se elige un nuevo evaluador, reasignar
         if ($data['estado'] === 'APROBADO' && !empty($data['id_vinc_nuevo_evaluador'])) {
-            DB::table('evaluacion')->where('id_evaluacion', $solicitud->id_evaluacion)->update([
-                'id_vinc_evaluador' => $data['id_vinc_nuevo_evaluador'],
-            ]);
+            $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $solicitud->id_evaluacion)->first();
+
+            if ($evaluacion) {
+                // Obtener info del nuevo evaluador
+                $nuevoEvaluador = DB::table('vinculacion as v')
+                    ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
+                    ->where('v.id_vinculacion', $data['id_vinc_nuevo_evaluador'])
+                    ->select('f.nombres', 'f.apellidos', 'v.cargo')
+                    ->first();
+
+                // Obtener info del evaluado
+                $evaluado = DB::table('vinculacion as v')
+                    ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
+                    ->where('v.id_vinculacion', $evaluacion->id_vinc_evaluado)
+                    ->select('f.nombres', 'f.apellidos')
+                    ->first();
+
+                // Obtener info del periodo
+                $periodo = DB::table('periodo')->where('id_periodo', $evaluacion->id_periodo)->first();
+
+                // Reasignar evaluador
+                DB::table('evaluacion')->where('id_evaluacion', $solicitud->id_evaluacion)->update([
+                    'id_vinc_evaluador' => $data['id_vinc_nuevo_evaluador'],
+                ]);
+
+                // Transferir las observaciones del evaluador anterior al nuevo
+                DB::table('compromiso_observacion')
+                    ->where('id_evaluacion', $solicitud->id_evaluacion)
+                    ->update([
+                        'id_vinc_evaluador' => $data['id_vinc_nuevo_evaluador'],
+                    ]);
+
+                // Crear notificación para el nuevo evaluador
+                $nombreEvaluado = $evaluado ? "{$evaluado->nombres} {$evaluado->apellidos}" : 'el funcionario';
+                $periodoTxt = $periodo ? "{$periodo->sistema} {$periodo->anio}/{$periodo->semestre}" : '';
+                $tipoTxt = $solicitud->tipo === 'IMPEDIMENTO' ? 'Impedimento' : 'Recusación';
+
+                if (Schema::hasTable('notificacion')) {
+                    DB::table('notificacion')->insert([
+                        'tipo' => 'IMPEDIMENTO_APROBADO',
+                        'titulo' => "Evaluación reasignada - {$tipoTxt} #{$id}",
+                        'mensaje' => "Se le ha asignado la evaluación de {$nombreEvaluado} ({$periodoTxt}) debido a un {$tipoTxt} aprobado. Revise los compromisos y continúe el proceso.",
+                        'seccion' => 'impedimentos-admin',
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
+            }
         }
     });
 
@@ -2338,6 +2384,221 @@ Route::put('/compromisos/{id}', function (Request $request, int $id) {
     }
 
     return response()->json(['success' => true]);
+});
+
+// ============================================================
+// SOLICITUD DE MODIFICACIÓN DE COMPROMISOS POR INCAPACIDAD (S10)
+// ============================================================
+
+// --- POST: Crear solicitud de modificación (evaluador o evaluado) ---
+Route::post('/evaluaciones/{id}/compromisos/solicitar-modificacion', function (Request $request, int $id) {
+    $auth = session('usuario_autenticado');
+    abort_unless($auth, 403);
+
+    $rolActivo = $auth['rol_activo'] ?? null;
+    abort_unless(in_array($rolActivo, ['evaluador', 'evaluado'], true), 403);
+
+    $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
+    abort_unless($evaluacion, 404);
+    abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado.');
+    abort_if($evaluacion->estado === 'CALIFICADA', 422, 'La evaluación ya fue calificada; no se pueden modificar compromisos.');
+    abort_if(!$evaluacion->concertacion_firmada, 422, 'La concertación aún no está firmada; use la edición directa de compromisos.');
+
+    // Verificar que el solicitante sea el evaluador o el evaluado
+    $idVincSolicitante = null;
+    if ($rolActivo === 'evaluador') {
+        $vinc = DB::table('vinculacion')
+            ->where('id_vinculacion', $evaluacion->id_vinc_evaluador)
+            ->where('id_funcionario', $auth['id_funcionario'] ?? null)
+            ->first();
+        abort_unless($vinc, 403);
+        $idVincSolicitante = $vinc->id_vinculacion;
+    } else {
+        $vinc = DB::table('vinculacion')
+            ->where('id_vinculacion', $evaluacion->id_vinc_evaluado)
+            ->where('id_funcionario', $auth['id_funcionario'] ?? null)
+            ->first();
+        abort_unless($vinc, 403);
+        $idVincSolicitante = $vinc->id_vinculacion;
+    }
+
+    $data = $request->validate([
+        'motivo' => ['required', 'string', 'max:2000'],
+        'id_compromiso' => ['required', 'integer', 'exists:compromiso,id_compromiso'],
+        'descripcion' => ['required', 'string'],
+        'porcentaje_peso' => ['required', 'numeric', 'min:1', 'max:15'],
+        'metas' => ['required', 'array', 'min:1'],
+        'metas.*' => ['required', 'string'],
+    ]);
+
+    // El compromiso debe pertenecer a esta evaluación
+    $compromiso = DB::table('compromiso')->where('id_compromiso', $data['id_compromiso'])->first();
+    abort_unless($compromiso && $compromiso->id_evaluacion === $id, 422, 'El compromiso no pertenece a esta evaluación.');
+
+    // Validar presupuesto de pesos
+    $targetWeight = getTargetCompromisosWeight($id);
+    $sumaResto = DB::table('compromiso')
+        ->where('id_evaluacion', $id)
+        ->where('id_compromiso', '!=', $data['id_compromiso'])
+        ->sum('porcentaje_peso');
+
+    if ($sumaResto + $data['porcentaje_peso'] > $targetWeight + 0.01) {
+        return response()->json(['error' => 'La suma de porcentajes excede el ' . $targetWeight . '%.'], 422);
+    }
+
+    // Evitar solicitudes duplicadas pendientes
+    $pendiente = DB::table('solicitud_modificacion_compromiso')
+        ->where('id_evaluacion', $id)
+        ->where('estado', 'PENDIENTE')
+        ->exists();
+
+    abort_if($pendiente, 422, 'Ya existe una solicitud de modificación pendiente para esta evaluación.');
+
+    DB::table('solicitud_modificacion_compromiso')->insert([
+        'id_evaluacion' => $id,
+        'id_vinc_solicitante' => $idVincSolicitante,
+        'motivo' => $data['motivo'],
+        'detalle_cambio' => json_encode([
+            'id_compromiso' => $data['id_compromiso'],
+            'descripcion' => $data['descripcion'],
+            'porcentaje_peso' => $data['porcentaje_peso'],
+            'metas' => $data['metas'],
+        ]),
+        'estado' => 'PENDIENTE',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    // Notificar al admin
+    if (Schema::hasTable('notificacion')) {
+        $evaluado = DB::table('vinculacion as v')
+            ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
+            ->where('v.id_vinculacion', $evaluacion->id_vinc_evaluado)
+            ->select('f.nombres', 'f.apellidos')
+            ->first();
+
+        $nombre = $evaluado ? "{$evaluado->nombres} {$evaluado->apellidos}" : 'Funcionario';
+
+        DB::table('notificacion')->insert([
+            'tipo' => 'MODIFICACION_COMPROMISO',
+            'titulo' => "Solicitud de modificación de compromisos",
+            'mensaje' => "Se solicitó modificar compromisos por incapacidad para la evaluación de {$nombre}.",
+            'seccion' => 'compromisos-modificacion',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    return response()->json(['success' => true, 'message' => 'Solicitud de modificación registrada.']);
+});
+
+// --- GET: Listar solicitudes de modificación (admin) ---
+Route::get('/admin/compromisos/solicitudes', function () {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
+
+    if (!Schema::hasTable('solicitud_modificacion_compromiso')) {
+        return response()->json(['solicitudes' => []]);
+    }
+
+    $solicitudes = DB::table('solicitud_modificacion_compromiso as sm')
+        ->join('evaluacion as ev', 'ev.id_evaluacion', '=', 'sm.id_evaluacion')
+        ->join('vinculacion as vd', 'vd.id_vinculacion', '=', 'ev.id_vinc_evaluado')
+        ->join('funcionario as fd', 'fd.id_funcionario', '=', 'vd.id_funcionario')
+        ->leftJoin('vinculacion as vs', 'vs.id_vinculacion', '=', 'sm.id_vinc_solicitante')
+        ->leftJoin('funcionario as fs', 'fs.id_funcionario', '=', 'vs.id_funcionario')
+        ->select(
+            'sm.*',
+            'fd.nombres as evaluado_nombres',
+            'fd.apellidos as evaluado_apellidos',
+            'fs.nombres as solicitante_nombres',
+            'fs.apellidos as solicitante_apellidos'
+        )
+        ->orderByDesc('sm.created_at')
+        ->get();
+
+    foreach ($solicitudes as $s) {
+        $s->detalle_cambio = json_decode($s->detalle_cambio, true);
+        $compromiso = DB::table('compromiso')->where('id_compromiso', $s->detalle_cambio['id_compromiso'] ?? 0)->first();
+        $s->compromiso_actual_desc = $compromiso->descripcion ?? '';
+    }
+
+    return response()->json(['solicitudes' => $solicitudes]);
+});
+
+// --- POST: Resolver solicitud de modificación (admin) ---
+Route::post('/admin/compromisos/solicitudes/{id}/resolver', function (Request $request, int $id) {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
+
+    $solicitud = DB::table('solicitud_modificacion_compromiso')->where('id_solicitud', $id)->where('estado', 'PENDIENTE')->first();
+    abort_unless($solicitud, 404, 'La solicitud no existe o ya fue resuelta.');
+
+    $data = $request->validate([
+        'estado' => ['required', 'in:APROBADO,RECHAZADO'],
+        'respuesta' => ['required', 'string'],
+    ]);
+
+    DB::transaction(function () use ($id, $solicitud, $data) {
+        // Actualizar solicitud
+        DB::table('solicitud_modificacion_compromiso')->where('id_solicitud', $id)->update([
+            'estado' => $data['estado'],
+            'respuesta_admin' => $data['respuesta'],
+            'id_usuario_admin' => session('usuario_autenticado.id_usuario'),
+            'updated_at' => now(),
+        ]);
+
+        if ($data['estado'] === 'APROBADO') {
+            $detalle = json_decode($solicitud->detalle_cambio, true);
+
+            // Compromiso actual (antes de la modificación)
+            $compromisoActual = DB::table('compromiso')->where('id_compromiso', $detalle['id_compromiso'])->first();
+
+            if (!$compromisoActual) {
+                throw new \Exception('El compromiso ya no existe.');
+            }
+
+            $metasAnteriores = DB::table('compromiso_meta')
+                ->where('id_compromiso', $detalle['id_compromiso'])
+                ->pluck('meta')
+                ->toArray();
+
+            // Aplicar la modificación
+            DB::table('compromiso')->where('id_compromiso', $detalle['id_compromiso'])->update([
+                'descripcion' => $detalle['descripcion'],
+                'porcentaje_peso' => $detalle['porcentaje_peso'],
+            ]);
+
+            DB::table('compromiso_meta')->where('id_compromiso', $detalle['id_compromiso'])->delete();
+            foreach ($detalle['metas'] as $meta) {
+                DB::table('compromiso_meta')->insert([
+                    'id_compromiso' => $detalle['id_compromiso'],
+                    'meta' => $meta,
+                ]);
+            }
+
+            // Bitácora (antes -> después)
+            $nombreAdmin = session('usuario_autenticado.nombres') . ' ' . session('usuario_autenticado.apellidos');
+            DB::table('bitacora_modificacion_compromiso')->insert([
+                'id_evaluacion' => $solicitud->id_evaluacion,
+                'id_compromiso' => $detalle['id_compromiso'],
+                'motivo' => $solicitud->motivo,
+                'detalle_anterior' => json_encode([
+                    'descripcion' => $compromisoActual->descripcion,
+                    'porcentaje_peso' => $compromisoActual->porcentaje_peso,
+                    'metas' => $metasAnteriores,
+                ]),
+                'detalle_nuevo' => json_encode([
+                    'descripcion' => $detalle['descripcion'],
+                    'porcentaje_peso' => $detalle['porcentaje_peso'],
+                    'metas' => $detalle['metas'],
+                ]),
+                'creado_por' => trim($nombreAdmin),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+    });
+
+    return response()->json(['success' => true, 'message' => 'Solicitud resuelta.']);
 });
 
 Route::post('/evaluaciones/{id}/firmar', function (Request $request, int $id) {
@@ -3899,6 +4160,52 @@ Route::get('/recursos/mios', function () {
     return response()->json(['recursos' => adjuntarEvidenciasRecursos($recursos)]);
 })->name('recursos.mios');
 
+// --- GET: Detalle de la evaluación (compromisos + evidencias) para el receptor de una apelación ---
+// Permite al superior jerárquico que recibe la apelación ver lo concertado y las evidencias.
+Route::get('/recursos/{id}/detalle-evaluacion', function (int $id) {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'evaluador', 403);
+
+    $auth = session('usuario_autenticado');
+    $recurso = DB::table('recurso')->where('id_recurso', $id)->where('tipo_recurso', 'APELACION')->first();
+    abort_unless($recurso, 404);
+
+    // Solo el receptor (superior jerárquico) puede ver el detalle
+    $esReceptor = DB::table('vinculacion')
+        ->where('id_vinculacion', $recurso->id_vinc_receptor)
+        ->where('id_funcionario', $auth['id_funcionario'] ?? null)
+        ->exists();
+    abort_unless($esReceptor, 403);
+
+    $compromisos = DB::table('compromiso')
+        ->where('id_evaluacion', $recurso->id_evaluacion)
+        ->orderBy('numero_orden')
+        ->get();
+
+    $evidenciasGrupo = DB::table('evidencia')
+        ->where('id_evaluacion', $recurso->id_evaluacion)
+        ->orderByDesc('fecha_inclusion')
+        ->get()
+        ->groupBy('id_compromiso');
+
+    foreach ($compromisos as $c) {
+        $c->metas = DB::table('compromiso_meta')
+            ->where('id_compromiso', $c->id_compromiso)
+            ->pluck('meta')
+            ->toArray();
+        $c->evidencias = $evidenciasGrupo[$c->id_compromiso] ?? [];
+    }
+
+    $evaluacion = DB::table('evaluacion')
+        ->where('id_evaluacion', $recurso->id_evaluacion)
+        ->select('id_evaluacion', 'estado', 'calificacion_final', 'categoria_final', 'concertacion_firmada')
+        ->first();
+
+    return response()->json([
+        'compromisos' => $compromisos,
+        'evaluacion' => $evaluacion,
+    ]);
+})->name('recursos.detalle-evaluacion');
+
 
 // --- GET: Estado del plan de mejoramiento de una evaluación ---
 Route::get('/evaluaciones/{id}/plan-mejoramiento', function (int $id) {
@@ -4454,3 +4761,28 @@ Route::get('/evaluaciones/{id}/informe-anual', function (int $id) {
 
     return descargarInformePdf('reportes.informe-anual', $info, $nombre, 'portrait');
 })->name('evaluaciones.informe-anual');
+
+// --- NOTIFICACIONES (Admin) ---
+Route::get('/admin/notificaciones', function () {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
+
+    $notificaciones = DB::table('notificacion')
+        ->orderByDesc('created_at')
+        ->limit(50)
+        ->get();
+
+    $noLeidas = DB::table('notificacion')->where('leida', false)->count();
+
+    return response()->json([
+        'notificaciones' => $notificaciones,
+        'no_leidas' => $noLeidas,
+    ]);
+})->name('admin.notificaciones');
+
+Route::post('/admin/notificaciones/marcar-leidas', function () {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
+
+    DB::table('notificacion')->where('leida', false)->update(['leida' => true]);
+
+    return response()->json(['ok' => true]);
+})->name('admin.notificaciones.marcar leidas');

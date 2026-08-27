@@ -46,6 +46,8 @@ class DashboardController extends Controller
         $funcionariosNoCalificados = collect();
         $evaluacionesExtratiempo = collect();
         $historialExtratiempo = collect();
+        $vinculacionesJerarquia = collect();
+        $jefesDisponibles = collect();
 
         // 1. Data for Admin
         if ($rolActivo === 'admin') {
@@ -81,6 +83,7 @@ class DashboardController extends Controller
                     'v.activa as activo',
                     'v.id_vinculacion',
                     'v.es_evaluador',
+                    'v.id_vinc_jefe',
                     DB::raw('IFNULL(v.es_vacante, 0) as es_vacante')
                 )
                 ->orderBy('f.apellidos')
@@ -149,6 +152,45 @@ class DashboardController extends Controller
                     'p.sistema'
                 )
                 ->orderByDesc('ev.id_evaluacion')
+                ->get();
+
+            // Vinculaciones para configuración de jerarquía (superior jerárquico)
+            $vinculacionesJerarquia = DB::table('vinculacion as v')
+                ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
+                ->leftJoin('vinculacion as vj', 'vj.id_vinculacion', '=', 'v.id_vinc_jefe')
+                ->leftJoin('funcionario as fj', 'fj.id_funcionario', '=', 'vj.id_funcionario')
+                ->select(
+                    'v.id_vinculacion',
+                    'v.cargo',
+                    'v.area',
+                    'v.nivel_jerarquico',
+                    'v.es_evaluador',
+                    'v.es_vacante',
+                    'v.activa',
+                    'v.id_vinc_jefe',
+                    'f.nombres',
+                    'f.apellidos',
+                    'fj.nombres as jefe_nombres',
+                    'fj.apellidos as jefe_apellidos'
+                )
+                ->orderBy('f.apellidos')
+                ->orderBy('f.nombres')
+                ->get();
+
+            // Candidatos a jefe superior: vinculaciones activas habilitadas como evaluador
+            $jefesDisponibles = DB::table('vinculacion as v')
+                ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
+                ->where('v.activa', 1)
+                ->where('v.es_evaluador', 1)
+                ->select(
+                    'v.id_vinculacion',
+                    'v.cargo',
+                    'v.area',
+                    'f.nombres',
+                    'f.apellidos'
+                )
+                ->orderBy('f.apellidos')
+                ->orderBy('f.nombres')
                 ->get();
 
             $periodos = DB::table('periodo')->orderByDesc('id_periodo')->get();
@@ -528,6 +570,20 @@ class DashboardController extends Controller
             $evaluacionesInstanciaExterna = obtenerEvaluacionesAgConEjesMisionales();
         }
 
+        // --- NOTIFICACIONES (Solo Admin) ---
+        $notificaciones = collect();
+        $notificacionesNoLeidas = 0;
+        if ($rolActivo === 'admin' && Schema::hasTable('notificacion')) {
+            // Generar notificaciones automáticas
+            self::generarNotificacionesAdmin();
+
+            $notificaciones = DB::table('notificacion')
+                ->orderByDesc('created_at')
+                ->limit(50)
+                ->get();
+            $notificacionesNoLeidas = DB::table('notificacion')->where('leida', false)->count();
+        }
+
         // Support lists
         $configData = getPonderacionesConfig();
         $acuerdosRL = isset($configData['RENDIMIENTO_LABORAL'])
@@ -550,7 +606,9 @@ class DashboardController extends Controller
             'ponderacionesConfig', 'evaluacionesInstanciaExterna', 'planesPendientesEvaluador',
             'periodosParciales', 'funcionariosParaPeriodoParcial', 'vinculacionesReemplazo',
             'evaluadoresDelegacion', 'delegadosDisponibles', 'impedimentos',
-            'cargosCatalogo', 'dependenciasCatalogo', 'funcionariosNoCalificados', 'evaluacionesExtratiempo', 'historialExtratiempo'
+            'cargosCatalogo', 'dependenciasCatalogo', 'funcionariosNoCalificados', 'evaluacionesExtratiempo', 'historialExtratiempo',
+            'vinculacionesJerarquia', 'jefesDisponibles',
+            'notificaciones', 'notificacionesNoLeidas'
         );
 
         return match ($rolActivo) {
@@ -559,5 +617,176 @@ class DashboardController extends Controller
             'evaluador', 'instancia_externa' => view('dashboards.evaluador', $viewData),
             default => view('dashboards.evaluado', $viewData),
         };
+    }
+
+    /**
+     * Genera notificaciones automáticas para el admin basadas en el estado actual del sistema.
+     */
+    private static function generarNotificacionesAdmin(): void
+    {
+        $now = now();
+
+        // 1. Periodos a punto de cerrar (5 días o menos)
+        if (Schema::hasTable('periodo')) {
+            $periodosProximos = DB::table('periodo')
+                ->where('estado', 'ACTIVO')
+                ->whereBetween('fecha_fin', [$now, $now->copy()->addDays(5)])
+                ->get();
+
+            foreach ($periodosProximos as $p) {
+                $diasRestantes = $now->diffInDays($p->fecha_fin, false);
+                $dias = max(1, (int) ceil(abs($diasRestantes)));
+                $existe = DB::table('notificacion')
+                    ->where('tipo', 'PERIODO_CERCA')
+                    ->where('titulo', "Periodo {$p->sistema} - {$p->anio}/{$p->semestre}")
+                    ->where('created_at', '>=', $now->copy()->subDay()->toDateTimeString())
+                    ->exists();
+
+                if (!$existe) {
+                    DB::table('notificacion')->insert([
+                        'tipo' => 'PERIODO_CERCA',
+                        'titulo' => "Periodo {$p->sistema} - {$p->anio}/{$p->semestre}",
+                        'mensaje' => "Faltan {$dias} día(s) para que cierre el periodo de evaluación.",
+                        'seccion' => 'periodos',
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ]);
+                }
+            }
+        }
+
+        // 2. Nuevos recursos de apelación
+        if (Schema::hasTable('recurso_apelacion')) {
+            $recursosNuevos = DB::table('recurso_apelacion')
+                ->where('created_at', '>=', $now->copy()->subDay()->toDateTimeString())
+                ->get();
+
+            foreach ($recursosNuevos as $r) {
+                $existe = DB::table('notificacion')
+                    ->where('tipo', 'RECURSO_NUEVO')
+                    ->where('titulo', "Recurso #{$r->id_recurso}")
+                    ->exists();
+
+                if (!$existe) {
+                    $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $r->id_evaluacion)->first();
+                    $mensaje = "Se presentó un nuevo recurso de apelación.";
+                    if ($evaluacion) {
+                        $evaluado = DB::table('vinculacion as v')
+                            ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
+                            ->where('v.id_vinculacion', $evaluacion->id_vinc_evaluado)
+                            ->first();
+                        if ($evaluado) {
+                            $mensaje = "{$evaluado->nombres} {$evaluado->apellidos} presentó un recurso de apelación.";
+                        }
+                    }
+                    DB::table('notificacion')->insert([
+                        'tipo' => 'RECURSO_NUEVO',
+                        'titulo' => "Recurso #{$r->id_recurso}",
+                        'mensaje' => $mensaje,
+                        'seccion' => 'recursos-planes',
+                        'created_at' => $r->created_at ?? $now,
+                        'updated_at' => $now,
+                    ]);
+                }
+            }
+        }
+
+        // 3. Nuevos planes de mejoramiento
+        if (Schema::hasTable('plan_mejoramiento')) {
+            $planesNuevos = DB::table('plan_mejoramiento')
+                ->where('created_at', '>=', $now->copy()->subDay()->toDateTimeString())
+                ->get();
+
+            foreach ($planesNuevos as $pl) {
+                $existe = DB::table('notificacion')
+                    ->where('tipo', 'PLAN_NUEVO')
+                    ->where('titulo', "Plan #{$pl->id_plan}")
+                    ->exists();
+
+                if (!$existe) {
+                    DB::table('notificacion')->insert([
+                        'tipo' => 'PLAN_NUEVO',
+                        'titulo' => "Plan #{$pl->id_plan}",
+                        'mensaje' => 'Se generó un nuevo plan de mejoramiento.',
+                        'seccion' => 'recursos-planes',
+                        'created_at' => $pl->created_at ?? $now,
+                        'updated_at' => $now,
+                    ]);
+                }
+            }
+        }
+
+        // 4. Nuevos impedimentos / recusaciones
+        if (Schema::hasTable('impedimento_recusacion')) {
+            $impedimentosRecientes = DB::table('impedimento_recusacion')
+                ->where('created_at', '>=', $now->copy()->subDay()->toDateTimeString())
+                ->get();
+
+            foreach ($impedimentosRecientes as $ir) {
+                $tipo = $ir->tipo === 'IMPEDIMENTO' ? 'Impedimento' : 'Recusación';
+                $existe = DB::table('notificacion')
+                    ->where('tipo', $ir->tipo === 'IMPEDIMENTO' ? 'IMPEDIMENTO_NUEVO' : 'RECUSACION_NUEVA')
+                    ->where('titulo', "{$tipo} #{$ir->id_impedimento}")
+                    ->exists();
+
+                if (!$existe) {
+                    $solicitante = DB::table('vinculacion as v')
+                        ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
+                        ->where('v.id_vinculacion', $ir->id_vinc_solicitante)
+                        ->first();
+
+                    $mensaje = "Se registró un nuevo {$tipo}.";
+                    if ($solicitante) {
+                        $mensaje = "{$solicitante->nombres} {$solicitante->apellidos} registró un nuevo {$tipo}.";
+                    }
+
+                    DB::table('notificacion')->insert([
+                        'tipo' => $ir->tipo === 'IMPEDIMENTO' ? 'IMPEDIMENTO_NUEVO' : 'RECUSACION_NUEVA',
+                        'titulo' => "{$tipo} #{$ir->id_impedimento}",
+                        'mensaje' => $mensaje,
+                        'seccion' => 'impedimentos-admin',
+                        'created_at' => $ir->created_at ?? $now,
+                        'updated_at' => $now,
+                    ]);
+                }
+            }
+        }
+
+        // 5. Delegaciones próximas a vencer (1 día o menos)
+        if (Schema::hasTable('delegacion')) {
+            $delegacionesProximas = DB::table('delegacion')
+                ->whereNull('fecha_fin_real')
+                ->whereBetween('fecha_fin', [$now, $now->copy()->addDay()])
+                ->get();
+
+            foreach ($delegacionesProximas as $d) {
+                $existe = DB::table('notificacion')
+                    ->where('tipo', 'DELEGACION_PROXIMA')
+                    ->where('titulo', "Delegación #{$d->id_delegacion}")
+                    ->where('created_at', '>=', $now->copy()->subDay()->toDateTimeString())
+                    ->exists();
+
+                if (!$existe) {
+                    $delegado = DB::table('vinculacion as v')
+                        ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
+                        ->where('v.id_vinculacion', $d->id_vinc_delegado)
+                        ->first();
+
+                    $mensaje = 'Una delegación está por vencer.';
+                    if ($delegado) {
+                        $mensaje = "La delegación de {$delegado->nombres} {$delegado->apellidos} vence pronto.";
+                    }
+
+                    DB::table('notificacion')->insert([
+                        'tipo' => 'DELEGACION_PROXIMA',
+                        'titulo' => "Delegación #{$d->id_delegacion}",
+                        'mensaje' => $mensaje,
+                        'seccion' => 'delegaciones',
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ]);
+                }
+            }
+        }
     }
 }

@@ -182,6 +182,55 @@ class UsuarioController extends Controller
     }
 
     /**
+     * Asignar / quitar el jefe superior (superior jerárquico) de una vinculación.
+     */
+    public function actualizarJefeSuperior(Request $request, $id)
+    {
+        abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
+
+        $vinc = DB::table('vinculacion')->where('id_vinculacion', $id)->first();
+        abort_unless($vinc, 404);
+
+        $idJefe = $request->has('id_vinc_jefe') && $request->input('id_vinc_jefe') !== '' && $request->input('id_vinc_jefe') !== null
+            ? (int) $request->input('id_vinc_jefe')
+            : null;
+
+        if ($idJefe !== null) {
+            if ($idJefe === (int) $id) {
+                return response()->json(['message' => 'Un cargo no puede ser su propio jefe superior.'], 422);
+            }
+
+            $jefe = DB::table('vinculacion')->where('id_vinculacion', $idJefe)->first();
+            if (!$jefe) {
+                return response()->json(['message' => 'La vinculación del jefe superior no existe.'], 422);
+            }
+            if (!(int) $jefe->activa || (int) $jefe->es_evaluador !== 1) {
+                return response()->json(['message' => 'El jefe superior debe ser una vinculación activa habilitada como evaluador.'], 422);
+            }
+
+            // Evitar ciclos: recorrer la jerarquía desde el posible jefe.
+            $actual = $jefe;
+            $vistos = [];
+            while ($actual && !in_array((int) $actual->id_vinculacion, $vistos, true)) {
+                $vistos[] = (int) $actual->id_vinculacion;
+                if ((int) $actual->id_vinculacion === (int) $id) {
+                    return response()->json(['message' => 'La asignación crearía un ciclo en la jerarquía.'], 422);
+                }
+                $actual = $actual->id_vinc_jefe
+                    ? DB::table('vinculacion')->where('id_vinculacion', $actual->id_vinc_jefe)->first()
+                    : null;
+            }
+        }
+
+        DB::table('vinculacion')->where('id_vinculacion', $id)->update(['id_vinc_jefe' => $idJefe]);
+
+        return response()->json([
+            'success' => true,
+            'message' => $idJefe !== null ? 'Jefe superior asignado correctamente.' : 'El cargo quedó sin jefe superior asignado.',
+        ]);
+    }
+
+    /**
      * Guardar nuevo cargo en el catálogo maestro.
      */
     public function storeCargo(Request $request)
