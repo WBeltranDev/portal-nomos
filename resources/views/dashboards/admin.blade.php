@@ -209,7 +209,7 @@
                                 <div>
                                     <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Evaluador (Vinculación)</label>
                                     <input type="search" id="buscar-evaluador-asignacion" oninput="filtrarOpcionesAsignacion('buscar-evaluador-asignacion', 'select-evaluador-asignacion')" class="mb-2 w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Buscar evaluador por nombre o cargo" />
-                                    <select name="id_vinc_evaluador" id="select-evaluador-asignacion" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
+                                    <select name="id_vinc_evaluador" id="select-evaluador-asignacion" onchange="autoMarcarSubalternos()" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
                                         <option value="">Selecciona un evaluador</option>
                                         @foreach($empleados as $e)
                                             @if($e->id_vinculacion && $e->es_evaluador && $e->activo)
@@ -227,7 +227,7 @@
                                     <div id="lista-evaluados-asignacion" class="h-32 max-w-xs w-full overflow-y-auto rounded-xl border border-slate-200 divide-y divide-slate-100 bg-white">
                                         @foreach($empleados as $e)
                                             @if($e->id_vinculacion && $e->activo)
-                                                <label class="checkbox-evaluado flex items-center gap-2.5 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 cursor-pointer" hidden data-buscar="{{ strtolower($e->nombres . ' ' . $e->apellidos . ' ' . ($e->nombre_cargo ?? '')) }}">
+                                                <label class="checkbox-evaluado flex items-center gap-2.5 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 cursor-pointer" hidden data-buscar="{{ strtolower($e->nombres . ' ' . $e->apellidos . ' ' . ($e->nombre_cargo ?? '')) }}" data-jefe="{{ $e->id_vinc_jefe ?? '' }}">
                                                     <input type="checkbox" name="id_vinc_evaluado[]" value="{{ $e->id_vinculacion }}" onchange="contarAsignados()" class="shrink-0 rounded border-slate-300 text-[#00594E] focus:ring-[#00594E]" />
                                                     <span class="min-w-0">
                                                         <span class="block font-semibold leading-tight">{{ $e->nombres }} {{ $e->apellidos }}</span>
@@ -294,6 +294,8 @@
                                 <thead class="bg-[#EAF2EF] text-[#00594E] font-bold uppercase text-[10px] rounded-xl sticky top-0">
                                     <tr>
                                         <th class="p-3">Cargo</th>
+                                        <th class="p-3">Código</th>
+                                        <th class="p-3">Grado</th>
                                         <th class="p-3">Nivel</th>
                                         <th class="p-3 text-center">Estado</th>
                                         <th class="p-3 text-right">Acción</th>
@@ -303,6 +305,8 @@
                                     @foreach($cargosCatalogo as $cg)
                                     <tr class="hover:bg-slate-50">
                                         <td class="p-3 font-semibold text-slate-800">{{ $cg->nombre }}</td>
+                                        <td class="p-3 text-slate-500">{{ $cg->codigo_cargo ?? '-' }}</td>
+                                        <td class="p-3 text-slate-500">{{ $cg->grado_cargo ?? '-' }}</td>
                                         <td class="p-3 text-slate-500">{{ $cg->nivel_jerarquico ?? 'PROFESIONAL' }}</td>
                                         <td class="p-3 text-center">
                                             <span class="inline-block px-2 py-0.5 rounded text-[10px] font-bold {{ ($cg->activo ?? true) ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600' }}">
@@ -380,6 +384,72 @@
                                 </tbody>
                             </table>
                         </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION: JERARQUÍA / JEFES SUPERIORES (S10) -->
+            <section id="section-jerarquia" class="section-content hidden space-y-6">
+                <div class="panel-card rounded-3xl p-6">
+                    <div class="mb-5">
+                        <p class="text-xs font-bold uppercase tracking-[0.22em] text-[#00594E]">Superior Jerárquico</p>
+                        <h2 class="text-2xl font-black text-slate-900">Jefaturas</h2>
+                        <p class="text-xs text-slate-500 mt-1">Define el jefe superior de cada vinculación. Cuando un evaluado apela (segunda instancia), la apelación llega al jefe del cargo del evaluador, quien pasa a evaluarlo.</p>
+                    </div>
+
+                    <input id="buscador-jefaturas" oninput="filtrarJefaturas()" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-[#00594E] focus:ring-2 focus:ring-[#00594E]/10 mb-4" type="text" placeholder="Buscar por funcionario, cargo o área...">
+
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-xs">
+                            <thead class="bg-[#EAF2EF] text-[#00594E] font-bold uppercase text-[10px] rounded-xl sticky top-0">
+                                <tr>
+                                    <th class="p-3">Funcionario</th>
+                                    <th class="p-3">Cargo</th>
+                                    <th class="p-3">Área</th>
+                                    <th class="p-3 text-center">Nivel</th>
+                                    <th class="p-3 text-center">Estado</th>
+                                    <th class="p-3">Jefe superior</th>
+                                    <th class="p-3 text-right">Acción</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                @foreach($vinculacionesJerarquia as $vj)
+                                <tr class="jefatura-fila hover:bg-slate-50"
+                                    data-nombre="{{ strtolower($vj->nombres . ' ' . $vj->apellidos) }}"
+                                    data-cargo="{{ strtolower($vj->cargo ?? '') }}"
+                                    data-area="{{ strtolower($vj->area ?? '') }}">
+                                    <td class="p-3 font-semibold text-slate-800">{{ $vj->nombres }} {{ $vj->apellidos }}</td>
+                                    <td class="p-3 text-slate-500">
+                                        {{ $vj->cargo ?? '-' }}
+                                        @if($vj->es_vacante)<span class="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800">VACANTE</span>@endif
+                                    </td>
+                                    <td class="p-3 text-slate-500">{{ $vj->area ?? '-' }}</td>
+                                    <td class="p-3 text-center text-slate-500">{{ $vj->nivel_jerarquico ?? '-' }}</td>
+                                    <td class="p-3 text-center">
+                                        <span class="inline-block px-2 py-0.5 rounded text-[10px] font-bold {{ $vj->activa ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600' }}">
+                                            {{ $vj->activa ? ($vj->es_vacante ? 'Vacante' : 'Activo') : 'Inactivo' }}
+                                        </span>
+                                        @if(!$vj->es_evaluador)<span class="ml-1 inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-500">No evaluador</span>@endif
+                                    </td>
+                                    <td class="p-3">
+                                        <select id="jefe-superior-{{ $vj->id_vinculacion }}" class="w-full max-w-[240px] text-xs rounded-xl border border-slate-200 p-2 bg-white outline-none focus:border-[#00594E]">
+                                            <option value="">— Sin jefe —</option>
+                                            @foreach($jefesDisponibles as $jd)
+                                            <option value="{{ $jd->id_vinculacion }}"
+                                                @if((int) $vj->id_vinc_jefe === (int) $jd->id_vinculacion) selected @endif
+                                                @if((int) $jd->id_vinculacion === (int) $vj->id_vinculacion) disabled @endif>
+                                                {{ $jd->nombres }} {{ $jd->apellidos }} — {{ $jd->cargo ?? 'Sin cargo' }}
+                                            </option>
+                                            @endforeach
+                                        </select>
+                                    </td>
+                                    <td class="p-3 text-right">
+                                        <button type="button" onclick="guardarJefeSuperior({{ $vj->id_vinculacion }})" class="bg-[#00594E] text-white px-3 py-2 rounded-xl text-[10px] font-bold hover:brightness-110 transition">Guardar</button>
+                                    </td>
+                                </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </section>
@@ -759,6 +829,22 @@
                 </div>
             </section>
 
+            <!-- SECTION: SOLICITUDES DE MODIFICACIÓN DE COMPROMISOS (Admin Only - S10) -->
+            <section id="section-modificaciones-compromisos" class="section-content hidden space-y-6">
+                <div class="panel-card rounded-3xl p-6">
+                    <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between mb-6">
+                        <div>
+                            <p class="text-xs font-bold uppercase tracking-[0.22em] text-[#00594E]">Gestión de Talento Humano</p>
+                            <h2 class="text-2xl sm:text-3xl font-black text-slate-900">Solicitudes de Modificación de Compromisos</h2>
+                            <p class="text-sm text-slate-500 mt-1">Aprobación o rechazo de modificaciones a compromisos por incapacidad u otras justificaciones.</p>
+                        </div>
+                    </div>
+                    <div id="solicitudes-modificacion-lista" class="grid gap-4 lg:grid-cols-2">
+                        <div class="py-10 text-center text-slate-500 text-xs">Cargando solicitudes...</div>
+                    </div>
+                </div>
+            </section>
+
             <!-- SECTION: TRASLADOS (Admin Only) -->
             <section id="section-traslados" class="section-content hidden space-y-6">
                 <div class="grid gap-6 lg:grid-cols-[1.1fr_0.9fr] items-start">
@@ -1026,6 +1112,107 @@
             'cargo' => $e->nombre_cargo
         ])->values()),
     };
+</script>
+<script>
+    (function() {
+        const notifContainer = document.getElementById('notificaciones-container');
+        const notifDropdown = document.getElementById('notif-dropdown');
+        const notifLista = document.getElementById('notif-lista');
+        const notifVacia = document.getElementById('notif-vacia');
+        const notifBadge = document.getElementById('notif-badge');
+
+        if (!notifContainer) return;
+
+        const iconos = {
+            'PERIODO_CERCA': 'schedule',
+            'RECURSO_NUEVO': 'gavel',
+            'PLAN_NUEVO': 'assignment',
+            'IMPEDIMENTO_NUEVO': 'block',
+            'RECUSACION_NUEVA': 'gavel',
+            'DELEGACION_PROXIMA': 'swap_horiz',
+            'IMPEDIMENTO_APROBADO': 'how_to_reg',
+            'MODIFICACION_COMPROMISO': 'edit_note',
+        };
+
+        const colores = {
+            'PERIODO_CERCA': 'bg-amber-50 text-amber-700',
+            'RECURSO_NUEVO': 'bg-blue-50 text-blue-700',
+            'PLAN_NUEVO': 'bg-purple-50 text-purple-700',
+            'IMPEDIMENTO_NUEVO': 'bg-red-50 text-red-600',
+            'RECUSACION_NUEVA': 'bg-orange-50 text-orange-700',
+            'DELEGACION_PROXIMA': 'bg-teal-50 text-teal-700',
+            'IMPEDIMENTO_APROBADO': 'bg-emerald-50 text-emerald-700',
+            'MODIFICACION_COMPROMISO': 'bg-sky-50 text-sky-700',
+        };
+
+        window.toggleNotificaciones = function() {
+            notifDropdown.classList.toggle('hidden');
+            if (!notifDropdown.classList.contains('hidden')) {
+                cargarNotificaciones();
+            }
+        };
+
+        document.addEventListener('click', function(e) {
+            if (!notifContainer.contains(e.target)) {
+                notifDropdown.classList.add('hidden');
+            }
+        });
+
+        function cargarNotificaciones() {
+            fetch('/admin/notificaciones', {
+                headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+            })
+            .then(r => r.json())
+            .then(data => {
+                const items = data.notificaciones || [];
+                if (!items.length) {
+                    notifLista.classList.add('hidden');
+                    notifVacia.classList.remove('hidden');
+                    return;
+                }
+                notifVacia.classList.add('hidden');
+                notifLista.classList.remove('hidden');
+
+                notifLista.innerHTML = items.map(n => {
+                    const icon = iconos[n.tipo] || 'info';
+                    const color = colores[n.tipo] || 'bg-slate-50 text-slate-600';
+                    const fecha = new Date(n.created_at).toLocaleDateString('es-CO', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                    const leida = n.leida ? 'opacity-60' : '';
+                    const link = n.seccion ? `onclick="navegarMenu(document.querySelector('[data-section=\\'${n.seccion}\\']'), '${n.seccion}')"` : '';
+                    return `<div class="px-4 py-3 hover:bg-slate-50 transition cursor-pointer ${leida}" ${link}>
+                        <div class="flex items-start gap-3">
+                            <span class="material-symbols-outlined text-lg mt-0.5 ${color} rounded-lg p-1.5 bg-opacity-50">${icon}</span>
+                            <div class="min-w-0 flex-1">
+                                <p class="text-xs font-bold text-slate-800 truncate">${n.titulo}</p>
+                                <p class="text-[11px] text-slate-500 mt-0.5 leading-snug">${n.mensaje}</p>
+                                <p class="text-[10px] text-slate-400 mt-1">${fecha}</p>
+                            </div>
+                            ${!n.leida ? '<span class="w-2 h-2 rounded-full bg-[#00594E] shrink-0 mt-1.5"></span>' : ''}
+                        </div>
+                    </div>`;
+                }).join('');
+            })
+            .catch(() => {
+                notifLista.innerHTML = '<div class="py-6 text-center text-xs text-red-400">Error al cargar notificaciones.</div>';
+            });
+        }
+
+        window.marcarTodasLeidas = function() {
+            fetch('/admin/notificaciones/marcar-leidas', {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
+                }
+            })
+            .then(r => r.json())
+            .then(() => {
+                if (notifBadge) notifBadge.classList.add('hidden');
+                cargarNotificaciones();
+            });
+        };
+    })();
 </script>
 @vite('resources/js/dashboards/admin.js')
 @endsection

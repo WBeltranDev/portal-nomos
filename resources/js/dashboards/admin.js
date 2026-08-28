@@ -25,6 +25,40 @@ export function filtrarUsuarios() {
     });
 }
 
+export function filtrarJefaturas() {
+    const texto = (document.getElementById('buscador-jefaturas')?.value || '').trim().toLowerCase();
+    document.querySelectorAll('.jefatura-fila').forEach(fila => {
+        const nombre = fila.dataset.nombre || '';
+        const cargo = fila.dataset.cargo || '';
+        const area = fila.dataset.area || '';
+        const match = !texto || nombre.includes(texto) || cargo.includes(texto) || area.includes(texto);
+        fila.classList.toggle('hidden', !match);
+    });
+}
+
+export function guardarJefeSuperior(id) {
+    const select = document.getElementById(`jefe-superior-${id}`);
+    const valor = select?.value?.trim();
+    if (valor === String(id)) { alert('Un cargo no puede ser su propio jefe superior.'); return; }
+
+    const mensaje = valor
+        ? '¿Asignar este jefe superior a la vinculación?'
+        : '¿Quitar el jefe superior de esta vinculación?';
+    if (!confirm(mensaje)) return;
+
+    fetchJson(`/admin/vinculaciones/${id}/jefe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id_vinc_jefe: valor ? Number(valor) : null }),
+    })
+        .then(async res => {
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo asignar el jefe superior.'));
+            alert(data.message || 'Jefe superior asignado.');
+        })
+        .catch(error => alert(error.message));
+}
+
 export function seleccionarEmpleado(card, empleado) {
     const setText = (id, value) => {
         const node = document.getElementById(id);
@@ -103,6 +137,17 @@ export function filtrarCheckboxAsignacion() {
     document.querySelectorAll('#lista-evaluados-asignacion .checkbox-evaluado').forEach(item => {
         item.hidden = !termino || !item.dataset.buscar.includes(termino);
     });
+}
+
+export function autoMarcarSubalternos() {
+    const evaluadorSel = document.getElementById('select-evaluador-asignacion');
+    const idEvaluador = evaluadorSel?.value || '';
+    document.querySelectorAll('#lista-evaluados-asignacion .checkbox-evaluado').forEach(item => {
+        const cb = item.querySelector('input[name="id_vinc_evaluado[]"]');
+        if (!cb) return;
+        cb.checked = !!idEvaluador && item.dataset.jefe === idEvaluador;
+    });
+    contarAsignados();
 }
 
 export function mostrarEvaluadorActualTraslado() {
@@ -880,10 +925,13 @@ export function cargarDelegacionesAdmin() {
 // Global window exposure
 window.filtrarEmpleados = filtrarEmpleados;
 window.filtrarUsuarios = filtrarUsuarios;
+window.filtrarJefaturas = filtrarJefaturas;
+window.guardarJefeSuperior = guardarJefeSuperior;
 window.seleccionarEmpleado = seleccionarEmpleado;
 window.filtrarOpcionesAsignacion = filtrarOpcionesAsignacion;
 window.contarAsignados = contarAsignados;
 window.filtrarCheckboxAsignacion = filtrarCheckboxAsignacion;
+window.autoMarcarSubalternos = autoMarcarSubalternos;
 window.mostrarEvaluadorActualTraslado = mostrarEvaluadorActualTraslado;
 window.decidirRecursoAdmin = decidirRecursoAdmin;
 window.abrirEditarPeriodo = abrirEditarPeriodo;
@@ -903,6 +951,7 @@ window.addEventListener('DOMContentLoaded', () => {
     cargarTrasladosAdmin();
     cargarDelegacionesAdmin();
     cargarImpedimentosAdmin();
+    cargarSolicitudesModificacion();
 
     const firstCard = document.querySelector('.empleado-card');
     if (firstCard) {
@@ -934,12 +983,15 @@ export function cargarImpedimentosAdmin() {
     const evaluadores = window.APP_CONFIG?.evaluadores || [];
     const options = evaluadores.map(e => `<option value="${e.id_vinculacion}">${escapeHtml(e.nombre_completo)} - ${escapeHtml(e.cargo)}</option>`).join('');
 
-    lista.innerHTML = impedimentos.map(r => `
+    lista.innerHTML = impedimentos.map(r => {
+        const fechaPresentacion = r.created_at ? new Date(r.created_at).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+        return `
         <div class="rounded-2xl border border-slate-100 bg-white p-4 space-y-2 relative">
             <div class="flex items-center justify-between gap-3">
                 <div class="min-w-0">
                     <p class="text-xs font-black text-slate-800 truncate">${r.tipo === 'IMPEDIMENTO' ? 'Impedimento' : 'Recusación'}</p>
                     <p class="text-[10px] text-slate-400">Solicitante: ${escapeHtml(r.solicitante_nombres || '')} ${escapeHtml(r.solicitante_apellidos || '')}</p>
+                    ${fechaPresentacion ? `<p class="text-[10px] text-slate-400 mt-0.5">Presentado: ${fechaPresentacion}</p>` : ''}
                 </div>
                 ${r.estado === 'PENDIENTE' ? '<span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-amber-50 text-amber-700">Pendiente</span>' : ''}
                 ${r.estado === 'APROBADO' ? '<span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-emerald-50 text-emerald-700">Aprobado</span>' : ''}
@@ -982,7 +1034,8 @@ export function cargarImpedimentosAdmin() {
                 <p class="text-xs text-slate-600 whitespace-pre-wrap">${escapeHtml(r.respuesta_admin || '')}</p>
             </div>
             `}
-        </div>`).join('');
+        </div>`;
+    }).join('');
 }
 
 export function decidirImpedimentoAdmin(id, estado) {
@@ -1021,6 +1074,101 @@ export function decidirImpedimentoAdmin(id, estado) {
 
 window.cargarImpedimentosAdmin = cargarImpedimentosAdmin;
 window.decidirImpedimentoAdmin = decidirImpedimentoAdmin;
+
+export function cargarSolicitudesModificacion() {
+    const lista = document.getElementById('solicitudes-modificacion-lista');
+    if (!lista) return;
+
+    fetchJson('/admin/compromisos/solicitudes')
+        .then(res => res.json())
+        .then(data => {
+            const solicitudes = data.solicitudes || [];
+
+            if (!solicitudes.length) {
+                lista.innerHTML = '<div class="col-span-full rounded-xl border border-dashed border-slate-200 bg-white p-8 text-xs text-slate-500 text-center">No hay solicitudes de modificación de compromisos.</div>';
+                return;
+            }
+
+            lista.innerHTML = solicitudes.map(s => {
+                const detalle = s.detalle_cambio || {};
+                const fecha = s.created_at ? new Date(s.created_at).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+                const estadoBadge = s.estado === 'PENDIENTE'
+                    ? '<span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-amber-50 text-amber-700">Pendiente</span>'
+                    : s.estado === 'APROBADO'
+                        ? '<span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-emerald-50 text-emerald-700">Aprobado</span>'
+                        : '<span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-red-50 text-red-600">Rechazado</span>';
+
+                const bloqueDecision = s.estado === 'PENDIENTE' ? `
+                    <div class="mt-4 pt-3 border-t border-slate-100 space-y-3">
+                        <div>
+                            <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Respuesta (Talento Humano)</label>
+                            <textarea id="respuesta-solmod-${s.id_solicitud}" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white outline-none focus:border-[#00594E]" rows="2" placeholder="Argumento de la decisión..."></textarea>
+                        </div>
+                        <div class="flex gap-2">
+                            <button type="button" onclick="decidirSolicitudModificacion(${s.id_solicitud}, 'APROBADO')" class="flex-1 text-center py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs transition">Aprobar</button>
+                            <button type="button" onclick="decidirSolicitudModificacion(${s.id_solicitud}, 'RECHAZADO')" class="flex-1 text-center py-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-xl font-bold text-xs transition">Rechazar</button>
+                        </div>
+                    </div>` : `
+                    <div class="mt-3 pt-2 border-t border-slate-100">
+                        <p class="text-[10px] font-bold uppercase text-slate-500">Respuesta</p>
+                        <p class="text-xs text-slate-600 whitespace-pre-wrap">${escapeHtml(s.respuesta_admin || '')}</p>
+                    </div>`;
+
+                const metasNuevas = (detalle.metas || []).join(', ');
+
+                return `
+                <div class="rounded-2xl border border-slate-100 bg-white p-4 space-y-2 relative">
+                    <div class="flex items-center justify-between gap-3">
+                        <div class="min-w-0">
+                            <p class="text-xs font-black text-slate-800 truncate">Solicitud #${s.id_solicitud}</p>
+                            <p class="text-[10px] text-slate-400">Solicitante: ${escapeHtml(s.solicitante_nombres || '')} ${escapeHtml(s.solicitante_apellidos || '')}</p>
+                            ${fecha ? `<p class="text-[10px] text-slate-400 mt-0.5">Presentado: ${fecha}</p>` : ''}
+                        </div>
+                        ${estadoBadge}
+                    </div>
+                    <p class="text-xs text-slate-600 whitespace-pre-wrap"><b>Motivo:</b> ${escapeHtml(s.motivo || '')}</p>
+                    <p class="text-xs text-slate-600"><b>Evaluado:</b> ${escapeHtml(s.evaluado_nombres || '')} ${escapeHtml(s.evaluado_apellidos || '')}</p>
+                    <div class="rounded-xl bg-slate-50 border border-slate-100 p-3 space-y-1 text-xs">
+                        <p class="text-[10px] font-bold uppercase text-slate-500">Cambios propuestos</p>
+                        <p class="text-slate-700"><b>Compromiso:</b> ${escapeHtml(s.compromiso_actual_desc || detalle.descripcion || '')}</p>
+                        <p class="text-slate-700"><b>Nueva descripción:</b> ${escapeHtml(detalle.descripcion || '')}</p>
+                        <p class="text-slate-700"><b>Nuevo peso:</b> ${detalle.porcentaje_peso || ''}%</p>
+                        <p class="text-slate-700"><b>Nuevas metas:</b> ${escapeHtml(metasNuevas)}</p>
+                    </div>
+                    ${bloqueDecision}
+                </div>`;
+            }).join('');
+        })
+        .catch(() => {
+            lista.innerHTML = '<div class="col-span-full py-10 text-center text-red-500 text-xs">Error al cargar solicitudes.</div>';
+        });
+}
+
+export function decidirSolicitudModificacion(id, estado) {
+    const respuesta = document.getElementById(`respuesta-solmod-${id}`)?.value?.trim();
+    if (!respuesta) {
+        alert('Debe justificar la decisión (Respuesta obligatoria).');
+        return;
+    }
+
+    if (!confirm('¿Confirma guardar la decisión?')) return;
+
+    fetchJson(`/admin/compromisos/solicitudes/${id}/resolver`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estado, respuesta })
+    })
+    .then(async res => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo resolver la solicitud.'));
+        alert('Solicitud resuelta con éxito.');
+        window.location.reload();
+    })
+    .catch(err => alert(err.message));
+}
+
+window.cargarSolicitudesModificacion = cargarSolicitudesModificacion;
+window.decidirSolicitudModificacion = decidirSolicitudModificacion;
 
 export function actualizarFormularioPeriodoParcial() {
     const periodo = document.getElementById('periodo-parcial-periodo');

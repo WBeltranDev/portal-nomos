@@ -16,6 +16,28 @@
             <span class="text-sm font-semibold text-white">{{ $usuario['nombres'] ?? '' }} {{ $usuario['apellidos'] ?? '' }}</span>
             <span class="text-[10px] uppercase tracking-[0.18em] text-[#B5A160] font-bold">{{ $rolActivo }}</span>
         </div>
+
+        {{-- Campana de notificaciones (Solo Admin) --}}
+        @if(($rolActivo ?? '') === 'admin')
+        <div class="relative" id="notificaciones-container">
+            <button type="button" onclick="toggleNotificaciones()" class="relative p-2 rounded-lg hover:bg-white/10 transition" title="Notificaciones">
+                <span class="material-symbols-outlined text-white/80 text-xl">notifications</span>
+                <span id="notif-badge" class="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold px-1 {{ ($notificacionesNoLeidas ?? 0) > 0 ? '' : 'hidden' }}">{{ $notificacionesNoLeidas ?? 0 }}</span>
+            </button>
+
+            <div id="notif-dropdown" class="hidden absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-100 z-50 overflow-hidden">
+                <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                    <h3 class="text-xs font-black text-slate-800 uppercase tracking-wide">Notificaciones</h3>
+                    <button type="button" onclick="marcarTodasLeidas()" class="text-[10px] font-bold text-[#00594E] hover:underline">Marcar todas leídas</button>
+                </div>
+                <div id="notif-lista" class="max-h-80 overflow-y-auto divide-y divide-slate-50">
+                    <div class="py-6 text-center text-xs text-slate-400">Cargando...</div>
+                </div>
+                <div id="notif-vacia" class="hidden py-6 text-center text-xs text-slate-400">No hay notificaciones.</div>
+            </div>
+        </div>
+        @endif
+
         <div class="relative">
             <button type="button" onclick="toggleProfileMenu()" class="flex items-center gap-3 rounded-full pl-1 pr-3 py-1.5 hover:bg-white/10 transition">
                 <div class="w-10 h-10 rounded-full bg-[#B5A160] text-white font-black flex items-center justify-center shadow-lg">
