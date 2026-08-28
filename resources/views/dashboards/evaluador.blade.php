@@ -332,6 +332,14 @@
                                         <button type="button" id="btn-impedimento-evaluador" onclick="mostrarModalImpedimento()" class="bg-red-600 text-white px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-red-700 transition ml-2 hidden">Declarar Impedimento</button>
                                     </form>
                                 </div>
+
+                                <!-- Solicitar Modificación de Compromisos por Incapacidad (S10) -->
+                                <div id="seccion-solicitar-modificacion-evaluador" class="hidden mt-4">
+                                    <button type="button" onclick="mostrarModalSolicitudModificacion()" class="w-full flex items-center justify-center gap-2 border-2 border-dashed border-neutral-300 hover:border-[#00594E] text-neutral-500 hover:text-[#00594E] px-4 py-3 rounded-xl text-xs font-bold transition">
+                                        <span class="material-symbols-outlined text-base">edit_note</span>
+                                        Solicitar modificación de compromisos (Incapacidad)
+                                    </button>
+                                </div>
                             </div>
 
                             <!-- Formularios modales dinámicos (ocultos inicialmente) -->
@@ -355,6 +363,39 @@
                                     <input type="hidden" name="tipo" value="IMPEDIMENTO">
                                     <div><label class="text-[10px] font-bold text-red-700 uppercase">Motivo y Evidencia (Justificación)</label><textarea name="motivo" class="w-full text-xs p-2 rounded border" required></textarea></div>
                                     <button type="submit" class="bg-red-700 text-white px-4 py-2 rounded-xl text-xs font-bold w-full">Enviar a Talento Humano</button>
+                                </form>
+                            </div>
+
+                            <div id="modal-solicitud-modificacion" class="hidden mt-4 bg-sky-50 p-4 border border-sky-200 rounded-xl">
+                                <h4 class="font-bold text-sky-800 text-sm mb-1">Solicitar Modificación de Compromisos</h4>
+                                <p class="text-[11px] text-sky-600 mb-3">Se usa cuando hay una incapacidad u otra justificación válida y la concertación ya está firmada. Talento Humano la revisará y decidirá.</p>
+                                <form id="form-solicitud-modificacion" onsubmit="enviarSolicitudModificacion(event)" class="space-y-3">
+                                    <div>
+                                        <label class="text-[10px] font-bold text-sky-700 uppercase">Motivo (ej: Incapacidad, comisión...)</label>
+                                        <textarea id="solmod-motivo" class="w-full text-xs p-2 rounded border" placeholder="Describa el motivo de la modificación..." required></textarea>
+                                    </div>
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                        <div>
+                                            <label class="text-[10px] font-bold text-sky-700 uppercase">Compromiso a modificar</label>
+                                            <select id="solmod-compromiso" class="w-full text-xs p-2 rounded border" onchange="cambiarCompromisoSeleccionado()" required></select>
+                                        </div>
+                                        <div>
+                                            <label class="text-[10px] font-bold text-sky-700 uppercase">Nuevo Peso (1% - 15%)</label>
+                                            <input type="number" id="solmod-peso" min="1" max="15" step="0.1" class="w-full text-xs p-2 rounded border" required>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="text-[10px] font-bold text-sky-700 uppercase">Nueva Descripción</label>
+                                        <textarea id="solmod-descripcion" class="w-full text-xs p-2 rounded border" required></textarea>
+                                    </div>
+                                    <div>
+                                        <label class="text-[10px] font-bold text-sky-700 uppercase">Metas de Contribución (separadas por comas)</label>
+                                        <input type="text" id="solmod-metas" class="w-full text-xs p-2 rounded border" placeholder="ej: PDI, Manual, Informe" required>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <button type="submit" class="flex-1 bg-sky-700 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-sky-800 transition">Enviar Solicitud</button>
+                                        <button type="button" onclick="document.getElementById('modal-solicitud-modificacion').classList.add('hidden')" class="flex-1 bg-slate-200 text-slate-600 px-4 py-2 rounded-xl text-xs font-bold hover:bg-slate-300 transition">Cancelar</button>
+                                    </div>
                                 </form>
                             </div>
 

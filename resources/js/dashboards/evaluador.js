@@ -189,6 +189,14 @@ export function abrirConcertacionEvaluador(card, ev) {
     if (btnImpedimento) btnImpedimento.classList.toggle('hidden', !puedeDeclararImpedimento);
     if (!puedeDeclararImpedimento && modalImpedimento) modalImpedimento.classList.add('hidden');
 
+    // Solicitud de modificación de compromisos por incapacidad (S10):
+    // solo visible cuando la concertación ya está firmada y no está calificada.
+    const seccionSolMod = document.getElementById('seccion-solicitar-modificacion-evaluador');
+    const modalSolMod = document.getElementById('modal-solicitud-modificacion');
+    const puedeSolicitarMod = !!ev.concertacion_firmada && ev.estado !== 'CALIFICADA' && !ev.es_traslado;
+    if (seccionSolMod) seccionSolMod.classList.toggle('hidden', !puedeSolicitarMod);
+    if (!puedeSolicitarMod && modalSolMod) modalSolMod.classList.add('hidden');
+
     const avisoTraslado = document.getElementById('aviso-traslado-evaluador');
     if (avisoTraslado) avisoTraslado.classList.toggle('hidden', !ev.es_traslado);
 
@@ -580,6 +588,75 @@ export function guardarEdicionCompromisoEvaluador(id) {
         .catch(error => alert(error.message));
 }
 
+export function mostrarModalSolicitudModificacion() {
+    const modal = document.getElementById('modal-solicitud-modificacion');
+    const select = document.getElementById('solmod-compromiso');
+    if (!modal) return;
+
+    if (select) {
+        const opciones = compromisosActuales.map(c =>
+            `<option value="${c.id_compromiso}">#${c.numero_orden} - ${escapeHtml(c.descripcion).slice(0, 60)} (${c.porcentaje_peso}%)</option>`
+        ).join('');
+        select.innerHTML = opciones || '<option value="">Sin compromisos</option>';
+    }
+
+    const primero = compromisosActuales[0];
+    if (primero) {
+        document.getElementById('solmod-descripcion').value = primero.descripcion || '';
+        document.getElementById('solmod-peso').value = primero.porcentaje_peso ?? '';
+        document.getElementById('solmod-metas').value = (primero.metas || []).join(', ');
+    }
+
+    document.getElementById('solmod-motivo').value = '';
+    modal.classList.remove('hidden');
+}
+
+export function cambiarCompromisoSeleccionado() {
+    const select = document.getElementById('solmod-compromiso');
+    const comp = compromisosActuales.find(c => String(c.id_compromiso) === select?.value);
+    if (!comp) return;
+    document.getElementById('solmod-descripcion').value = comp.descripcion || '';
+    document.getElementById('solmod-peso').value = comp.porcentaje_peso ?? '';
+    document.getElementById('solmod-metas').value = (comp.metas || []).join(', ');
+}
+
+export function enviarSolicitudModificacion(e) {
+    e.preventDefault();
+    if (!selectedEvaluacionId) return;
+
+    const motivo = document.getElementById('solmod-motivo')?.value?.trim();
+    const idCompromiso = document.getElementById('solmod-compromiso')?.value;
+    const descripcion = document.getElementById('solmod-descripcion')?.value?.trim();
+    const peso = parseFloat(document.getElementById('solmod-peso')?.value || '0');
+    const metasRaw = document.getElementById('solmod-metas')?.value;
+
+    if (!motivo || !idCompromiso || !descripcion || !peso || !metasRaw) {
+        alert('Debe diligenciar todos los campos.');
+        return;
+    }
+
+    const metas = metasRaw.split(',').map(m => m.trim()).filter(Boolean);
+    if (!metas.length) {
+        alert('Debe registrar al menos una meta.');
+        return;
+    }
+
+    if (!confirm('¿Enviar la solicitud de modificación a Talento Humano?')) return;
+
+    fetchJson(`/evaluaciones/${selectedEvaluacionId}/compromisos/solicitar-modificacion`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ motivo, id_compromiso: idCompromiso, descripcion, porcentaje_peso: peso, metas }),
+    })
+    .then(async res => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo registrar la solicitud.'));
+        alert('Solicitud de modificación enviada a Talento Humano.');
+        document.getElementById('modal-solicitud-modificacion')?.classList.add('hidden');
+    })
+    .catch(error => alert(error.message));
+}
+
 export function renderTarjetaRecurso(r, contexto) {
     const tipo = r.tipo_recurso === 'REPOSICION' ? 'Reposición' : 'Apelación';
     let acciones = '';
@@ -590,7 +667,7 @@ export function renderTarjetaRecurso(r, contexto) {
                     <option value="APROBADO">Aprobado</option>
                     <option value="NEGADO">Negado</option>
                 </select>
-                <button onclick="decidirRecurso(${r.id_recurso})" class="bg-[#00594E] text-white px-3 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition" type="button">Decidir</button>
+                <button onclick="decidirRecurso(${r.id_recurso}, ${r.tipo_recurso === 'APELACION'}, ${r.id_vinc_receptor ?? 'null'})" class="bg-[#00594E] text-white px-3 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition" type="button">Decidir</button>
             </div>`;
     }
     const evidencias = Array.isArray(r.evidencias) && r.evidencias.length
@@ -603,6 +680,17 @@ export function renderTarjetaRecurso(r, contexto) {
                 </a>`).join('')}
         </div>`
         : '';
+
+    const puedeVerDetalle = contexto === 'evaluador' && r.tipo_recurso === 'APELACION' && r.decision === 'PENDIENTE';
+    const detalleConcertacion = puedeVerDetalle ? `
+        <div class="pt-2 border-t border-slate-100">
+            <button type="button" onclick="verDetalleEvaluacionRecurso(${r.id_recurso})" class="w-full flex items-center justify-center gap-2 border border-dashed border-[#00594E]/40 hover:border-[#00594E] text-[#00594E] hover:bg-[#EAF2EF] px-3 py-2 rounded-xl text-[11px] font-bold transition" type="button">
+                <span id="icon-detalle-rec-${r.id_recurso}" class="material-symbols-outlined text-base">expand_more</span>
+                Ver compromisos y evidencias de la concertación
+            </button>
+            <div id="detalle-rec-${r.id_recurso}" class="hidden mt-2 space-y-3"></div>
+        </div>` : '';
+
     return `
         <div class="rounded-2xl border border-slate-100 bg-white p-4 space-y-2">
             <div class="flex items-center justify-between gap-3">
@@ -618,7 +706,66 @@ export function renderTarjetaRecurso(r, contexto) {
             ${r.evaluado_nombres ? `<p class="text-[10px] font-bold text-slate-500 uppercase">Evaluado: ${escapeHtml(r.evaluado_nombres)} ${escapeHtml(r.evaluado_apellidos || '')}</p>` : ''}
             <p class="text-xs text-slate-600 whitespace-pre-wrap">${escapeHtml(r.motivacion || '')}</p>
             ${evidencias}
+            ${detalleConcertacion}
             ${acciones}
+        </div>`;
+}
+
+export function verDetalleEvaluacionRecurso(id) {
+    const contenedor = document.getElementById(`detalle-rec-${id}`);
+    const icon = document.getElementById(`icon-detalle-rec-${id}`);
+    if (!contenedor) return;
+
+    const abierto = !contenedor.classList.contains('hidden');
+    contenedor.classList.toggle('hidden');
+    if (icon) icon.classList.toggle('rotate-180');
+    if (!abierto && !contenedor.dataset.cargado) {
+        fetchJson(`/recursos/${id}/detalle-evaluacion`)
+            .then(res => res.json())
+            .then(data => {
+                contenedor.dataset.cargado = '1';
+                contenedor.innerHTML = renderDetalleConcertacion(data);
+            })
+            .catch(() => {
+                contenedor.innerHTML = '<div class="py-3 text-center text-xs text-red-500">Error al cargar el detalle de la evaluación.</div>';
+            });
+    }
+}
+
+function renderDetalleConcertacion(data) {
+    const compromisos = data.compromisos || [];
+    if (!compromisos.length) {
+        return '<div class="py-3 text-xs text-slate-400 text-center">No hay compromisos registrados para esta evaluación.</div>';
+    }
+    return `
+        <div class="rounded-xl border border-slate-100 bg-slate-50 p-3 space-y-3">
+            <p class="text-[10px] font-bold uppercase text-slate-500 tracking-wide">Compromisos concertados</p>
+            ${compromisos.map((c, idx) => `
+                <div class="rounded-xl bg-white border border-slate-100 p-3 space-y-1">
+                    <div class="flex items-center justify-between gap-2">
+                        <p class="text-[11px] font-black text-[#00594E] uppercase">Compromiso #${idx + 1}</p>
+                        <span class="text-[10px] font-black rounded-lg px-2 py-0.5 bg-[#EAF2EF] text-[#00594E]">${c.porcentaje_peso}%</span>
+                    </div>
+                    <p class="text-xs text-slate-700">${escapeHtml(c.descripcion)}</p>
+                    <p class="text-[11px] text-slate-500">${escapeHtml((c.metas || []).join(', '))}</p>
+                    ${(c.evidencias && c.evidencias.length) ? `
+                        <div class="pt-1.5 border-t border-slate-100 space-y-1">
+                            <p class="text-[10px] font-bold uppercase text-slate-400">Evidencias de cumplimiento</p>
+                            ${c.evidencias.map(ev => `
+                                <a href="${escapeHtml(ev.url_o_ubicacion)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 text-[11px] text-[#00594E] hover:underline min-w-0">
+                                    <span class="material-symbols-outlined text-sm shrink-0">open_in_new</span>
+                                    <span class="truncate">${escapeHtml(ev.descripcion || ev.url_o_ubicacion)}</span>
+                                </a>`).join('')}
+                        </div>` : '<p class="text-[11px] text-slate-400">Sin evidencias de cumplimiento.</p>'}
+                </div>
+            `).join('')}
+            ${data.evaluacion
+                ? `<div class="pt-2 border-t border-slate-100 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
+                    <span><b>Estado:</b> ${escapeHtml(data.evaluacion.estado || '-')}</span>
+                    <span><b>Concertación firmada:</b> ${data.evaluacion.concertacion_firmada ? 'Sí' : 'No'}</span>
+                    <span><b>Calificación:</b> ${data.evaluacion.calificacion_final ?? '-'}</span>
+                    <span><b>Categoría:</b> ${escapeHtml(data.evaluacion.categoria_final || '-')}</span>
+                </div>` : ''}
         </div>`;
 }
 
@@ -666,11 +813,15 @@ export function cargarRecursosMiosEvaluador() {
         .catch(() => {});
 }
 
-export function enviarDecisionRecurso(id, decision, motivacion) {
+export function enviarDecisionRecurso(id, decision, motivacion, id_vinc_nuevo_evaluador = null) {
     fetchJson(`/recursos/${id}/decision`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decision, motivacion }),
+        body: JSON.stringify({
+            decision,
+            motivacion,
+            ...(id_vinc_nuevo_evaluador ? { id_vinc_nuevo_evaluador } : {}),
+        }),
     })
         .then(async res => {
             const payload = await res.json().catch(() => ({}));
@@ -689,12 +840,13 @@ export function enviarDecisionRecurso(id, decision, motivacion) {
         .catch(error => alert(error.message));
 }
 
-export function decidirRecurso(id) {
+export function decidirRecurso(id, esApelacion = false, idVincReceptor = null) {
     const decision = document.getElementById(`decision-${id}`)?.value;
     const motivacion = prompt('Escribe la motivación de tu decisión sobre el recurso:');
     if (motivacion === null) return;
     if (!motivacion.trim()) { alert('La motivación es obligatoria para decidir el recurso.'); return; }
-    enviarDecisionRecurso(id, decision, motivacion);
+    const idVincNuevoEvaluador = esApelacion && decision === 'APROBADO' ? idVincReceptor : null;
+    enviarDecisionRecurso(id, decision, motivacion, idVincNuevoEvaluador);
 }
 
 export function renderFirmasPlan(plan) {
@@ -1252,6 +1404,7 @@ window.aprobarEvidencia = aprobarEvidencia;
 window.guardarObservacionCompromiso = guardarObservacionCompromiso;
 window.confirmarObservacionCompromiso = confirmarObservacionCompromiso;
 window.decidirRecurso = decidirRecurso;
+window.verDetalleEvaluacionRecurso = verDetalleEvaluacionRecurso;
 window.guardarPlanMejoramiento = guardarPlanMejoramiento;
 window.firmarPlanMejoramiento = firmarPlanMejoramiento;
 window.firmarConcertacion = firmarConcertacion;
@@ -1265,6 +1418,9 @@ window.abrirInstanciaExterna = abrirInstanciaExterna;
 window.guardarNotasInstanciaExterna = guardarNotasInstanciaExterna;
 window.mostrarModalRenuencia = mostrarModalRenuencia;
 window.mostrarModalImpedimento = mostrarModalImpedimento;
+window.mostrarModalSolicitudModificacion = mostrarModalSolicitudModificacion;
+window.cambiarCompromisoSeleccionado = cambiarCompromisoSeleccionado;
+window.enviarSolicitudModificacion = enviarSolicitudModificacion;
 window.addEventListener('DOMContentLoaded', () => {
     const activeRole = window.APP_CONFIG?.activeRole || 'evaluador';
     if (activeRole === 'instancia_externa') {
