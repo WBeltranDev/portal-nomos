@@ -1134,6 +1134,7 @@ export function cargarSolicitudesModificacion() {
                         <p class="text-slate-700"><b>Nueva descripción:</b> ${escapeHtml(detalle.descripcion || '')}</p>
                         <p class="text-slate-700"><b>Nuevo peso:</b> ${detalle.porcentaje_peso || ''}%</p>
                         <p class="text-slate-700"><b>Nuevas metas:</b> ${escapeHtml(metasNuevas)}</p>
+                        ${s.evidencia_url ? `<p class="text-slate-700"><b>Evidencia:</b> <a href="${escapeHtml(s.evidencia_url)}" target="_blank" rel="noopener" class="text-[#00594E] underline break-all">${escapeHtml(s.evidencia_url)}</a></p>` : ''}
                     </div>
                     ${bloqueDecision}
                 </div>`;

@@ -374,14 +374,19 @@
                                         <label class="text-[10px] font-bold text-sky-700 uppercase">Motivo (ej: Incapacidad, comisión...)</label>
                                         <textarea id="solmod-motivo" class="w-full text-xs p-2 rounded border" placeholder="Describa el motivo de la modificación..." required></textarea>
                                     </div>
+                                    <div>
+                                        <label class="text-[10px] font-bold text-sky-700 uppercase">Evidencia (enlace de soporte)</label>
+                                        <input type="url" id="solmod-evidencia" class="w-full text-xs p-2 rounded border" placeholder="https://... (soporte, constancia o incapacidad)" />
+                                        <p class="text-[10px] text-slate-400 mt-1">Opcional: pega el enlace del soporte que justifica la solicitud.</p>
+                                    </div>
                                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                         <div>
                                             <label class="text-[10px] font-bold text-sky-700 uppercase">Compromiso a modificar</label>
                                             <select id="solmod-compromiso" class="w-full text-xs p-2 rounded border" onchange="cambiarCompromisoSeleccionado()" required></select>
                                         </div>
                                         <div>
-                                            <label class="text-[10px] font-bold text-sky-700 uppercase">Nuevo Peso (1% - 15%)</label>
-                                            <input type="number" id="solmod-peso" min="1" max="15" step="0.1" class="w-full text-xs p-2 rounded border" required>
+                                            <label class="text-[10px] font-bold text-sky-700 uppercase">Nuevo Peso (máx. 100%)</label>
+                                            <input type="number" id="solmod-peso" min="1" max="100" step="0.1" class="w-full text-xs p-2 rounded border" required>
                                         </div>
                                     </div>
                                     <div>

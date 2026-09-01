@@ -608,6 +608,7 @@ export function mostrarModalSolicitudModificacion() {
     }
 
     document.getElementById('solmod-motivo').value = '';
+    if (document.getElementById('solmod-evidencia')) document.getElementById('solmod-evidencia').value = '';
     modal.classList.remove('hidden');
 }
 
@@ -629,6 +630,7 @@ export function enviarSolicitudModificacion(e) {
     const descripcion = document.getElementById('solmod-descripcion')?.value?.trim();
     const peso = parseFloat(document.getElementById('solmod-peso')?.value || '0');
     const metasRaw = document.getElementById('solmod-metas')?.value;
+    const evidenciaUrl = document.getElementById('solmod-evidencia')?.value?.trim() || null;
 
     if (!motivo || !idCompromiso || !descripcion || !peso || !metasRaw) {
         alert('Debe diligenciar todos los campos.');
@@ -646,7 +648,7 @@ export function enviarSolicitudModificacion(e) {
     fetchJson(`/evaluaciones/${selectedEvaluacionId}/compromisos/solicitar-modificacion`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ motivo, id_compromiso: idCompromiso, descripcion, porcentaje_peso: peso, metas }),
+        body: JSON.stringify({ motivo, id_compromiso: idCompromiso, descripcion, porcentaje_peso: peso, metas, evidencia_url: evidenciaUrl }),
     })
     .then(async res => {
         const data = await res.json().catch(() => ({}));
