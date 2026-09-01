@@ -10,8 +10,8 @@ return new class extends Migration
     {
         Schema::create('solicitud_modificacion_compromiso', function (Blueprint $table) {
             $table->id('id_solicitud');
-            $table->unsignedBigInteger('id_evaluacion');
-            $table->unsignedBigInteger('id_vinc_solicitante'); // evaluador o evaluado
+            $table->unsignedInteger('id_evaluacion');
+            $table->unsignedInteger('id_vinc_solicitante'); // evaluador o evaluado
             $table->text('motivo');                            // justificación (incapacidad, etc.)
             $table->json('detalle_cambio');                    // { id_compromiso, descripcion, porcentaje_peso, metas: [] }
             $table->enum('estado', ['PENDIENTE', 'APROBADO', 'RECHAZADO'])->default('PENDIENTE');
@@ -31,8 +31,8 @@ return new class extends Migration
 
         Schema::create('bitacora_modificacion_compromiso', function (Blueprint $table) {
             $table->id('id_bitacora');
-            $table->unsignedBigInteger('id_evaluacion');
-            $table->unsignedBigInteger('id_compromiso');
+            $table->unsignedInteger('id_evaluacion');
+            $table->unsignedInteger('id_compromiso');
             $table->text('motivo');
             $table->json('detalle_anterior');
             $table->json('detalle_nuevo');

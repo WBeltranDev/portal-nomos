@@ -2269,7 +2269,7 @@ Route::post('/evaluaciones/{id}/compromisos', function (Request $request, int $i
 
     $data = $request->validate([
         'descripcion' => ['required', 'string'],
-        'porcentaje_peso' => ['required', 'numeric', 'min:1', 'max:15'],
+        'porcentaje_peso' => ['required', 'numeric', 'min:1', 'max:100'],
         'metas' => ['required', 'array', 'min:1'],
         'metas.*' => ['required', 'string'],
     ]);
@@ -2355,7 +2355,7 @@ Route::put('/compromisos/{id}', function (Request $request, int $id) {
 
     $data = $request->validate([
         'descripcion' => ['required', 'string'],
-        'porcentaje_peso' => ['required', 'numeric', 'min:1', 'max:15'],
+        'porcentaje_peso' => ['required', 'numeric', 'min:1', 'max:100'],
         'metas' => ['required', 'array', 'min:1'],
         'metas.*' => ['required', 'string'],
     ]);
@@ -2426,9 +2426,10 @@ Route::post('/evaluaciones/{id}/compromisos/solicitar-modificacion', function (R
         'motivo' => ['required', 'string', 'max:2000'],
         'id_compromiso' => ['required', 'integer', 'exists:compromiso,id_compromiso'],
         'descripcion' => ['required', 'string'],
-        'porcentaje_peso' => ['required', 'numeric', 'min:1', 'max:15'],
+        'porcentaje_peso' => ['required', 'numeric', 'min:1', 'max:100'],
         'metas' => ['required', 'array', 'min:1'],
         'metas.*' => ['required', 'string'],
+        'evidencia_url' => ['nullable', 'string', 'url', 'max:1000'],
     ]);
 
     // El compromiso debe pertenecer a esta evaluación
@@ -2458,6 +2459,7 @@ Route::post('/evaluaciones/{id}/compromisos/solicitar-modificacion', function (R
         'id_evaluacion' => $id,
         'id_vinc_solicitante' => $idVincSolicitante,
         'motivo' => $data['motivo'],
+        'evidencia_url' => $data['evidencia_url'] ?? null,
         'detalle_cambio' => json_encode([
             'id_compromiso' => $data['id_compromiso'],
             'descripcion' => $data['descripcion'],
@@ -2590,6 +2592,7 @@ Route::post('/admin/compromisos/solicitudes/{id}/resolver', function (Request $r
                     'descripcion' => $detalle['descripcion'],
                     'porcentaje_peso' => $detalle['porcentaje_peso'],
                     'metas' => $detalle['metas'],
+                    'evidencia_url' => $solicitud->evidencia_url ?? null,
                 ]),
                 'creado_por' => trim($nombreAdmin),
                 'created_at' => now(),

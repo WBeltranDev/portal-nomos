@@ -656,9 +656,10 @@ class DashboardController extends Controller
         }
 
         // 2. Nuevos recursos de apelación
-        if (Schema::hasTable('recurso_apelacion')) {
-            $recursosNuevos = DB::table('recurso_apelacion')
-                ->where('created_at', '>=', $now->copy()->subDay()->toDateTimeString())
+        if (Schema::hasTable('recurso')) {
+            $recursosNuevos = DB::table('recurso')
+                ->where('tipo_recurso', 'APELACION')
+                ->where('fecha_recurso', '>=', $now->copy()->subDay()->toDateString())
                 ->get();
 
             foreach ($recursosNuevos as $r) {
@@ -684,7 +685,7 @@ class DashboardController extends Controller
                         'titulo' => "Recurso #{$r->id_recurso}",
                         'mensaje' => $mensaje,
                         'seccion' => 'recursos-planes',
-                        'created_at' => $r->created_at ?? $now,
+                        'created_at' => $now,
                         'updated_at' => $now,
                     ]);
                 }
@@ -694,7 +695,7 @@ class DashboardController extends Controller
         // 3. Nuevos planes de mejoramiento
         if (Schema::hasTable('plan_mejoramiento')) {
             $planesNuevos = DB::table('plan_mejoramiento')
-                ->where('created_at', '>=', $now->copy()->subDay()->toDateTimeString())
+                ->where('fecha_creacion', '>=', $now->copy()->subDay())
                 ->get();
 
             foreach ($planesNuevos as $pl) {
@@ -709,7 +710,7 @@ class DashboardController extends Controller
                         'titulo' => "Plan #{$pl->id_plan}",
                         'mensaje' => 'Se generó un nuevo plan de mejoramiento.',
                         'seccion' => 'recursos-planes',
-                        'created_at' => $pl->created_at ?? $now,
+                        'created_at' => $pl->fecha_creacion ?? $now,
                         'updated_at' => $now,
                     ]);
                 }
@@ -755,8 +756,8 @@ class DashboardController extends Controller
         // 5. Delegaciones próximas a vencer (1 día o menos)
         if (Schema::hasTable('delegacion')) {
             $delegacionesProximas = DB::table('delegacion')
-                ->whereNull('fecha_fin_real')
-                ->whereBetween('fecha_fin', [$now, $now->copy()->addDay()])
+                ->where('estado', 'ACTIVA')
+                ->whereBetween('fecha_fin', [$now->copy()->toDateString(), $now->copy()->addDay()->toDateString()])
                 ->get();
 
             foreach ($delegacionesProximas as $d) {
