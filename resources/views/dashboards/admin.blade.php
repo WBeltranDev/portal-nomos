@@ -1082,6 +1082,122 @@
                     </div>
                 </div>
             </section>
+
+            <!-- SECTION: EVALUACIONES - Visor General (Admin Only) -->
+            <section id="section-evaluaciones" class="section-content hidden space-y-6">
+                <div class="panel-card rounded-3xl p-6">
+                    <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                        <div>
+                            <p class="text-xs font-bold uppercase tracking-[0.22em] text-[#00594E]">Monitoreo Global</p>
+                            <h1 class="text-2xl sm:text-3xl font-black text-slate-900">Evaluaciones</h1>
+                            <p class="text-sm text-slate-500 mt-1">Todas las evaluaciones del sistema, su fase, estado, evaluador y evaluado.</p>
+                        </div>
+                        <div class="text-sm text-slate-500">Total: <span class="font-bold text-slate-900">{{ $evaluacionesAdmin->count() }}</span></div>
+                    </div>
+
+                    <!-- Filtros -->
+                    <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                        <input id="evaladmin-buscar" oninput="filtrarEvaluacionesAdmin()" class="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs shadow-sm outline-none focus:border-[#00594E] focus:ring-2 focus:ring-[#00594E]/10" type="text" placeholder="Buscar evaluado, evaluador o ID">
+                        <select id="evaladmin-periodo" onchange="filtrarEvaluacionesAdmin()" class="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-[#00594E]">
+                            <option value="">Todos los periodos</option>
+                            @foreach($periodos->sortByDesc('id_periodo') as $p)
+                                <option value="{{ $p->anio }}-{{ $p->semestre }}">{{ $p->sistema === 'RENDIMIENTO_LABORAL' ? 'RL' : 'AG' }} · {{ $p->anio }}-{{ (int) $p->semestre === 1 ? 'A' : 'B' }}</option>
+                            @endforeach
+                        </select>
+                        <select id="evaladmin-fase" onchange="filtrarEvaluacionesAdmin()" class="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-[#00594E]">
+                            <option value="">Todas las fases</option>
+                            <option value="1">1 - Concertación Pendiente</option>
+                            <option value="2">2 - Concertación Parcial</option>
+                            <option value="3">3 - Subir Evidencias</option>
+                            <option value="4">4 - Calificación</option>
+                            <option value="5">5 - Nota Final</option>
+                        </select>
+                        <select id="evaladmin-estado" onchange="filtrarEvaluacionesAdmin()" class="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-[#00594E]">
+                            <option value="">Todos los estados</option>
+                            <option value="EN_PROCESO">En proceso</option>
+                            <option value="CALIFICADA">Calificada</option>
+                        </select>
+                        <select id="evaladmin-sistema" onchange="filtrarEvaluacionesAdmin()" class="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-[#00594E]">
+                            <option value="">Todos los sistemas</option>
+                            <option value="RENDIMIENTO_LABORAL">RL - Rendimiento Laboral</option>
+                            <option value="ACUERDO_GESTION">AG - Acuerdo de Gestión</option>
+                        </select>
+                    </div>
+
+                    <!-- Tabla -->
+                    <div class="mt-4 overflow-x-auto rounded-2xl border border-slate-100">
+                        <table id="tabla-evaluaciones-admin" class="w-full text-left text-xs">
+                            <thead class="bg-[#EAF2EF] text-[#00594E] font-bold uppercase text-[10px]">
+                                <tr>
+                                    <th class="p-3">#</th>
+                                    <th class="p-3">Evaluado</th>
+                                    <th class="p-3">Cargo / Dependencia</th>
+                                    <th class="p-3">Evaluador</th>
+                                    <th class="p-3">Periodo</th>
+                                    <th class="p-3 text-center">Sistema</th>
+                                    <th class="p-3">Tipo</th>
+                                    <th class="p-3">Fase</th>
+                                    <th class="p-3 text-center">Estado</th>
+                                    <th class="p-3 text-center">Calificación</th>
+                                </tr>
+                            </thead>
+                            <tbody id="evaladmin-tbody" class="divide-y divide-slate-100">
+                                @forelse($evaluacionesAdmin as $ev)
+                                    @php
+                                        $nombreFase = match((int) $ev->fase_actual) {
+                                            1 => 'Concertación Pendiente',
+                                            2 => 'Concertación Parcial',
+                                            3 => 'Subir Evidencias',
+                                            4 => 'Calificación',
+                                            5 => 'Nota Final',
+                                            default => 'Fase ' . $ev->fase_actual,
+                                        };
+                                        $colorFase = match((int) $ev->fase_actual) {
+                                            1 => 'bg-amber-50 text-amber-700',
+                                            2 => 'bg-blue-50 text-blue-700',
+                                            3 => 'bg-violet-50 text-violet-700',
+                                            4 => 'bg-orange-50 text-orange-700',
+                                            5 => 'bg-emerald-50 text-emerald-700',
+                                            default => 'bg-slate-100 text-slate-600',
+                                        };
+                                        $colorEstado = $ev->estado === 'CALIFICADA' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700';
+                                    @endphp
+                                    <tr class="hover:bg-slate-50 transition evaladmin-row"
+                                        data-buscar="{{ strtolower($ev->evaluado_nombres . ' ' . $ev->evaluado_apellidos . ' ' . $ev->evaluador_nombres . ' ' . $ev->evaluador_apellidos . ' ' . $ev->id_evaluacion) }}"
+                                        data-periodo="{{ $ev->anio }}-{{ $ev->semestre }}"
+                                        data-fase="{{ $ev->fase_actual }}"
+                                        data-estado="{{ $ev->estado }}"
+                                        data-sistema="{{ $ev->sistema }}">
+                                        <td class="p-3 font-semibold text-slate-500">#{{ $ev->id_evaluacion }}</td>
+                                        <td class="p-3 font-semibold text-slate-900">{{ $ev->evaluado_nombres }} {{ $ev->evaluado_apellidos }}</td>
+                                        <td class="p-3 text-slate-500">{{ $ev->evaluado_cargo }} · {{ $ev->evaluado_area }}</td>
+                                        <td class="p-3 text-slate-600">{{ $ev->evaluador_nombres }} {{ $ev->evaluador_apellidos }}</td>
+                                        <td class="p-3 text-slate-600">{{ $ev->anio }}-{{ (int) $ev->semestre === 1 ? 'A' : 'B' }}</td>
+                                        <td class="p-3 text-center">
+                                            <span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#EAF2EF] text-[#00594E]">{{ $ev->sistema === 'RENDIMIENTO_LABORAL' ? 'RL' : 'AG' }}</span>
+                                        </td>
+                                        <td class="p-3 text-slate-500">{{ $ev->tipo_nombre }}</td>
+                                        <td class="p-3">
+                                            <span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold {{ $colorFase }}">Fase {{ $ev->fase_actual }}: {{ $nombreFase }}</span>
+                                        </td>
+                                        <td class="p-3 text-center">
+                                            <span class="inline-block px-2.5 py-1 rounded-full text-[10px] font-bold {{ $colorEstado }}">{{ $ev->estado === 'CALIFICADA' ? 'Calificada' : 'En proceso' }}</span>
+                                        </td>
+                                        <td class="p-3 text-center font-bold text-slate-800">{{ $ev->calificacion_final ?? '-' }}</td>
+                                    </tr>
+                                @empty
+                                    <tr>
+                                        <td colspan="10" class="p-8 text-center text-slate-400">No hay evaluaciones registradas.</td>
+                                    </tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="evaladmin-vacio" class="hidden mt-6 py-8 text-center text-slate-400 text-xs rounded-xl border border-dashed border-slate-200">
+                        No se encontraron evaluaciones con los filtros seleccionados.
+                    </div>
+                </div>
+            </section>
         </main>
     </div>
 </div>
@@ -1213,6 +1329,34 @@
             });
         };
     })();
-</script>
+    </script>
+
+    <script>
+        function filtrarEvaluacionesAdmin() {
+            const buscar = (document.getElementById('evaladmin-buscar')?.value || '').toLowerCase().trim();
+            const periodo = document.getElementById('evaladmin-periodo')?.value || '';
+            const fase = document.getElementById('evaladmin-fase')?.value || '';
+            const estado = document.getElementById('evaladmin-estado')?.value || '';
+            const sistema = document.getElementById('evaladmin-sistema')?.value || '';
+
+            const rows = document.querySelectorAll('.evaladmin-row');
+            let visibles = 0;
+
+            rows.forEach(row => {
+                const okBuscar = !buscar || row.dataset.buscar.includes(buscar);
+                const okPeriodo = !periodo || row.dataset.periodo === periodo;
+                const okFase = !fase || row.dataset.fase === fase;
+                const okEstado = !estado || row.dataset.estado === estado;
+                const okSistema = !sistema || row.dataset.sistema === sistema;
+
+                const visible = okBuscar && okPeriodo && okFase && okEstado && okSistema;
+                row.style.display = visible ? '' : 'none';
+                if (visible) visibles++;
+            });
+
+            const vacio = document.getElementById('evaladmin-vacio');
+            if (vacio) vacio.classList.toggle('hidden', visibles > 0);
+        }
+    </script>
 @vite('resources/js/dashboards/admin.js')
 @endsection

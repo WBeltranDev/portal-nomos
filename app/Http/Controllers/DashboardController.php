@@ -27,6 +27,7 @@ class DashboardController extends Controller
         $usuarios = collect();
         $empleados = collect();
         $evaluaciones = collect();
+        $evaluacionesAdmin = collect();
         $periodos = collect();
         $ponderaciones = collect();
         $periodosParciales = collect();
@@ -314,6 +315,53 @@ class DashboardController extends Controller
                     ->orderByDesc('ir.id_impedimento')
                     ->get();
             }
+
+            // Visor general de TODAS las evaluaciones (menú "Evaluaciones")
+            $evaluacionesAdmin = DB::table('evaluacion as ev')
+                ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
+                ->join('vinculacion as vdo', 'vdo.id_vinculacion', '=', 'ev.id_vinc_evaluado')
+                ->join('funcionario as fdo', 'fdo.id_funcionario', '=', 'vdo.id_funcionario')
+                ->join('vinculacion as vor', 'vor.id_vinculacion', '=', 'ev.id_vinc_evaluador')
+                ->join('funcionario as forr', 'forr.id_funcionario', '=', 'vor.id_funcionario')
+                ->leftJoin('firma as f_ev', function ($join) {
+                    $join->on('f_ev.id_evaluacion', '=', 'ev.id_evaluacion')
+                        ->where('f_ev.tipo_firma', '=', 'CONCERTACION_EVALUADO');
+                })
+                ->leftJoin('firma as f_er', function ($join) {
+                    $join->on('f_er.id_evaluacion', '=', 'ev.id_evaluacion')
+                        ->where('f_er.tipo_firma', '=', 'CONCERTACION_EVALUADOR');
+                })
+                ->leftJoin('firma as f_no', function ($join) {
+                    $join->on('f_no.id_evaluacion', '=', 'ev.id_evaluacion')
+                        ->where('f_no.tipo_firma', '=', 'NOTIFICACION_EVALUADO');
+                })
+                ->select(
+                    'ev.id_evaluacion',
+                    'ev.estado',
+                    'ev.tipo_evaluacion as tipo_nombre',
+                    'ev.referencia',
+                    'ev.es_traslado',
+                    'ev.calificacion_final',
+                    'ev.categoria_final',
+                    'ev.fase_actual',
+                    'ev.concertacion_firmada',
+                    'p.anio',
+                    'p.semestre',
+                    'p.sistema',
+                    'p.fecha_inicio',
+                    'p.fecha_fin',
+                    'fdo.nombres as evaluado_nombres',
+                    'fdo.apellidos as evaluado_apellidos',
+                    'vdo.cargo as evaluado_cargo',
+                    'vdo.area as evaluado_area',
+                    'forr.nombres as evaluador_nombres',
+                    'forr.apellidos as evaluador_apellidos',
+                    DB::raw('IF(f_ev.id_firma IS NOT NULL, 1, 0) as evaluado_firmado'),
+                    DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado'),
+                    DB::raw('IF(f_no.id_firma IS NOT NULL, 1, 0) as notificacion_firmada')
+                )
+                ->orderByDesc('ev.id_evaluacion')
+                ->get();
         }
 
         // 2. Data for Evaluador or Instancia Externa
@@ -601,6 +649,7 @@ class DashboardController extends Controller
 
         $viewData = compact(
             'usuario', 'rolActivo', 'usuarios', 'empleados', 'evaluaciones',
+            'evaluacionesAdmin',
             'periodos', 'ponderaciones', 'evaluacionesEvaluador', 'evaluacionesEvaluado',
             'evaluadosDisponibles', 'miVinculacionEvaluador', 'acuerdosRL', 'acuerdosAG',
             'ponderacionesConfig', 'evaluacionesInstanciaExterna', 'planesPendientesEvaluador',
