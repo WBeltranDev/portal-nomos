@@ -193,7 +193,6 @@
                                         <option value="EVALUADO">Evaluado (Solo recibe)</option>
                                         <option value="EVALUADOR">Evaluador (Califica a otros)</option>
                                         <option value="ADMINISTRADOR">Talento Humano (Admin)</option>
-                                        <option value="INSTANCIA_EXTERNA">Instancia Externa</option>
                                     </select>
                                 </div>
                                 <button type="submit" class="w-full bg-[#B5A160] text-white rounded-xl py-2.5 text-xs font-bold hover:brightness-110 transition shadow-md">Guardar Funcionario</button>

@@ -28,7 +28,7 @@ class UsuarioController extends Controller
             'correo' => ['required', 'email', 'max:255'],
             'cargo' => ['required', 'string', 'max:255'],
             'area' => ['required', 'string', 'max:255'],
-            'rol' => ['required', 'string', 'in:EVALUADOR,EVALUADO,ADMINISTRADOR,INSTANCIA_EXTERNA'],
+            'rol' => ['required', 'string', 'in:EVALUADOR,EVALUADO,ADMINISTRADOR'],
             'sistema_evaluacion' => ['nullable', 'string', 'in:RENDIMIENTO_LABORAL,ACUERDO_GESTION'],
             'nivel_jerarquico' => ['nullable', 'string'],
             'codigo_cargo' => ['nullable', 'numeric'],

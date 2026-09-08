@@ -521,10 +521,6 @@ Route::post('/login', function (Request $request) {
         $roles[] = 'admin';
     }
 
-    if ($user->rol === 'INSTANCIA_EXTERNA') {
-        $roles[] = 'instancia_externa';
-    }
-
     if ($funcionario) {
         $vinculaciones = DB::table('vinculacion')
             ->where('id_funcionario', $funcionario->id_funcionario)
@@ -601,7 +597,7 @@ Route::get('/seleccionar-rol', function () {
 
 Route::post('/seleccionar-rol', function (Request $request) {
     $data = $request->validate([
-        'rol' => ['required', 'in:evaluado,evaluador,admin,instancia_externa'],
+        'rol' => ['required', 'in:evaluado,evaluador,admin'],
     ]);
 
     $roles = session('usuario_autenticado.roles', []);
@@ -3603,120 +3599,7 @@ Route::post('/evaluaciones/{id}/calificar-ejes', function (Request $request, int
 })->name('evaluaciones.calificar-ejes');
 
 
-/**
- * Lista TODOS los funcionarios con ejes misionales habilitados (aplica_eje_misional=1,
- * sistema AG, vinculación activa), para el módulo de Instancias Externas (Vicerrectoría
- * de Investigación, Vicerrectoría de Proyección Social, CEDP). El pliego indica que la
- * carga de estas notas es exclusiva de las instancias externas; ver también
- * /evaluaciones/{id}/calificar-ejes (evaluador) — ambos endpoints conviven hasta que
- * Talento Humano confirme si el evaluador debe perder ese permiso.
- *
- * A propósito NO se filtra por si ya existe evaluación o concertación firmada: la lista
- * debe mostrar a todo el que tiene el eje habilitado, para que la instancia externa vea
- * quién falta por tener evaluación abierta. La carga de notas en sí sigue exigiendo que
- * exista la evaluación y que la concertación esté firmada (ver /ejes-externa).
- */
-if (!function_exists('obtenerEvaluacionesAgConEjesMisionales')) {
-    function obtenerEvaluacionesAgConEjesMisionales() {
-        $periodoAG = DB::table('periodo')
-            ->where('sistema', 'ACUERDO_GESTION')
-            ->where('estado', 'ABIERTO')
-            ->orderByDesc('id_periodo')
-            ->first();
 
-        $personas = DB::table('vinculacion as v')
-            ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
-            ->where('v.sistema_evaluacion', 'ACUERDO_GESTION')
-            ->where('v.aplica_eje_misional', 1)
-            ->where('v.activa', 1)
-            ->select('v.id_vinculacion', 'v.cargo as evaluado_cargo', 'v.area as evaluado_area', 'f.nombres as evaluado_nombres', 'f.apellidos as evaluado_apellidos')
-            ->orderBy('f.apellidos')
-            ->get();
-
-        foreach ($personas as $persona) {
-            $evaluacion = $periodoAG
-                ? DB::table('evaluacion')
-                    ->where('id_periodo', $periodoAG->id_periodo)
-                    ->where('id_vinc_evaluado', $persona->id_vinculacion)
-                    ->orderByDesc('id_evaluacion')
-                    ->first()
-                : null;
-
-            $persona->id_evaluacion = $evaluacion->id_evaluacion ?? null;
-            $persona->fase_actual = $evaluacion->fase_actual ?? null;
-            $persona->estado = $evaluacion->estado ?? null;
-            $persona->concertacion_firmada = $evaluacion ? (bool) $evaluacion->concertacion_firmada : false;
-
-            $config = $evaluacion ? getEvaluacionEjes((int) $evaluacion->id_evaluacion) : [];
-            $ejesActivos = ['DOCENCIA'];
-            if (!empty($config['investigacion'])) $ejesActivos[] = 'INVESTIGACION';
-            if (!empty($config['proyeccion_social'])) $ejesActivos[] = 'PROYECCION_SOCIAL';
-            $persona->ejes_activos = $ejesActivos;
-
-            $persona->calificaciones = $evaluacion
-                ? DB::table('eje_misional_calificacion')
-                    ->where('id_evaluacion', $evaluacion->id_evaluacion)
-                    ->get(['eje', 'calificacion', 'observaciones', 'origen', 'fecha_ingreso'])
-                : collect();
-        }
-
-        return $personas;
-    }
-}
-
-Route::get('/instancia-externa/evaluaciones', function () {
-    abort_unless(session('usuario_autenticado.rol_activo') === 'instancia_externa', 403);
-
-    return response()->json([
-        'evaluaciones' => obtenerEvaluacionesAgConEjesMisionales(),
-    ]);
-})->name('instancia-externa.evaluaciones');
-
-// --- POST: Calificar ejes misionales — Instancia Externa (Vicerrectoría Investigación / Proyección Social / CEDP) ---
-// Endpoint aditivo: no reemplaza /evaluaciones/{id}/calificar-ejes (evaluador). Ver nota arriba.
-Route::post('/evaluaciones/{id}/ejes-externa', function (Request $request, int $id) {
-    abort_unless(session('usuario_autenticado.rol_activo') === 'instancia_externa', 403);
-
-    $evaluacion = DB::table('evaluacion as ev')
-        ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
-        ->where('ev.id_evaluacion', $id)
-        ->select('ev.*', 'p.sistema')
-        ->first();
-    abort_unless($evaluacion, 404);
-    abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
-    abort_unless(strtoupper(trim((string) $evaluacion->sistema)) === 'ACUERDO_GESTION', 422, 'Solo aplica a evaluaciones de Acuerdo de Gestión.');
-    abort_unless($evaluacion->concertacion_firmada, 403, 'La concertación debe estar firmada antes de calificar ejes misionales.');
-    abort_if($evaluacion->estado === 'CALIFICADA', 422, 'Esta evaluación ya fue calificada y calculada; las notas quedaron congeladas y no se pueden modificar.');
-
-    $vinculacionEvaluado = DB::table('vinculacion')
-        ->where('id_vinculacion', $evaluacion->id_vinc_evaluado)
-        ->first();
-    abort_unless($vinculacionEvaluado && $vinculacionEvaluado->aplica_eje_misional, 403, 'Este evaluado no tiene ejes misionales habilitados.');
-
-    $data = $request->validate([
-        'ejes' => ['required', 'array'],
-        'ejes.*.tipo_eje'    => ['required', 'in:DOCENCIA,INVESTIGACION,PROYECCION_SOCIAL'],
-        'ejes.*.calificacion'=> ['required', 'numeric', 'min:0', 'max:100'],
-        'ejes.*.observacion' => ['nullable', 'string', 'max:500'],
-    ]);
-
-    $auth = session('usuario_autenticado');
-
-    foreach ($data['ejes'] as $eje) {
-        DB::table('eje_misional_calificacion')->updateOrInsert(
-            ['id_evaluacion' => $id, 'eje' => $eje['tipo_eje']],
-            [
-                'calificacion' => $eje['calificacion'],
-                'observaciones'=> $eje['observacion'] ?? null,
-                'id_vinc_ingresador' => null,
-                'id_usuario_ingresador' => $auth['id_usuario'] ?? null,
-                'origen' => 'INSTANCIA_EXTERNA',
-            ]
-        );
-    }
-
-    return response()->json(['success' => true, 'message' => 'Notas de componente académico cargadas correctamente.']);
-})->name('evaluaciones.ejes-externa');
 
 
 // ============================================================================

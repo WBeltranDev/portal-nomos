@@ -223,7 +223,7 @@
                                     Calificaciones de ejes misionales
                                 </h4>
                             </div>
-                            <p class="text-[10px] text-slate-400 font-semibold mt-1">Docencia (eje base), investigación y proyección social registradas por la instancia externa.</p>
+                            <p class="text-[10px] text-slate-400 font-semibold mt-1">Docencia (eje base), investigación y proyección social registradas en la evaluación.</p>
                             <div id="ejes-lista-evaluado" class="mt-4 space-y-3"></div>
                         </div>
 

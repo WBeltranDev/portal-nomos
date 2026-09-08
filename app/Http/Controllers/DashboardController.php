@@ -364,8 +364,8 @@ class DashboardController extends Controller
                 ->get();
         }
 
-        // 2. Data for Evaluador or Instancia Externa
-        if (in_array($rolActivo, ['evaluador', 'instancia_externa'], true) && $usuario['id_funcionario']) {
+        // 2. Data for Evaluador
+        if ($rolActivo === 'evaluador' && $usuario['id_funcionario']) {
             $miVinculacionEvaluador = DB::table('vinculacion')
                 ->where('id_funcionario', $usuario['id_funcionario'])
                 ->where('activa', 1)
@@ -613,10 +613,7 @@ class DashboardController extends Controller
             }
         }
 
-        // 4. Data for Instancia Externa
-        if ($rolActivo === 'instancia_externa') {
-            $evaluacionesInstanciaExterna = obtenerEvaluacionesAgConEjesMisionales();
-        }
+
 
         // --- NOTIFICACIONES (Solo Admin) ---
         $notificaciones = collect();
@@ -652,7 +649,7 @@ class DashboardController extends Controller
             'evaluacionesAdmin',
             'periodos', 'ponderaciones', 'evaluacionesEvaluador', 'evaluacionesEvaluado',
             'evaluadosDisponibles', 'miVinculacionEvaluador', 'acuerdosRL', 'acuerdosAG',
-            'ponderacionesConfig', 'evaluacionesInstanciaExterna', 'planesPendientesEvaluador',
+            'ponderacionesConfig', 'planesPendientesEvaluador',
             'periodosParciales', 'funcionariosParaPeriodoParcial', 'vinculacionesReemplazo',
             'evaluadoresDelegacion', 'delegadosDisponibles', 'impedimentos',
             'cargosCatalogo', 'dependenciasCatalogo', 'funcionariosNoCalificados', 'evaluacionesExtratiempo', 'historialExtratiempo',
@@ -663,7 +660,7 @@ class DashboardController extends Controller
         return match ($rolActivo) {
             'admin' => view('dashboards.admin', $viewData),
             'evaluado' => view('dashboards.evaluado', $viewData),
-            'evaluador', 'instancia_externa' => view('dashboards.evaluador', $viewData),
+            'evaluador' => view('dashboards.evaluador', $viewData),
             default => view('dashboards.evaluado', $viewData),
         };
     }

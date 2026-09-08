@@ -59,7 +59,6 @@
         </button>
         @endif
 
-        @if ($rolActivo !== 'instancia_externa')
         <button type="button" class="sidebar-link w-full @if($rolActivo !== 'admin') active @endif flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-slate-700 transition" onclick="navegarMenu(this, '{{ $rolActivo === 'evaluador' ? 'evaluaciones-evaluador' : 'evaluaciones' }}')">
             <span class="material-symbols-outlined">fact_check</span>
             Evaluaciones
@@ -68,14 +67,6 @@
         <button type="button" class="sidebar-link w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-slate-700 transition" onclick="navegarMenu(this, 'reportes')">
             <span class="material-symbols-outlined">description</span>
             Exportar PDF
-        </button>
-        @endif
-        @endif
-
-        @if ($rolActivo === 'instancia_externa' || $rolActivo === 'evaluador')
-        <button type="button" class="sidebar-link w-full @if($rolActivo === 'instancia_externa') active @endif flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-slate-700 transition" onclick="navegarMenu(this, 'instancia-externa')">
-            <span class="material-symbols-outlined">school</span>
-            Notas Componente Académico
         </button>
         @endif
     </nav>

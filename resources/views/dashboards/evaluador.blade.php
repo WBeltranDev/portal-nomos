@@ -489,9 +489,6 @@
                     </div>
                 </div>
             </section>
-
-            <!-- SECTION: INSTANCIA EXTERNA (academic components) -->
-            @include('partials.evaluador.instancia-externa')
         </main>
     </div>
 </div>

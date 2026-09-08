@@ -1,5 +1,5 @@
 /**
- * Evaluador & Instancia Externa Dashboard JS Module
+ * Evaluador Dashboard JS Module
  */
 import { escapeHtml, fetchJson, parseErrorMessage, showInlineMessage, navegarMenu, renderResultado } from './common.js';
 
@@ -8,7 +8,6 @@ let selectedEstadoEvaluacion = null;
 let selectedEvaluacionData = null;
 let selectedEvaluacionEjes = {};
 let selectedPlanData = null;
-let selectedEvalExternaId = null;
 let compromisosActuales = [];
 
 const EJE_LABELS = {
@@ -1211,158 +1210,8 @@ export function mostrarModalImpedimento() {
     if (modal && form) {
         modal.classList.toggle('hidden');
         form.action = `/evaluacion/${selectedEvaluacionId}/impedimento`;
-    }
-}
-// --- Instancia Externa Functions ---
-export function cargarListaInstanciaExterna() {
-    const contenedor = document.getElementById('instancia-externa-lista');
-    if (!contenedor) return;
-    fetchJson('/instancia-externa/evaluaciones')
-        .then(res => res.json())
-        .then(payload => {
-            const evaluaciones = payload.evaluaciones || [];
-            contenedor.innerHTML = '';
-            if (!evaluaciones.length) {
-                contenedor.innerHTML = '<div class="py-8 text-center text-slate-500 text-xs">No hay evaluados de Acuerdo de Gestión con ejes misionales habilitados.</div>';
-                return;
-            }
-            evaluaciones.forEach(ev => {
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = 'evaluacion-externa-card w-full text-left p-4 rounded-2xl border border-slate-200 bg-white cursor-pointer hover:border-[#00594E] transition';
-                const ejesTexto = (ev.ejes_activos || []).map(e => EJE_LABELS[e] || e).join(' · ');
-                const cargados = (ev.calificaciones || []).length;
-                let badgeTexto, badgeClass;
-                if (!ev.id_evaluacion) {
-                    badgeTexto = 'Sin evaluación abierta';
-                    badgeClass = 'bg-slate-100 text-slate-500';
-                } else if (!ev.concertacion_firmada) {
-                    badgeTexto = 'Concertación pendiente';
-                    badgeClass = 'bg-amber-50 text-amber-700';
-                } else if (cargados) {
-                    badgeTexto = cargados + ' nota(s)';
-                    badgeClass = 'bg-[#EAF2EF] text-[#00594E]';
-                } else {
-                    badgeTexto = 'Sin notas';
-                    badgeClass = 'bg-amber-50 text-amber-700';
-                }
-                btn.innerHTML = `
-                    <div class="flex items-start justify-between gap-3">
-                        <div class="min-w-0">
-                            <h4 class="font-bold text-slate-900 text-sm leading-snug">${escapeHtml(ev.evaluado_nombres || '')} ${escapeHtml(ev.evaluado_apellidos || '')}</h4>
-                            <p class="text-xs text-slate-500 mt-0.5">${escapeHtml(ev.evaluado_cargo || '')} - ${escapeHtml(ev.evaluado_area || '')}</p>
-                        </div>
-                        <span class="text-[10px] font-bold uppercase px-2 py-1 rounded-full ${badgeClass}">${badgeTexto}</span>
-                    </div>
-                    <div class="flex justify-between items-center mt-3">
-                        <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#EAF2EF] text-[#00594E]">AG</span>
-                        <span class="text-[9px] uppercase tracking-wide font-bold text-slate-400">${escapeHtml(ejesTexto)}</span>
-                    </div>
-                `;
-                btn.onclick = () => abrirInstanciaExterna(btn, ev);
-                contenedor.appendChild(btn);
-            });
-        })
-        .catch(() => {
-            contenedor.innerHTML = '<div class="py-8 text-center text-red-500 text-xs">No se pudo cargar el listado.</div>';
-        });
 }
 
-export function abrirInstanciaExterna(card, ev) {
-    selectedEvalExternaId = ev.id_evaluacion;
-
-    const panel = document.getElementById('panel-instancia-externa');
-    const empty = document.getElementById('panel-instancia-externa-empty');
-    if (empty) empty.classList.add('hidden');
-    if (panel) panel.classList.remove('hidden');
-
-    const setText = (id, value) => {
-        const node = document.getElementById(id);
-        if (node) node.innerText = value;
-    };
-    setText('instancia-externa-nombre', `${ev.evaluado_nombres || ''} ${ev.evaluado_apellidos || ''}`.trim());
-    setText('instancia-externa-detalle', `${ev.evaluado_cargo || '-'} - ${ev.evaluado_area || '-'}`);
-
-    const notasExistentes = (ev.calificaciones || []).reduce((acc, c) => {
-        acc[c.eje] = c;
-        return acc;
-    }, {});
-
-    let avisoTexto = null;
-    if (!ev.id_evaluacion) {
-        avisoTexto = 'Aún no se ha creado la evaluación de este periodo para esta persona. El evaluador debe abrirla primero antes de poder cargar notas.';
-    } else if (!ev.concertacion_firmada) {
-        avisoTexto = 'La evaluación ya existe, pero la concertación de compromisos todavía no ha sido firmada por evaluador y evaluado. Podrás cargar las notas una vez se firme.';
-    } else if (ev.estado === 'CALIFICADA') {
-        avisoTexto = 'Esta evaluación ya fue calificada y calculada; las notas quedaron congeladas.';
-    }
-    const bloqueada = !!avisoTexto;
-    const contenedor = document.getElementById('instancia-externa-ejes-contenedor');
-    if (contenedor) {
-        const avisoBloqueada = avisoTexto ? `
-            <div class="rounded-xl border border-slate-200 bg-slate-100 p-3 text-[11px] font-semibold text-slate-600 flex items-center gap-2">
-                <span class="material-symbols-outlined text-base">${ev.estado === 'CALIFICADA' ? 'lock' : 'info'}</span>
-                ${escapeHtml(avisoTexto)}
-            </div>` : '';
-        contenedor.innerHTML = avisoBloqueada + ((ev.ejes_activos || []).map(eje => {
-            const existente = notasExistentes[eje];
-            return `
-                <div class="p-3 rounded-xl border border-slate-100 bg-slate-50/50">
-                    <p class="text-xs font-bold text-slate-800">${EJE_LABELS[eje] || eje}</p>
-                    ${existente ? `<p class="text-[10px] text-slate-400 mt-0.5">Última carga: ${escapeHtml(existente.fecha_ingreso || '')} (${escapeHtml(existente.origen || '-')})</p>` : ''}
-                    <div class="mt-2 flex items-center gap-2">
-                        <label class="text-[10px] font-bold text-slate-500 uppercase">Calificación (0-100)</label>
-                        <input type="number" min="0" max="100" step="0.01" class="eje-externa-input w-24 text-xs rounded-lg border border-slate-200 p-1.5 disabled:bg-slate-100 disabled:text-slate-500" data-eje="${eje}" value="${existente?.calificacion ?? ''}" onblur="clampCalificacion(this)" ${bloqueada ? 'disabled' : ''} />
-                    </div>
-                    <textarea class="eje-externa-observacion mt-2 w-full text-xs rounded-lg border border-slate-200 p-2 disabled:bg-slate-100 disabled:text-slate-500" rows="2" data-eje="${eje}" placeholder="Observaciones (opcional)" ${bloqueada ? 'disabled' : ''}>${escapeHtml(existente?.observaciones || '')}</textarea>
-                </div>`;
-        }).join('') || '<p class="text-xs text-slate-400">Este evaluado no tiene ejes misionales activos.</p>');
-    }
-
-    const btnGuardarExterna = document.querySelector('#form-instancia-externa button[type="submit"]');
-    if (btnGuardarExterna) {
-        btnGuardarExterna.disabled = bloqueada;
-        btnGuardarExterna.classList.toggle('opacity-50', bloqueada);
-        btnGuardarExterna.classList.toggle('cursor-not-allowed', bloqueada);
-    }
-
-    document.querySelectorAll('.evaluacion-externa-card').forEach(el => el.classList.remove('ring-2', 'ring-[#00594E]'));
-    if (card) card.classList.add('ring-2', 'ring-[#00594E]');
-}
-
-export function guardarNotasInstanciaExterna(e) {
-    e.preventDefault();
-    if (!selectedEvalExternaId) return;
-
-    const ejes = Array.from(document.querySelectorAll('.eje-externa-input'))
-        .filter(input => input.value !== '')
-        .map(input => {
-            const eje = input.dataset.eje;
-            const observacion = document.querySelector(`.eje-externa-observacion[data-eje="${eje}"]`)?.value || '';
-            return { tipo_eje: eje, calificacion: parseFloat(input.value), observacion };
-        });
-
-    const msg = document.getElementById('instancia-externa-mensaje');
-    if (!ejes.length) {
-        if (msg) { msg.classList.remove('hidden'); msg.className = 'text-xs font-semibold text-red-600'; msg.innerText = 'Ingresa al menos una calificación.'; }
-        return;
-    }
-
-    fetchJson(`/evaluaciones/${selectedEvalExternaId}/ejes-externa`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ejes }),
-    })
-        .then(async res => {
-            const payload = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(parseErrorMessage(payload, 'No se pudo guardar. Revisa que las calificaciones estén entre 0 y 100.'));
-            if (msg) { msg.classList.remove('hidden'); msg.className = 'text-xs font-semibold text-[#00594E]'; msg.innerText = payload.message || 'Notas guardadas.'; }
-            cargarListaInstanciaExterna();
-        })
-        .catch(error => {
-            if (msg) { msg.classList.remove('hidden'); msg.className = 'text-xs font-semibold text-red-600'; msg.innerText = error.message; }
-        });
-}
 
 export function seleccionarEvaluacionPorId(idEvaluacion, targetTab = 'recursos') {
     const sec = document.getElementById('section-evaluaciones-evaluador');
@@ -1415,23 +1264,14 @@ window.guardarCalificacionesCompetencias = guardarCalificacionesCompetencias;
 window.guardarCalificacionesEjes = guardarCalificacionesEjes;
 window.calcularNotaFinal = calcularNotaFinal;
 window.previsualizarCalculoEvaluador = previsualizarCalculoEvaluador;
-window.cargarListaInstanciaExterna = cargarListaInstanciaExterna;
-window.abrirInstanciaExterna = abrirInstanciaExterna;
-window.guardarNotasInstanciaExterna = guardarNotasInstanciaExterna;
 window.mostrarModalRenuencia = mostrarModalRenuencia;
 window.mostrarModalImpedimento = mostrarModalImpedimento;
 window.mostrarModalSolicitudModificacion = mostrarModalSolicitudModificacion;
 window.cambiarCompromisoSeleccionado = cambiarCompromisoSeleccionado;
 window.enviarSolicitudModificacion = enviarSolicitudModificacion;
 window.addEventListener('DOMContentLoaded', () => {
-    const activeRole = window.APP_CONFIG?.activeRole || 'evaluador';
-    if (activeRole === 'instancia_externa') {
-        navegarMenu(null, 'instancia-externa');
-        cargarListaInstanciaExterna();
-    } else {
-        navegarMenu(null, 'evaluaciones-evaluador');
-        cargarRecursosMiosEvaluador();
-        const firstEvaluacion = document.querySelector('.evaluacion-evaluador-card');
-        if (firstEvaluacion) firstEvaluacion.click();
-    }
+    navegarMenu(null, 'evaluaciones-evaluador');
+    cargarRecursosMiosEvaluador();
+    const firstEvaluacion = document.querySelector('.evaluacion-evaluador-card');
+    if (firstEvaluacion) firstEvaluacion.click();
 });
