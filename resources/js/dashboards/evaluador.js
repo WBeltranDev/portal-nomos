@@ -1210,6 +1210,7 @@ export function mostrarModalImpedimento() {
     if (modal && form) {
         modal.classList.toggle('hidden');
         form.action = `/evaluacion/${selectedEvaluacionId}/impedimento`;
+    }
 }
 
 
