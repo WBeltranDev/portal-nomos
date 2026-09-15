@@ -1,7 +1,7 @@
-@if(session('success_periodo') || session('success_ponderacion') || session('success_asignacion') || session('success_import') || session('success_firma') || session('success_traslado'))
+@if(session('success_periodo') || session('success_ponderacion') || session('success_asignacion') || session('success_firma') || session('success_traslado'))
     <div class="mb-6 p-4 bg-green-50 border border-green-200 text-green-700 rounded-2xl flex items-center gap-3 text-sm">
         <span class="material-symbols-outlined">check_circle</span>
-        <p>{{ session('success_periodo') ?? session('success_ponderacion') ?? session('success_asignacion') ?? session('success_import') ?? session('success_firma') ?? session('success_traslado') }}</p>
+        <p>{{ session('success_periodo') ?? session('success_ponderacion') ?? session('success_asignacion') ?? session('success_firma') ?? session('success_traslado') }}</p>
     </div>
 @endif
 

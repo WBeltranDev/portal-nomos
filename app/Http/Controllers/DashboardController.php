@@ -701,10 +701,9 @@ class DashboardController extends Controller
             }
         }
 
-        // 2. Nuevos recursos de apelación
+        // 2. Nuevos recursos (reposición o apelación)
         if (Schema::hasTable('recurso')) {
             $recursosNuevos = DB::table('recurso')
-                ->where('tipo_recurso', 'APELACION')
                 ->where('fecha_recurso', '>=', $now->copy()->subDay()->toDateString())
                 ->get();
 
@@ -716,14 +715,15 @@ class DashboardController extends Controller
 
                 if (!$existe) {
                     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $r->id_evaluacion)->first();
-                    $mensaje = "Se presentó un nuevo recurso de apelación.";
+                    $tipoLabel = $r->tipo_recurso === 'REPOSICION' ? 'reposición' : 'apelación';
+                    $mensaje = "Se presentó un nuevo recurso de {$tipoLabel}.";
                     if ($evaluacion) {
                         $evaluado = DB::table('vinculacion as v')
                             ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
                             ->where('v.id_vinculacion', $evaluacion->id_vinc_evaluado)
                             ->first();
                         if ($evaluado) {
-                            $mensaje = "{$evaluado->nombres} {$evaluado->apellidos} presentó un recurso de apelación.";
+                            $mensaje = "{$evaluado->nombres} {$evaluado->apellidos} presentó un recurso de {$tipoLabel}.";
                         }
                     }
                     DB::table('notificacion')->insert([

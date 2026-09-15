@@ -872,6 +872,18 @@ Route::post('/admin/periodos', function (Request $request) {
         return back()->withErrors(['periodo' => 'Este perodo ya existe registrado.']);
     }
 
+    $traslape = DB::table('periodo')
+        ->where('sistema', $data['sistema'])
+        ->where('anio', $data['anio'])
+        ->where('fecha_inicio', '<=', $data['fecha_fin'])
+        ->where('fecha_fin', '>=', $data['fecha_inicio'])
+        ->first();
+
+    if ($traslape) {
+        $semLabel = $traslape->semestre == 1 ? 'Semestre A' : 'Semestre B';
+        return back()->withErrors(['periodo' => "Las fechas se traslapan con el {$semLabel} ({$traslape->fecha_inicio} a {$traslape->fecha_fin}). Ajusta las fechas para evitar el cruce entre semestres."]);
+    }
+
     $idPeriodo = DB::table('periodo')->insertGetId([
         'id_usuario_apertura' => session('usuario_autenticado.id_usuario'),
         'sistema' => $data['sistema'],
@@ -926,19 +938,18 @@ Route::post('/admin/periodos/{id}', function (Request $request, int $id) {
         'descripcion' => ['nullable', 'string', 'max:200'],
     ]);
 
+    $semestreContrario = $periodo->semestre == 1 ? 2 : 1;
     $solape = DB::table('periodo')
         ->where('sistema', $periodo->sistema)
         ->where('anio', $periodo->anio)
-        ->where('semestre', $periodo->semestre)
-        ->where('id_periodo', '!=', $id)
-        ->where(function ($q) use ($data) {
-            $q->whereBetween('fecha_inicio', [$data['fecha_inicio'], $data['fecha_fin']])
-                ->orWhereBetween('fecha_fin', [$data['fecha_inicio'], $data['fecha_fin']]);
-        })
+        ->where('semestre', $semestreContrario)
+        ->where('fecha_inicio', '<=', $data['fecha_fin'])
+        ->where('fecha_fin', '>=', $data['fecha_inicio'])
         ->exists();
 
     if ($solape) {
-        return back()->withErrors(['periodo' => 'Las fechas se solapan con otro periodo del mismo sistema/año/semestre.']);
+        $semLabel = $semestreContrario == 1 ? 'Semestre A' : 'Semestre B';
+        return back()->withErrors(['periodo' => "Las fechas se traslapan con el {$semLabel}. Ajusta las fechas para evitar el cruce entre semestres."]);
     }
 
     $antes = [
@@ -1848,110 +1859,7 @@ Route::post('/admin/impedimentos/{id}/resolver', function (Request $request, int
     return response()->json(['success' => true, 'message' => 'Solicitud resuelta.']);
 });
 
-// --- IMPORTACIN MASIVA DE USUARIOS (EXCEL/CSV) ---
-Route::post('/admin/importar-usuarios', function (Request $request) {
-    abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
 
-    $request->validate([
-        'archivo' => ['required', 'file'],
-    ]);
-
-    $file = $request->file('archivo');
-    $path = $file->getRealPath();
-
-    try {
-        $handle = fopen($path, 'r');
-        if ($handle === false) {
-            throw new Exception("No se pudo abrir el archivo.");
-        }
-
-        $header = fgetcsv($handle, 1000, ";");
-        if (!$header) {
-            $header = fgetcsv($handle, 1000, ",");
-        }
-
-        $header = array_map(function($h) {
-            return trim(strtolower(str_replace([' ', "\xEF\xBB\xBF"], '', $h)));
-        }, $header);
-
-        $imported = 0;
-
-        DB::transaction(function() use ($handle, $header, &$imported) {
-            while (($row = fgetcsv($handle, 1000, ";")) !== false || ($row = fgetcsv($handle, 1000, ",")) !== false) {
-                if (empty($row) || count($row) < 3) continue;
-
-                $data = array_combine(array_slice($header, 0, count($row)), $row);
-
-                $documento = trim($data['documento'] ?? $data['cedula'] ?? '');
-                $nombres = trim($data['nombres'] ?? '');
-                $apellidos = trim($data['apellidos'] ?? '');
-                $correoRaw = trim($data['correo'] ?? $data['correo_institucional'] ?? '');
-                $correoSplitted = preg_split('/[\s,;\n\r]+/', $correoRaw);
-                $correo = strtolower(trim($correoSplitted[0] ?? ''));
-                $cargo = trim($data['cargo'] ?? 'Profesional');
-                $nivel = trim(strtoupper($data['nivel'] ?? 'PROFESIONAL'));
-                $area = trim($data['area'] ?? 'Sistemas');
-                $tipoVinculacion = trim(strtoupper($data['tipo_vinculacion'] ?? 'PROVISIONALIDAD'));
-                $sistema = trim(strtoupper($data['sistema_evaluacion'] ?? 'RENDIMIENTO_LABORAL'));
-                $esEvaluador = filter_var($data['es_evaluador'] ?? false, FILTER_VALIDATE_BOOLEAN) || strtolower($data['es_evaluador'] ?? '') === 'si' ? 1 : 0;
-                $aplicaEje = filter_var($data['aplica_eje'] ?? false, FILTER_VALIDATE_BOOLEAN) || strtolower($data['aplica_eje'] ?? '') === 'si' ? 1 : 0;
-
-                if (empty($documento) || empty($nombres) || empty($correo)) continue;
-
-                $userId = DB::table('usuario')->where('username', $correo)->value('id_usuario');
-                if (!$userId) {
-                    $userId = DB::table('usuario')->insertGetId([
-                        'username' => $correo,
-                        'password' => Hash::make('123456789'),
-                        'rol' => $esEvaluador ? 'EVALUADOR' : 'EVALUADO',
-                        'activo' => 1,
-                    ]);
-                }
-
-                $funcId = DB::table('funcionario')->where('numero_doc', $documento)->value('id_funcionario');
-                if (!$funcId) {
-                    $funcId = DB::table('funcionario')->insertGetId([
-                        'id_usuario' => $userId,
-                        'tipo_documento' => 'CEDULA_CIUDADANIA',
-                        'numero_doc' => $documento,
-                        'nombres' => $nombres,
-                        'apellidos' => $apellidos,
-                        'correo_cargo' => $correo,
-                    ]);
-                } else {
-                    DB::table('funcionario')->where('id_funcionario', $funcId)->update([
-                        'id_usuario' => $userId,
-                        'nombres' => $nombres,
-                        'apellidos' => $apellidos,
-                        'correo_cargo' => $correo,
-                    ]);
-                }
-
-                DB::table('vinculacion')->insert([
-                    'id_funcionario' => $funcId,
-                    'cargo' => $cargo,
-                    'codigo_cargo' => 101,
-                    'grado_cargo' => 1,
-                    'nivel_jerarquico' => in_array($nivel, ['DIRECTIVO','ASESOR','PROFESIONAL','TECNICO','ASISTENCIAL']) ? $nivel : 'PROFESIONAL',
-                    'area' => $area,
-                    'tipo_vinculacion' => in_array($tipoVinculacion, ['PROVISIONALIDAD','LNR','PERIODO_FIJO','INDEFINIDO']) ? $tipoVinculacion : 'PROVISIONALIDAD',
-                    'sistema_evaluacion' => in_array($sistema, ['RENDIMIENTO_LABORAL','ACUERDO_GESTION']) ? $sistema : 'RENDIMIENTO_LABORAL',
-                    'es_evaluador' => $esEvaluador,
-                    'aplica_eje_misional' => $aplicaEje,
-                    'fecha_ingreso' => date('Y-m-d'),
-                    'activa' => 1,
-                ]);
-
-                $imported++;
-            }
-        });
-        fclose($handle);
-
-        return back()->with('success_import', "Se importaron $imported funcionarios y vinculaciones correctamente.");
-    } catch (Exception $e) {
-        return back()->withErrors(['importar' => 'Error al leer el archivo: ' . $e->getMessage()]);
-    }
-})->name('admin.importar.store');
 
 
 // --- CONCERTACIÓN DE COMPROMISOS (S3) ---

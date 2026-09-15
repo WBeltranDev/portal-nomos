@@ -151,9 +151,6 @@
                                         <label class="block text-[10px] font-bold text-slate-600 uppercase">Tipo Doc.</label>
                                         <select name="tipo_documento" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white">
                                             <option value="CEDULA_CIUDADANIA">CC</option>
-                                            <option value="CEDULA_EXTRANJERIA">CE</option>
-                                            <option value="PASAPORTE">Pasaporte</option>
-                                            <option value="TARJETA_IDENTIDAD">TI</option>
                                         </select>
                                     </div>
                                     <div>
@@ -194,6 +191,13 @@
                                         <option value="EVALUADOR">Evaluador (Califica a otros)</option>
                                         <option value="ADMINISTRADOR">Talento Humano (Admin)</option>
                                     </select>
+                                </div>
+                                <div class="flex items-center gap-3 rounded-xl border border-[#B5A160]/40 bg-[#B5A160]/5 p-3">
+                                    <input type="checkbox" name="aplica_eje_misional" id="aplica_eje_misional_cb" value="1" class="h-4 w-4 accent-[#B5A160]">
+                                    <div>
+                                        <label for="aplica_eje_misional_cb" class="block text-[10px] font-bold text-slate-700 uppercase">Aplica Eje Misional</label>
+                                        <span class="text-[10px] text-slate-500">Activa la evaluación por ejes misionales (Acuerdo de Gestión).</span>
+                                    </div>
                                 </div>
                                 <button type="submit" class="w-full bg-[#B5A160] text-white rounded-xl py-2.5 text-xs font-bold hover:brightness-110 transition shadow-md">Guardar Funcionario</button>
                             </form>

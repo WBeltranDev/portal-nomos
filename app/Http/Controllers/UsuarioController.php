@@ -23,12 +23,13 @@ class UsuarioController extends Controller
         $data = $request->validate([
             'nombres' => ['required', 'string', 'max:255'],
             'apellidos' => ['required', 'string', 'max:255'],
-            'tipo_documento' => ['required', 'string', 'max:50'],
+            'tipo_documento' => ['required', 'string', 'in:CEDULA_CIUDADANIA'],
             'numero_doc' => ['required', 'string', 'max:50'],
             'correo' => ['required', 'email', 'max:255'],
             'cargo' => ['required', 'string', 'max:255'],
             'area' => ['required', 'string', 'max:255'],
             'rol' => ['required', 'string', 'in:EVALUADOR,EVALUADO,ADMINISTRADOR'],
+            'aplica_eje_misional' => ['nullable', 'boolean'],
             'sistema_evaluacion' => ['nullable', 'string', 'in:RENDIMIENTO_LABORAL,ACUERDO_GESTION'],
             'nivel_jerarquico' => ['nullable', 'string'],
             'codigo_cargo' => ['nullable', 'numeric'],
@@ -102,7 +103,7 @@ class UsuarioController extends Controller
             }
 
             // 3. Crear Vinculación (Cargo asignado)
-            $sistema = $data['sistema_evaluacion'] ?? ($data['rol'] === 'ADMINISTRADOR' || str_contains(strtoupper($data['cargo']), 'DIRECT') ? 'ACUERDO_GESTION' : 'RENDIMIENTO_LABORAL');
+            $sistema = $data['sistema_evaluacion'] ?? ($request->boolean('aplica_eje_misional') || $data['rol'] === 'ADMINISTRADOR' || str_contains(strtoupper($data['cargo']), 'DIRECT') ? 'ACUERDO_GESTION' : 'RENDIMIENTO_LABORAL');
             
             DB::table('vinculacion')->insert([
                 'id_funcionario' => $funcionario->id_funcionario,
@@ -114,6 +115,7 @@ class UsuarioController extends Controller
                 'codigo_cargo' => $data['codigo_cargo'] ?? 0,
                 'grado_cargo' => $data['grado_cargo'] ?? 0,
                 'nivel_jerarquico' => $data['nivel_jerarquico'] ?? 'PROFESIONAL',
+                'aplica_eje_misional' => $request->boolean('aplica_eje_misional') ? 1 : 0,
                 'tipo_vinculacion' => 'INDEFINIDO',
                 'fecha_ingreso' => date('Y-m-d'),
             ]);
