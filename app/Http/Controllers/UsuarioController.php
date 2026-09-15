@@ -103,7 +103,7 @@ class UsuarioController extends Controller
             }
 
             // 3. Crear Vinculación (Cargo asignado)
-            $sistema = $data['sistema_evaluacion'] ?? ($request->boolean('aplica_eje_misional') || $data['rol'] === 'ADMINISTRADOR' || str_contains(strtoupper($data['cargo']), 'DIRECT') ? 'ACUERDO_GESTION' : 'RENDIMIENTO_LABORAL');
+            $sistema = !empty($data['sistema_evaluacion']) ? $data['sistema_evaluacion'] : ($request->boolean('aplica_eje_misional') || $data['rol'] === 'ADMINISTRADOR' || str_contains(strtoupper($data['cargo']), 'DIRECT') ? 'ACUERDO_GESTION' : 'RENDIMIENTO_LABORAL');
             
             DB::table('vinculacion')->insert([
                 'id_funcionario' => $funcionario->id_funcionario,
