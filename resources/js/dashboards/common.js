@@ -56,6 +56,19 @@ export function showInlineMessage(id, text, isError = false) {
     node.innerText = text;
 }
 
+export function actualizarFaseLabel(idEvaluacion, fase, contexto = 'evaluado') {
+    const node = document.getElementById(`fase-label-${contexto}-${idEvaluacion}`);
+    if (!node) return;
+    const nombres = {
+        1: 'Concertación Pendiente',
+        2: 'Concertación Parcial',
+        3: 'Subir Evidencias',
+        4: 'Calificación',
+        5: 'Nota Final',
+    };
+    node.innerText = `Fase ${fase}: ${nombres[fase] || ''}`;
+}
+
 export function toggleSidebar() {
     const sidebar = document.getElementById('sidebar-menu');
     const overlay = document.getElementById('sidebar-overlay');
@@ -127,7 +140,7 @@ export function renderResultado(calculo, containerId, contexto = 'evaluador', ev
     const categoriaLabel = {
         SOBRESALIENTE: 'Sobresaliente (91-100)',
         BUENO: 'Bueno (81-90)',
-        APROBADO_MEJORA: 'Aprobado - Susceptible de mejora (71-80)',
+        APROBADO_MEJORA: 'Aprobado - Susceptible a plan de mejora (71-80)',
         NO_SATISFACTORIO: 'No satisfactorio (0-70)',
     }[calculo.categoria] || calculo.categoria || '-';
     const categoriaClass = {
@@ -222,3 +235,4 @@ window.clampCalificacion = clampCalificacion;
 window.showInlineMessage = showInlineMessage;
 window.renderResultado = renderResultado;
 window.formatPendientes = formatPendientes;
+window.actualizarFaseLabel = actualizarFaseLabel;

@@ -661,6 +661,7 @@ Route::post('/evaluacion/{id}/impedimento', function (\Illuminate\Http\Request $
     $data = $request->validate([
         'tipo' => 'required|in:IMPEDIMENTO,RECUSACION',
         'motivo' => 'required|string',
+        'evidencia_url' => 'nullable|url|max:1000',
     ]);
     
     $vinc = \Illuminate\Support\Facades\DB::table('vinculacion')->where('id_funcionario', session('usuario_autenticado.id_funcionario'))->where('activa', 1)->first();
@@ -670,6 +671,7 @@ Route::post('/evaluacion/{id}/impedimento', function (\Illuminate\Http\Request $
         'id_vinc_solicitante' => $vinc->id_vinculacion ?? 0,
         'tipo' => $data['tipo'],
         'motivo' => $data['motivo'],
+        'evidencia_url' => trim($data['evidencia_url'] ?? '') ?: null,
         'estado' => 'PENDIENTE'
     ]);
     return back()->with('success', 'Solicitud registrada correctamente. Queda en espera de revisión por Talento Humano.');
@@ -2104,6 +2106,7 @@ Route::post('/evaluaciones/{id}/observaciones', function (Request $request, int 
     abort_unless($evaluacion, 404);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
     abort_unless($evaluacion->concertacion_firmada, 403, 'La concertación debe estar firmada por ambas partes antes de registrar observaciones.');
+    abort_if($evaluacion->estado === 'CALIFICADA' || (int) $evaluacion->fase_actual >= 5, 422, 'Ya se calculó la nota final; las observaciones de compromiso quedaron congeladas.');
 
     $auth = session('usuario_autenticado');
     $puedeEditar = DB::table('vinculacion')
@@ -2162,6 +2165,10 @@ Route::post('/evaluaciones/{id}/evidencias', function (Request $request, int $id
         return response()->json(['message' => 'Esta evaluación ya fue calificada y calculada; no se pueden registrar más evidencias.'], 422);
     }
 
+    if ((int) $evaluacion->fase_actual !== 3) {
+        return response()->json(['message' => 'Ya confirmaste tus evidencias; no se pueden registrar más hasta que el evaluador solicite correcciones.'], 422);
+    }
+
     $data = $request->validate([
         'componente' => ['nullable', 'in:B,C,D,F'],
         'id_compromiso' => ['required_if:componente,B', 'nullable', 'integer'],
@@ -2196,6 +2203,66 @@ Route::post('/evaluaciones/{id}/evidencias', function (Request $request, int $id
 
     return response()->json(['success' => true]);
 })->name('evaluaciones.evidencias.store');
+
+// --- POST: Confirmar entrega de evidencias (evaluado, fase 3 → fase 4) ---
+Route::post('/evaluaciones/{id}/confirmar-evidencias', function (Request $request, int $id) {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'evaluado', 403);
+
+    $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
+    abort_unless($evaluacion, 404);
+
+    $auth = session('usuario_autenticado');
+    $vinculacionEvaluado = DB::table('vinculacion')
+        ->where('id_vinculacion', $evaluacion->id_vinc_evaluado)
+        ->where('id_funcionario', $auth['id_funcionario'] ?? null)
+        ->where('activa', 1)
+        ->first();
+
+    abort_unless($vinculacionEvaluado, 403);
+    abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado.');
+
+    if (!$evaluacion->concertacion_firmada) {
+        return response()->json(['message' => 'La concertación debe estar firmada antes de confirmar evidencias.'], 422);
+    }
+    if ($evaluacion->estado === 'CALIFICADA') {
+        return response()->json(['message' => 'Esta evaluación ya fue calificada.'], 422);
+    }
+    if ((int) $evaluacion->fase_actual !== 3) {
+        return response()->json(['message' => 'Solo puedes confirmar evidencias cuando estás en la fase de subir evidencias.'], 422);
+    }
+
+    $compromisos = DB::table('compromiso')->where('id_evaluacion', $id)->pluck('id_compromiso');
+    if ($compromisos->isEmpty()) {
+        return response()->json(['message' => 'No hay compromisos registrados; no se puede confirmar.'], 422);
+    }
+
+    $sinEvidencias = [];
+    foreach ($compromisos as $idC) {
+        $tieneValida = DB::table('evidencia')
+            ->where('id_evaluacion', $id)
+            ->where('id_compromiso', $idC)
+            ->whereIn('estado_aprobacion', ['PENDIENTE', 'APROBADA'])
+            ->exists();
+        if (!$tieneValida) {
+            $sinEvidencias[] = $idC;
+        }
+    }
+
+    if (count($sinEvidencias) > 0) {
+        return response()->json([
+            'message' => 'Todos los compromisos deben tener al menos una evidencia pendiente o aprobada. Faltan ' . count($sinEvidencias) . ' compromiso(s).',
+        ], 422);
+    }
+
+    DB::table('evaluacion')->where('id_evaluacion', $id)->update([
+        'fase_actual' => 4,
+    ]);
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Evidencias confirmadas. El evaluador ya puede iniciar la calificación.',
+    ]);
+})->name('evaluaciones.confirmar-evidencias');
 
 Route::post('/evaluaciones/{id}/evidencias/{idEvidencia}/aprobar', function (Request $request, int $id, int $idEvidencia) {
     abort_unless(session('usuario_autenticado.rol_activo') === 'evaluador', 403);
@@ -2234,7 +2301,21 @@ Route::post('/evaluaciones/{id}/evidencias/{idEvidencia}/aprobar', function (Req
         'observacion_aprobacion' => $data['observacion'] ?? null,
     ]);
 
-    return response()->json(['success' => true, 'message' => 'Evidencia ' . strtolower($data['decision']) . ' correctamente.']);
+    // Al rechazar una evidencia, regresar la evaluación a fase 3 (Subir Evidencias)
+    // para que el evaluado corrija y vuelva a confirmar.
+    $nuevaFase = null;
+    if ($data['decision'] === 'RECHAZADA' && (int) $evaluacion->fase_actual === 4) {
+        DB::table('evaluacion')->where('id_evaluacion', $id)->update([
+            'fase_actual' => 3,
+        ]);
+        $nuevaFase = 3;
+    }
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Evidencia ' . strtolower($data['decision']) . ' correctamente.',
+        'fase_actual' => $nuevaFase,
+    ]);
 })->name('evaluaciones.evidencias.aprobar');
 
 Route::post('/evaluaciones/{id}/compromisos', function (Request $request, int $id) {
@@ -2858,12 +2939,12 @@ Route::post('/evaluaciones/{id}/firmar-notificacion', function (Request $request
  * Categorías finales (0-100):
  *   ≥ 91:           SOBRESALIENTE
  *   81 a 90:        BUENO
- *   71 a 80:        APROBADO_MEJORA  (Susceptible de mejora)
+ *   71 a 80:        APROBADO_MEJORA  (Susceptible a plan de mejora)
  *    0 a 70:        NO_SATISFACTORIO
  *
  * Plan de mejoramiento (1er semestre):
- *   RL: aplica si calificación ∈ [0, 70]   (No satisfactorio)
- *   AG: aplica si calificación ∈ [0, 70]   (No satisfactorio)
+ *   RL: aplica si calificación ∈ [0, 80]   (No satisfactorio o susceptible a plan)
+ *   AG: aplica si calificación ∈ [0, 80]   (No satisfactorio o susceptible a plan)
  *
  * Prorrateo RF3:
  *   nota_final_prorrateo = nota_final × (dias_laborados / dias_totales_periodo)
@@ -3043,7 +3124,7 @@ if (!function_exists('calcularNotaEvaluacion')) {
     $requierePlanMejoramiento = false;
     $tipoEval = $evaluacion->tipo_evaluacion ?? $evaluacion->tipo ?? 'SEMESTRE_1';
     if ($tipoEval === 'SEMESTRE_1') {
-        if (in_array($sistema, ['RENDIMIENTO_LABORAL', 'ACUERDO_GESTION']) && $categoria === 'NO_SATISFACTORIO') {
+        if (in_array($sistema, ['RENDIMIENTO_LABORAL', 'ACUERDO_GESTION']) && in_array($categoria, ['NO_SATISFACTORIO', 'APROBADO_MEJORA'])) {
             $requierePlanMejoramiento = true;
         }
     }
@@ -3301,6 +3382,13 @@ Route::post('/evaluaciones/{id}/calificar-compromisos', function (Request $reque
     abort_unless($evaluacion, 404);
     abort_unless($evaluacion->concertacion_firmada, 403, 'La concertación debe estar firmada antes de calificar.');
     abort_if($evaluacion->estado === 'CALIFICADA', 422, 'Esta evaluación ya fue calificada y calculada; las notas quedaron congeladas y no se pueden modificar.');
+    abort_if((int) $evaluacion->fase_actual < 4, 422, 'No puedes calificar mientras la fase esté en ' . $evaluacion->fase_actual . '. El evaluado debe confirmar sus evidencias para habilitar la calificación.');
+
+    $evidenciasPendientes = DB::table('evidencia')
+        ->where('id_evaluacion', $id)
+        ->where('estado_aprobacion', 'PENDIENTE')
+        ->count();
+    abort_if($evidenciasPendientes > 0, 422, 'Debes aprobar o rechazar todas las evidencias antes de guardar calificaciones. Quedan ' . $evidenciasPendientes . ' evidencia(s) por revisar.');
 
     $auth = session('usuario_autenticado');
     $puedeEditar = DB::table('vinculacion')
@@ -3356,6 +3444,13 @@ Route::post('/evaluaciones/{id}/calificar-competencias', function (Request $requ
     abort_unless($evaluacion, 404);
     abort_unless($evaluacion->concertacion_firmada, 403, 'La concertación debe estar firmada antes de calificar.');
     abort_if($evaluacion->estado === 'CALIFICADA', 422, 'Esta evaluación ya fue calificada y calculada; las notas quedaron congeladas y no se pueden modificar.');
+    abort_if((int) $evaluacion->fase_actual < 4, 422, 'No puedes calificar mientras la fase esté en ' . $evaluacion->fase_actual . '. El evaluado debe confirmar sus evidencias para habilitar la calificación.');
+
+    $evidenciasPendientes = DB::table('evidencia')
+        ->where('id_evaluacion', $id)
+        ->where('estado_aprobacion', 'PENDIENTE')
+        ->count();
+    abort_if($evidenciasPendientes > 0, 422, 'Debes aprobar o rechazar todas las evidencias antes de guardar calificaciones. Quedan ' . $evidenciasPendientes . ' evidencia(s) por revisar.');
 
     $auth = session('usuario_autenticado');
     $puedeEditar = DB::table('vinculacion')
@@ -3424,6 +3519,14 @@ Route::post('/evaluaciones/{id}/calcular-final', function (Request $request, int
     // (evaluación ya calificada, o calificaciones incompletas). El evaluador no puede.
     if ($rolActivo === 'evaluador') {
         abort_if($evaluacion->estado === 'CALIFICADA', 422, 'Esta evaluación ya fue calificada y calculada; no se puede volver a calcular.');
+    }
+
+    if ($rolActivo === 'evaluador') {
+        $evidenciasPendientes = DB::table('evidencia')
+            ->where('id_evaluacion', $id)
+            ->where('estado_aprobacion', 'PENDIENTE')
+            ->count();
+        abort_if($evidenciasPendientes > 0, 422, 'Debes aprobar o rechazar todas las evidencias antes de calcular la nota final. Quedan ' . $evidenciasPendientes . ' evidencia(s) por revisar.');
     }
 
     $calculo = calcularNotaEvaluacion($id);
@@ -3560,6 +3663,13 @@ Route::post('/evaluaciones/{id}/calificar-ejes', function (Request $request, int
     abort_unless($evaluacion, 404);
     abort_unless($evaluacion->concertacion_firmada, 403, 'La concertación debe estar firmada antes de calificar ejes misionales.');
     abort_if($evaluacion->estado === 'CALIFICADA', 422, 'Esta evaluación ya fue calificada y calculada; las notas quedaron congeladas y no se pueden modificar.');
+    abort_if((int) $evaluacion->fase_actual < 4, 422, 'No puedes calificar mientras la fase esté en ' . $evaluacion->fase_actual . '. El evaluado debe confirmar sus evidencias para habilitar la calificación.');
+
+    $evidenciasPendientes = DB::table('evidencia')
+        ->where('id_evaluacion', $id)
+        ->where('estado_aprobacion', 'PENDIENTE')
+        ->count();
+    abort_if($evidenciasPendientes > 0, 422, 'Debes aprobar o rechazar todas las evidencias antes de guardar calificaciones. Quedan ' . $evidenciasPendientes . ' evidencia(s) por revisar.');
 
     $auth = session('usuario_autenticado');
     $puedeEditar = DB::table('vinculacion')
@@ -3684,8 +3794,8 @@ if (!function_exists('getEvaluacionConSistema')) {
 
 /**
  * S6 — Plan de mejoramiento CONDICIONADO (1er semestre):
- *   RL: calificación final ∈ [71, 80] (APROBADO_MEJORA)
- *   AG: calificación final ∈ [0, 70]  (NO_SATISFACTORIO)
+ *   RL: calificación final ∈ [0, 80]  (NO_SATISFACTORIO o APROBADO_MEJORA)
+ *   AG: calificación final ∈ [0, 80]  (NO_SATISFACTORIO o APROBADO_MEJORA)
  * El bloqueo del flujo del evaluador aplica hasta concertar y firmar el plan.
  */
 if (!function_exists('evaluacionRequierePlanMejoramiento')) {
@@ -3695,12 +3805,12 @@ if (!function_exists('evaluacionRequierePlanMejoramiento')) {
         }
 
         $categoria = strtoupper(trim((string) ($evaluacion->categoria_final ?? '')));
-        if ($categoria === 'NO_SATISFACTORIO') {
+        if (in_array($categoria, ['NO_SATISFACTORIO', 'APROBADO_MEJORA'])) {
             return true;
         }
 
         $notaDef = $evaluacion->calificacion_final ?? $evaluacion->calificacion_parcial ?? null;
-        if ($notaDef !== null && (float) $notaDef <= 70.0 && (float) $notaDef > 0) {
+        if ($notaDef !== null && (float) $notaDef <= 80.0 && (float) $notaDef > 0) {
             return true;
         }
 
@@ -3719,7 +3829,7 @@ if (!function_exists('evaluacionRequierePlanMejoramiento')) {
 
 /**
  * S6 — Indica si el evaluado tiene un plan de mejoramiento pendiente de concertar
- * y firmar (RL y AG: NO_SATISFACTORIO, primer semestre) en una
+ * y firmar (RL y AG: NO_SATISFACTORIO o APROBADO_MEJORA, primer semestre) en una
  * evaluación ya calificada. Se usa para bloquear la creación de una nueva
  * evaluación hasta resolver el plan anterior.
  */
@@ -3732,7 +3842,7 @@ if (!function_exists('evaluadoTienePlanMejoramientoPendiente')) {
             ->where('ev.estado', 'CALIFICADA')
             ->where('ev.tipo_evaluacion', 'SEMESTRE_1')
             ->whereIn('p.sistema', ['RENDIMIENTO_LABORAL', 'ACUERDO_GESTION'])
-            ->where('ev.categoria_final', 'NO_SATISFACTORIO')
+            ->whereIn('ev.categoria_final', ['NO_SATISFACTORIO', 'APROBADO_MEJORA'])
             ->where(function ($q) {
                 $q->whereNull('pm.id_plan')->orWhere('pm.estado', '!=', 'CONCERTADO');
             });

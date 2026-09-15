@@ -1,11 +1,12 @@
 /**
  * Evaluado Dashboard JS Module
  */
-import { escapeHtml, fetchJson, parseErrorMessage, showInlineMessage, navegarMenu, renderResultado } from './common.js';
+import { escapeHtml, fetchJson, parseErrorMessage, showInlineMessage, navegarMenu, renderResultado, actualizarFaseLabel } from './common.js';
 
 let selectedEvaluacionId = null;
 let selectedEvaluacionData = null;
 let selectedPlanData = null;
+let compromisosColapsadosEvaluado = new Set();
 
 export function badgeDecisionRecurso(decision) {
     if (decision === 'PENDIENTE') return '<span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-amber-50 text-amber-700">Pendiente</span>';
@@ -168,7 +169,7 @@ export function cargarResultadoEvaluado(ev) {
 
     const resultado = document.getElementById('resultado-calculo-evaluado');
     if (!resultado) return;
-    const visible = !!ev.concertacion_firmada || ev.estado === 'CALIFICADA';
+    const visible = (ev.concertacion_firmada && Number(ev.fase_actual || 3) >= 4) || ev.estado === 'CALIFICADA';
     if (!visible) {
         resultado.classList.add('hidden');
         return;
@@ -228,8 +229,14 @@ export function cargarCompromisosEvaluado(ev) {
                 return;
             }
 
+            const bloqueConfirmar = document.getElementById('confirmar-evidencias-bloque-evaluado');
+            if (bloqueConfirmar) {
+                const puedeConfirmar = ev.concertacion_firmada && ev.estado !== 'CALIFICADA' && !ev.es_traslado && Number(ev.fase_actual || 3) === 3;
+                bloqueConfirmar.classList.toggle('hidden', !puedeConfirmar);
+            }
+
             contenedor.innerHTML = compromisos.map((c, idx) => {
-                const puedeEvidencias = ev.concertacion_firmada && ev.estado !== 'CALIFICADA' && !ev.es_traslado;
+                const puedeEvidencias = ev.concertacion_firmada && ev.estado !== 'CALIFICADA' && !ev.es_traslado && Number(ev.fase_actual || 3) === 3;
                 const formularioEvidencia = puedeEvidencias ? `
                     <form class="mt-4 pt-3 border-t border-slate-100 space-y-2" onsubmit="guardarEvidenciaEvaluado(event, ${c.id_compromiso})">
                         <div class="flex items-center gap-1.5 text-[11px] font-bold uppercase text-slate-500">
@@ -247,7 +254,7 @@ export function cargarCompromisosEvaluado(ev) {
                     </form>` : '';
                 return `
                 <div class="rounded-2xl border border-slate-200 bg-white p-4 space-y-3 shadow-sm transition hover:border-[#00594E]/40">
-                    <div class="flex items-start justify-between gap-3 cursor-pointer select-none" onclick="document.getElementById('detalle-comp-evaluado-${c.id_compromiso}')?.classList.toggle('hidden'); document.getElementById('icon-chevron-evaluado-${c.id_compromiso}')?.classList.toggle('rotate-180');">
+                    <div class="flex items-start justify-between gap-3 cursor-pointer select-none" onclick="toggleCompromisoColapsadoEvaluado(${c.id_compromiso})">
                         <div class="min-w-0 flex items-center gap-2">
                             <span id="icon-chevron-evaluado-${c.id_compromiso}" class="material-symbols-outlined text-[#00594E] text-base transition-transform duration-200">expand_more</span>
                             <div>
@@ -269,10 +276,34 @@ export function cargarCompromisosEvaluado(ev) {
                 </div>
             `;
             }).join('');
+
+            compromisosColapsadosEvaluado = new Set(compromisos.map(c => Number(c.id_compromiso)));
+            compromisosColapsadosEvaluado.forEach(id => {
+                const detalle = document.getElementById(`detalle-comp-evaluado-${id}`);
+                const icono = document.getElementById(`icon-chevron-evaluado-${id}`);
+                if (detalle) detalle.classList.add('hidden');
+                if (icono) icono.classList.add('rotate-180');
+            });
         })
         .catch(() => {
             contenedor.innerHTML = '<div class="py-8 text-center text-red-500 text-xs">Error al cargar compromisos.</div>';
         });
+}
+
+export function toggleCompromisoColapsadoEvaluado(id) {
+    const detalle = document.getElementById(`detalle-comp-evaluado-${id}`);
+    const icono = document.getElementById(`icon-chevron-evaluado-${id}`);
+    if (!detalle) {
+        compromisosColapsadosEvaluado.add(Number(id));
+        return;
+    }
+    detalle.classList.toggle('hidden');
+    if (icono) icono.classList.toggle('rotate-180');
+    if (detalle.classList.contains('hidden')) {
+        compromisosColapsadosEvaluado.add(Number(id));
+    } else {
+        compromisosColapsadosEvaluado.delete(Number(id));
+    }
 }
 
 export function cargarCompetenciasEvaluado() {
@@ -616,6 +647,43 @@ export function firmarConcertacion(e, rol) {
     return true;
 }
 
+export function confirmarEvidenciasEvaluado() {
+    if (!selectedEvaluacionId) return;
+    const mensajeId = 'confirmar-evidencias-mensaje-evaluado';
+    const btn = document.getElementById('btn-confirmar-evidencias-evaluado');
+    if (btn) btn.disabled = true;
+    fetchJson(`/evaluaciones/${selectedEvaluacionId}/confirmar-evidencias`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+    })
+        .then(async res => {
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudieron confirmar las evidencias.'));
+            if (selectedEvaluacionData) {
+                selectedEvaluacionData = { ...selectedEvaluacionData, fase_actual: 4 };
+                actualizarFaseLabel(selectedEvaluacionId, 4, 'evaluado');
+            }
+            const bloqueConfirmar = document.getElementById('confirmar-evidencias-bloque-evaluado');
+            if (bloqueConfirmar) bloqueConfirmar.classList.add('hidden');
+            const resultado = document.getElementById('resultado-calculo-evaluado');
+            if (resultado) {
+                resultado.classList.remove('hidden');
+                resultado.innerHTML = '<div class="text-xs text-slate-400">Cargando resultado...</div>';
+                fetchJson(`/evaluaciones/${selectedEvaluacionId}/calculo`)
+                    .then(res => res.json())
+                    .then(calculo => renderResultado(calculo, 'resultado-calculo-evaluado', 'evaluado', selectedEvaluacionId))
+                    .catch(() => {});
+            }
+            showInlineMessage(mensajeId, data.message || 'Evidencias confirmadas. La calificación ya está habilitada para el evaluador.');
+            if (selectedEvaluacionData) cargarCompromisosEvaluado(selectedEvaluacionData);
+        })
+        .catch(error => {
+            if (btn) btn.disabled = false;
+            showInlineMessage(mensajeId, error.message, true);
+        });
+}
+
 function formatearFechaHora(valor) {
     if (!valor) return '';
     try {
@@ -883,6 +951,7 @@ window.agregarEvidenciaRecurso = agregarEvidenciaRecurso;
 window.eliminarEvidenciaRecurso = eliminarEvidenciaRecurso;
 window.firmarPlanMejoramiento = firmarPlanMejoramiento;
 window.guardarEvidenciaEvaluado = guardarEvidenciaEvaluado;
+window.confirmarEvidenciasEvaluado = confirmarEvidenciasEvaluado;
 window.firmarConcertacion = firmarConcertacion;
 window.renderNotificacionEvaluado = renderNotificacionEvaluado;
 window.firmarNotificacionEvaluado = firmarNotificacionEvaluado;
@@ -893,6 +962,7 @@ window.agregarEvidenciaRenuencia = agregarEvidenciaRenuencia;
 window.eliminarEvidenciaRenuencia = eliminarEvidenciaRenuencia;
 window.registrarRenuenciaEvaluado = registrarRenuenciaEvaluado;
 window.mostrarModalRecusacion = mostrarModalRecusacion;
+window.toggleCompromisoColapsadoEvaluado = toggleCompromisoColapsadoEvaluado;
 
 window.addEventListener('DOMContentLoaded', () => {
     navegarMenu(null, 'evaluaciones');

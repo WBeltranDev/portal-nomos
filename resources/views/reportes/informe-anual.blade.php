@@ -3,7 +3,7 @@
     $catLabel = [
         'SOBRESALIENTE' => 'Sobresaliente (91-100)',
         'BUENO' => 'Bueno (81-90)',
-        'APROBADO_MEJORA' => 'Susceptible de mejora (Aprobado) (71-80)',
+        'APROBADO_MEJORA' => 'Susceptible a plan de mejora (Aprobado) (71-80)',
         'NO_SATISFACTORIO' => 'No satisfactorio (0-70)',
     ][$info['categoria']] ?? $info['categoria'];
 @endphp

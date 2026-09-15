@@ -1,7 +1,7 @@
 /**
  * Evaluador Dashboard JS Module
  */
-import { escapeHtml, fetchJson, parseErrorMessage, showInlineMessage, navegarMenu, renderResultado } from './common.js';
+import { escapeHtml, fetchJson, parseErrorMessage, showInlineMessage, navegarMenu, renderResultado, actualizarFaseLabel } from './common.js';
 
 let selectedEvaluacionId = null;
 let selectedEstadoEvaluacion = null;
@@ -9,6 +9,8 @@ let selectedEvaluacionData = null;
 let selectedEvaluacionEjes = {};
 let selectedPlanData = null;
 let compromisosActuales = [];
+let compromisosColapsados = new Set();
+let evidenciasPendientesCount = 0;
 
 const EJE_LABELS = {
     DOCENCIA: 'Docencia',
@@ -157,6 +159,8 @@ export function abrirConcertacionEvaluador(card, ev) {
     selectedEstadoEvaluacion = ev.estado;
     selectedEvaluacionData = ev;
     selectedEvaluacionEjes = {};
+    compromisosColapsados = new Set();
+    evidenciasPendientesCount = 0;
 
     const panel = document.getElementById('panel-concertacion-evaluador');
     const empty = document.getElementById('panel-concertacion-evaluador-empty');
@@ -172,7 +176,15 @@ export function abrirConcertacionEvaluador(card, ev) {
     setText('concertacion-sistema', ev.sistema === 'RENDIMIENTO_LABORAL' ? 'RL' : (ev.sistema === 'ACUERDO_GESTION' ? 'AG' : ev.sistema));
 
     const resultado = document.getElementById('resultado-calculo-evaluador');
-    if (resultado) previsualizarCalculoEvaluador();
+    if (resultado) {
+        if (ev.estado === 'CALIFICADA' || Number(ev.fase_actual || 3) >= 4) {
+            resultado.classList.remove('hidden');
+            previsualizarCalculoEvaluador();
+        } else {
+            resultado.classList.add('hidden');
+            resultado.innerHTML = '';
+        }
+    }
 
     const formFirmar = document.getElementById('form-firmar-evaluacion');
     if (formFirmar) formFirmar.action = `/evaluaciones/${ev.id_evaluacion}/firmar`;
@@ -256,6 +268,34 @@ export function abrirConcertacionEvaluador(card, ev) {
     if (card) card.classList.add('ring-2', 'ring-[#00594E]');
 }
 
+export function recargarSoloEvidenciasEvaluador() {
+    if (!selectedEvaluacionId || !selectedEvaluacionData) return;
+
+    fetchJson(`/evaluaciones/${selectedEvaluacionId}/compromisos`)
+        .then(res => res.json())
+        .then(payload => {
+            const evidencias = payload.evidencias || [];
+            evidenciasPendientesCount = evidencias.filter(e => e.estado_aprobacion === 'PENDIENTE').length;
+            const grupos = evidencias.reduce((g, e) => {
+                const k = String(e.id_compromiso || '');
+                if (!g[k]) g[k] = [];
+                g[k].push(e);
+                return g;
+            }, {});
+
+            const ev = selectedEvaluacionData;
+            const bloqueada = !ev.concertacion_firmada || ev.estado === 'CALIFICADA' || !!ev.es_traslado || Number(ev.fase_actual || 3) < 4;
+            Object.keys(grupos).forEach(compromisoId => {
+                const contenedor = document.getElementById(`evidencias-list-evaluador-${compromisoId}`);
+                if (contenedor) {
+                    contenedor.innerHTML = renderEvidenciasEvaluadorAccion(grupos[compromisoId], bloqueada);
+                }
+            });
+            sincronizarBloqueosCalificacionEvaluador();
+        })
+        .catch(() => {});
+}
+
 export function renderEvidenciasEvaluadorAccion(evidencias = [], bloqueada = false) {
     if (!evidencias.length) {
         return '<div class="text-[11px] text-slate-400">Sin evidencias registradas para este compromiso.</div>';
@@ -308,28 +348,37 @@ export function aprobarEvidencia(idEvidencia, decision) {
         .then(async res => {
             const payload = await res.json().catch(() => ({}));
             if (!res.ok) { alert(payload.message || 'No se pudo registrar la decisión.'); return; }
-            if (selectedEvaluacionData) cargarCompromisosEvaluador(selectedEvaluacionData, selectedEvaluacionEjes);
+            if (payload.fase_actual && selectedEvaluacionData) {
+                selectedEvaluacionData = { ...selectedEvaluacionData, fase_actual: payload.fase_actual };
+                actualizarFaseLabel(selectedEvaluacionId, payload.fase_actual, 'evaluador');
+                if (payload.fase_actual === 3) {
+                    ocultarBotonesCalificacion();
+                }
+                recargarSoloEvidenciasEvaluador();
+                mostrarAvisoSinEvidenciasConfirmadas();
+            } else {
+                recargarSoloEvidenciasEvaluador();
+            }
         })
         .catch(() => {});
 }
 
-export function renderObservacionEvaluador(compromiso, observacion = null, bloqueadaPorCierre = false) {
+export function renderObservacionEvaluador(compromiso, observacion = null, bloqueadaPorCierre = false, bloqueadaPorNotaFinal = false) {
     const id = compromiso.id_compromiso;
     const texto = observacion?.texto || '';
     const confirmada = !!observacion?.confirmada;
-    const bloqueada = confirmada || bloqueadaPorCierre;
+    const bloqueada = confirmada || bloqueadaPorCierre || bloqueadaPorNotaFinal;
     const estado = confirmada
         ? `Confirmada${observacion?.fecha_confirmacion ? ` el ${escapeHtml(observacion.fecha_confirmacion)}` : ''}`
-        : (bloqueadaPorCierre ? 'Disponible tras firmar la concertación' : (texto ? 'Borrador guardado' : 'Sin observación'));
+        : (bloqueadaPorCierre ? 'Disponible tras firmar la concertación' : (bloqueadaPorNotaFinal ? 'Congelada tras la nota final' : (texto ? 'Borrador guardado' : 'Sin observación')));
     const botones = confirmada
         ? '<span class="text-[10px] font-bold uppercase text-[#00594E]">No modificable</span>'
         : `
-            <button type="submit" class="bg-white border border-slate-200 text-slate-700 px-3 py-2 rounded-xl text-xs font-bold hover:border-[#00594E] transition" ${bloqueadaPorCierre ? 'disabled' : ''}>Guardar</button>
-            <button type="button" onclick="confirmarObservacionCompromiso(${id})" class="bg-[#00594E] text-white px-3 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition disabled:opacity-50" ${bloqueadaPorCierre ? 'disabled' : ''}>Confirmar</button>
+            <button type="button" onclick="confirmarObservacionCompromiso(${id})" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition disabled:opacity-50" ${bloqueada ? 'disabled' : ''}>Confirmar</button>
         `;
 
     return `
-        <form class="mt-4 pt-3 border-t border-slate-100 space-y-2" onsubmit="guardarObservacionCompromiso(event, ${id}, false)">
+        <div class="mt-4 pt-3 border-t border-slate-100 space-y-2">
             <div class="flex items-center justify-between gap-3">
                 <div class="flex items-center gap-1.5 text-[11px] font-bold uppercase text-slate-500">
                     <span class="material-symbols-outlined text-sm">note_alt</span>
@@ -337,35 +386,47 @@ export function renderObservacionEvaluador(compromiso, observacion = null, bloqu
                 </div>
                 <span class="text-[10px] font-bold rounded-full px-2.5 py-1 ${confirmada ? 'bg-[#EAF2EF] text-[#00594E]' : 'bg-slate-100 text-slate-500'}">${estado}</span>
             </div>
-            <textarea id="observacion-compromiso-${id}" maxlength="2000" rows="3" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E] disabled:bg-slate-50 disabled:text-slate-500" placeholder="Escribe una observación para este compromiso..." ${bloqueada ? 'disabled' : ''}>${escapeHtml(texto)}</textarea>
+            <textarea id="observacion-compromiso-${id}" maxlength="2000" rows="3" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E] disabled:bg-slate-50 disabled:text-slate-500" placeholder="Escribe la justificación de la nota para este compromiso..." ${bloqueada ? 'disabled' : ''}>${escapeHtml(texto)}</textarea>
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <span id="observacion-mensaje-${id}" class="hidden text-xs font-semibold"></span>
                 <div class="flex gap-2 justify-end">${botones}</div>
             </div>
-        </form>
+        </div>
     `;
 }
 
-export function guardarObservacionCompromiso(e, idCompromiso, confirmar = false) {
-    if (e) e.preventDefault();
+export function recargarSoloObservacionEvaluador(idCompromiso, observacion) {
+    const contenedor = document.getElementById(`observacion-form-evaluador-${idCompromiso}`);
+    if (!contenedor || !selectedEvaluacionData) return;
+
+    const ev = selectedEvaluacionData;
+    const compromiso = { id_compromiso: idCompromiso };
+    contenedor.innerHTML = renderObservacionEvaluador(compromiso, observacion, !ev.concertacion_firmada);
+}
+
+export function confirmarObservacionCompromiso(idCompromiso) {
     if (!selectedEvaluacionId) return;
     const msg = document.getElementById(`observacion-mensaje-${idCompromiso}`);
     const texto = (document.getElementById(`observacion-compromiso-${idCompromiso}`)?.value || '').trim();
+    if (!texto) {
+        if (msg) {
+            msg.classList.remove('hidden');
+            msg.className = 'text-xs font-semibold text-red-600';
+            msg.innerText = 'Debes escribir una observación antes de confirmarla.';
+        }
+        return;
+    }
+    if (!confirm('¿Confirmas esta observación? Una vez confirmada no podrás modificarla.')) return;
 
     fetchJson(`/evaluaciones/${selectedEvaluacionId}/observaciones`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id_compromiso: idCompromiso, texto, confirmar }),
+        body: JSON.stringify({ id_compromiso: idCompromiso, texto, confirmar: true }),
     })
         .then(async res => {
             const payload = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(parseErrorMessage(payload, 'No se pudo guardar la observación.'));
-            if (msg) {
-                msg.classList.remove('hidden');
-                msg.className = 'text-xs font-semibold text-[#00594E]';
-                msg.innerText = payload.message || 'Observación guardada.';
-            }
-            if (selectedEvaluacionData) cargarCompromisosEvaluador(selectedEvaluacionData, selectedEvaluacionEjes);
+            recargarSoloObservacionEvaluador(idCompromiso, payload.observacion || null);
         })
         .catch(error => {
             if (msg) {
@@ -374,11 +435,6 @@ export function guardarObservacionCompromiso(e, idCompromiso, confirmar = false)
                 msg.innerText = error.message;
             }
         });
-}
-
-export function confirmarObservacionCompromiso(idCompromiso) {
-    if (!confirm('¿Confirmas esta observación? Una vez confirmada no podrás modificarla.')) return;
-    guardarObservacionCompromiso(null, idCompromiso, true);
 }
 
 export function cargarCompromisosEvaluador(ev, ejes = {}) {
@@ -399,6 +455,7 @@ export function cargarCompromisosEvaluador(ev, ejes = {}) {
             const compromisos = payload.compromisos || [];
             const evidencias = payload.evidencias || [];
             const observaciones = payload.observaciones || [];
+            evidenciasPendientesCount = evidencias.filter(e => e.estado_aprobacion === 'PENDIENTE').length;
             const objetivo = calcularObjetivoCompromisos(ev, ejes);
             compromisosActuales = compromisos;
 
@@ -430,9 +487,10 @@ export function cargarCompromisosEvaluador(ev, ejes = {}) {
                 btnFirmar.innerText = yaFirmado ? 'Firmado' : 'Firmar concertación';
             }
 
-            const puedeCalificar = ev.concertacion_firmada && ev.estado !== 'CALIFICADA' && !ev.es_traslado;
+            const puedeCalificar = ev.concertacion_firmada && ev.estado !== 'CALIFICADA' && !ev.es_traslado && Number(ev.fase_actual || 3) >= 4 && evidenciasPendientesCount === 0;
             const bloqueCalificacion = document.getElementById('compromisos-calificacion-bloque');
             if (bloqueCalificacion) bloqueCalificacion.classList.toggle('hidden', !puedeCalificar);
+            sincronizarBloqueosCalificacionEvaluador();
 
             if (!compromisos.length) {
                 contenedor.innerHTML = '<div class="py-8 text-center text-slate-500 text-xs">No hay compromisos registrados aún.</div>';
@@ -453,7 +511,7 @@ export function cargarCompromisosEvaluador(ev, ejes = {}) {
                     : '';
                 return `
                 <div class="rounded-2xl border border-slate-200 bg-white p-4 space-y-3 shadow-sm transition hover:border-[#00594E]/40">
-                    <div class="flex items-center justify-between gap-3 cursor-pointer select-none" onclick="document.getElementById('detalle-comp-evaluador-${c.id_compromiso}')?.classList.toggle('hidden'); document.getElementById('icon-chevron-evaluador-${c.id_compromiso}')?.classList.toggle('rotate-180');">
+                    <div class="flex items-center justify-between gap-3 cursor-pointer select-none" onclick="toggleCompromisoColapsadoEvaluador(${c.id_compromiso})">
                         <div class="min-w-0 flex items-center gap-2">
                             <span id="icon-chevron-evaluador-${c.id_compromiso}" class="material-symbols-outlined text-[#00594E] text-base transition-transform duration-200">expand_more</span>
                             <div>
@@ -478,17 +536,48 @@ export function cargarCompromisosEvaluador(ev, ejes = {}) {
                         <div id="editar-compromiso-contenedor-${c.id_compromiso}" class="hidden"></div>
                         <div class="pt-2 border-t border-slate-100">
                             <p class="text-[10px] font-bold uppercase text-slate-400 mb-1">Evidencias Registradas</p>
-                            ${renderEvidenciasEvaluadorAccion(gruposEvidencias[String(c.id_compromiso)] || [], !ev.concertacion_firmada || ev.estado === 'CALIFICADA' || !!ev.es_traslado)}
+                            <div id="evidencias-list-evaluador-${c.id_compromiso}" class="space-y-2">
+                                ${renderEvidenciasEvaluadorAccion(gruposEvidencias[String(c.id_compromiso)] || [], !ev.concertacion_firmada || ev.estado === 'CALIFICADA' || !!ev.es_traslado || Number(ev.fase_actual || 3) < 4)}
+                            </div>
                         </div>
-                        ${renderObservacionEvaluador(c, gruposObservaciones[String(c.id_compromiso)], !ev.concertacion_firmada)}
+                        <div id="observacion-form-evaluador-${c.id_compromiso}" class="space-y-3">
+                                    ${renderObservacionEvaluador(c, gruposObservaciones[String(c.id_compromiso)], !ev.concertacion_firmada, ev.estado === 'CALIFICADA' || !!ev.es_traslado || Number(ev.fase_actual || 3) >= 5)}
+                                </div>
                     </div>
                 </div>
             `;
             }).join('');
+
+            // Los compromisos se presentan comprimidos por defecto.
+            compromisosColapsados = new Set(compromisos.map(c => Number(c.id_compromiso)));
+
+            // Reaplicar el estado de minimizado conservado en memoria
+            compromisosColapsados.forEach(id => {
+                const detalle = document.getElementById(`detalle-comp-evaluador-${id}`);
+                const icono = document.getElementById(`icon-chevron-evaluador-${id}`);
+                if (detalle) detalle.classList.add('hidden');
+                if (icono) icono.classList.add('rotate-180');
+            });
         })
         .catch(() => {
             contenedor.innerHTML = '<div class="py-8 text-center text-red-500 text-xs">Error al cargar compromisos.</div>';
         });
+}
+
+export function toggleCompromisoColapsadoEvaluador(id) {
+    const detalle = document.getElementById(`detalle-comp-evaluador-${id}`);
+    const icono = document.getElementById(`icon-chevron-evaluador-${id}`);
+    if (!detalle) {
+        compromisosColapsados.add(id);
+        return;
+    }
+    detalle.classList.toggle('hidden');
+    if (icono) icono.classList.toggle('rotate-180');
+    if (detalle.classList.contains('hidden')) {
+        compromisosColapsados.add(id);
+    } else {
+        compromisosColapsados.delete(id);
+    }
 }
 
 export function agregarCompromisoEvaluador(e) {
@@ -1006,16 +1095,22 @@ export function cargarCompetenciasEvaluador(ev) {
                 acc[c.id_competencia] = c;
                 return acc;
             }, {});
-            const bloqueado = !ev.concertacion_firmada || ev.estado === 'CALIFICADA' || !!ev.es_traslado;
+            const bloqueado = !ev.concertacion_firmada || ev.estado === 'CALIFICADA' || !!ev.es_traslado || Number(ev.fase_actual || 3) < 4 || evidenciasPendientesCount > 0;
             const bloqueadoMsg = document.getElementById('competencias-bloqueado-evaluador');
             if (bloqueadoMsg) {
                 bloqueadoMsg.classList.toggle('hidden', !bloqueado);
                 bloqueadoMsg.innerText = ev.estado === 'CALIFICADA'
                     ? 'Esta evaluación ya fue calificada y calculada; las notas quedaron congeladas.'
-                    : 'La concertación debe estar firmada por ambas partes antes de calificar competencias.';
+                    : ((!ev.concertacion_firmada)
+                        ? 'La concertación debe estar firmada por ambas partes antes de calificar competencias.'
+                        : (evidenciasPendientesCount > 0
+                            ? 'Debes aprobar o rechazar todas las evidencias antes de calificar. Quedan ' + evidenciasPendientesCount + ' evidencia(s) por revisar.'
+                            : 'El evaluado aún no ha confirmado sus evidencias; la calificación se habilitará cuando las confirme.'));
             }
             const btn = document.getElementById('btn-guardar-competencias-evaluador');
             if (btn) btn.classList.toggle('hidden', bloqueado);
+            const btnConfirmarCompetencias = document.getElementById('btn-confirmar-nota-competencias');
+            if (btnConfirmarCompetencias) btnConfirmarCompetencias.classList.toggle('hidden', bloqueado);
 
             const renderGrupo = (rows) => rows.map(c => {
                 const existente = guardadas[c.id_competencia] || {};
@@ -1092,16 +1187,22 @@ export function cargarEjesEvaluador(ev) {
             const ejesActivos = calculo.ejes_activos || [];
             const notas = calculo.notas_ejes_raw || {};
             const pesos = (calculo.pesos && calculo.pesos.ejes) || {};
-            const bloqueado = !ev.concertacion_firmada || ev.estado === 'CALIFICADA' || !!ev.es_traslado;
+            const bloqueado = !ev.concertacion_firmada || ev.estado === 'CALIFICADA' || !!ev.es_traslado || Number(ev.fase_actual || 3) < 4 || evidenciasPendientesCount > 0;
             const bloqueadoMsg = document.getElementById('ejes-bloqueado-evaluador');
             if (bloqueadoMsg) {
                 bloqueadoMsg.classList.toggle('hidden', !bloqueado);
                 bloqueadoMsg.innerText = ev.estado === 'CALIFICADA'
                     ? 'Esta evaluación ya fue calificada y calculada; las notas quedaron congeladas.'
-                    : 'La concertación debe estar firmada por ambas partes antes de calificar ejes misionales.';
+                    : ((!ev.concertacion_firmada)
+                        ? 'La concertación debe estar firmada por ambas partes antes de calificar ejes misionales.'
+                        : (evidenciasPendientesCount > 0
+                            ? 'Debes aprobar o rechazar todas las evidencias antes de calificar. Quedan ' + evidenciasPendientesCount + ' evidencia(s) por revisar.'
+                            : 'El evaluado aún no ha confirmado sus evidencias; la calificación se habilitará cuando las confirme.'));
             }
             const btn = document.getElementById('btn-guardar-ejes-evaluador');
             if (btn) btn.classList.toggle('hidden', bloqueado);
+            const btnConfirmarEjes = document.getElementById('btn-confirmar-nota-ejes');
+            if (btnConfirmarEjes) btnConfirmarEjes.classList.toggle('hidden', bloqueado);
 
             if (!ejesActivos.length) {
                 contenedor.innerHTML = '<div class="text-xs text-slate-400">Esta evaluación no tiene ejes misionales activos.</div>';
@@ -1171,9 +1272,83 @@ export function previsualizarCalculoEvaluador() {
         .catch(() => {});
 }
 
+function mensajeCalificacionActivo() {
+    if (document.getElementById('competencias-mensaje-evaluador')?.classList.contains('hidden') === false &&
+        document.getElementById('tab-evaluador-competencias')?.classList.contains('hidden') === false) {
+        return 'competencias-mensaje-evaluador';
+    }
+    if (document.getElementById('ejes-mensaje-evaluador')?.classList.contains('hidden') === false &&
+        document.getElementById('tab-evaluador-ejes')?.classList.contains('hidden') === false) {
+        return 'ejes-mensaje-evaluador';
+    }
+    return 'compromisos-calificacion-mensaje-evaluador';
+}
+
+function sincronizarBloqueosCalificacionEvaluador() {
+    const ev = selectedEvaluacionData;
+    if (!ev) return;
+    const pendientes = evidenciasPendientesCount > 0;
+    const bloqueoBase = !ev.concertacion_firmada || ev.estado === 'CALIFICADA' || !!ev.es_traslado || Number(ev.fase_actual || 3) < 4;
+
+    const puedeCalificarCompromisos = !bloqueoBase && !pendientes;
+    const puedeCalificarResto = !bloqueoBase && !pendientes;
+
+    const bloque = document.getElementById('compromisos-calificacion-bloque');
+    if (bloque) bloque.classList.toggle('hidden', !puedeCalificarCompromisos);
+
+    document.getElementById('btn-guardar-competencias-evaluador')?.classList.toggle('hidden', !puedeCalificarResto);
+    document.getElementById('btn-confirmar-nota-competencias')?.classList.toggle('hidden', !puedeCalificarResto);
+    document.getElementById('btn-guardar-ejes-evaluador')?.classList.toggle('hidden', !puedeCalificarResto);
+    document.getElementById('btn-confirmar-nota-ejes')?.classList.toggle('hidden', !puedeCalificarResto);
+
+    const msgCompetencias = document.getElementById('competencias-bloqueado-evaluador');
+    if (msgCompetencias) {
+        const mostrarMsgCompetencias = bloqueoBase || pendientes;
+        msgCompetencias.classList.toggle('hidden', !mostrarMsgCompetencias);
+        if (mostrarMsgCompetencias) {
+            msgCompetencias.innerText = ev.estado === 'CALIFICADA'
+                ? 'Esta evaluación ya fue calificada y calculada; las notas quedaron congeladas.'
+                : ((!ev.concertacion_firmada)
+                    ? 'La concertación debe estar firmada por ambas partes antes de calificar competencias.'
+                    : (pendientes
+                        ? 'Debes aprobar o rechazar todas las evidencias antes de calificar. Quedan ' + evidenciasPendientesCount + ' evidencia(s) por revisar.'
+                        : 'El evaluado aún no ha confirmado sus evidencias; la calificación se habilitará cuando las confirme.'));
+        }
+    }
+
+    const msgEjes = document.getElementById('ejes-bloqueado-evaluador');
+    if (msgEjes) {
+        const mostrarMsgEjes = bloqueoBase || pendientes;
+        msgEjes.classList.toggle('hidden', !mostrarMsgEjes);
+        if (mostrarMsgEjes) {
+            msgEjes.innerText = ev.estado === 'CALIFICADA'
+                ? 'Esta evaluación ya fue calificada y calculada; las notas quedaron congeladas.'
+                : ((!ev.concertacion_firmada)
+                    ? 'La concertación debe estar firmada por ambas partes antes de calificar ejes misionales.'
+                    : (pendientes
+                        ? 'Debes aprobar o rechazar todas las evidencias antes de calificar. Quedan ' + evidenciasPendientesCount + ' evidencia(s) por revisar.'
+                        : 'El evaluado aún no ha confirmado sus evidencias; la calificación se habilitará cuando las confirme.'));
+        }
+    }
+}
+
+function ocultarBotonesCalificacion() {
+    const bloque = document.getElementById('compromisos-calificacion-bloque');
+    if (bloque) bloque.classList.add('hidden');
+    document.getElementById('btn-guardar-competencias-evaluador')?.classList.add('hidden');
+    document.getElementById('btn-confirmar-nota-competencias')?.classList.add('hidden');
+    document.getElementById('btn-guardar-ejes-evaluador')?.classList.add('hidden');
+    document.getElementById('btn-confirmar-nota-ejes')?.classList.add('hidden');
+}
+
+function mostrarAvisoSinEvidenciasConfirmadas() {
+    alert('La evidencia fue rechazada. La evaluación volvió a la fase de subir evidencias: el evaluado debe corregirla y volver a confirmar la entrega para habilitar la calificación.');
+}
+
 export function calcularNotaFinal() {
     if (!selectedEvaluacionId) return;
     if (!confirm('¿Confirmas calcular la nota final? La evaluación quedará calificada y las notas se congelarán.')) return;
+    const msgId = mensajeCalificacionActivo();
     fetchJson(`/evaluaciones/${selectedEvaluacionId}/calcular-final`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1182,17 +1357,19 @@ export function calcularNotaFinal() {
         .then(async res => {
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo calcular la nota final.'));
-            showInlineMessage('compromisos-calificacion-mensaje-evaluador', `${data.message || 'Nota final calculada.'} El evaluado ya puede firmar la notificación de la calificación o registrar renuencia.`);
+            showInlineMessage(msgId, `${data.message || 'Nota final calculada.'} El evaluado ya puede firmar la notificación de la calificación o registrar renuencia.`);
             if (selectedEvaluacionData) {
-                selectedEvaluacionData = { ...selectedEvaluacionData, estado: 'CALIFICADA' };
+                selectedEvaluacionData = { ...selectedEvaluacionData, estado: 'CALIFICADA', fase_actual: 5 };
+                actualizarFaseLabel(selectedEvaluacionId, 5, 'evaluador');
             }
+            ocultarBotonesCalificacion();
             const resultado = document.getElementById('resultado-calculo-evaluador');
             if (resultado && data.calculo) {
                 resultado.classList.remove('hidden');
                 renderResultado(data.calculo, 'resultado-calculo-evaluador', 'evaluador');
             }
         })
-        .catch(error => showInlineMessage('compromisos-calificacion-mensaje-evaluador', error.message, true));
+        .catch(error => showInlineMessage(msgId, error.message, true));
 }
 
 export function mostrarModalRenuencia() {
@@ -1252,8 +1429,8 @@ window.eliminarCompromisoEvaluador = eliminarCompromisoEvaluador;
 window.editarCompromisoEvaluador = editarCompromisoEvaluador;
 window.cancelarEdicionCompromisoEvaluador = cancelarEdicionCompromisoEvaluador;
 window.guardarEdicionCompromisoEvaluador = guardarEdicionCompromisoEvaluador;
+window.toggleCompromisoColapsadoEvaluador = toggleCompromisoColapsadoEvaluador;
 window.aprobarEvidencia = aprobarEvidencia;
-window.guardarObservacionCompromiso = guardarObservacionCompromiso;
 window.confirmarObservacionCompromiso = confirmarObservacionCompromiso;
 window.decidirRecurso = decidirRecurso;
 window.verDetalleEvaluacionRecurso = verDetalleEvaluacionRecurso;

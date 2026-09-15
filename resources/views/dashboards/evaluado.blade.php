@@ -61,7 +61,7 @@
                                         <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#EAF2EF] text-[#00594E]">
                                             {{ $ev->sistema === 'RENDIMIENTO_LABORAL' ? 'RL' : 'AG' }}
                                         </span>
-                                        <span class="text-[9px] uppercase tracking-wide font-bold text-slate-400">Fase {{ $ev->fase_actual }}: {{ match($ev->fase_actual) { 1 => 'Concertación Pendiente', 2 => 'Concertación Parcial', 3 => 'Subir Evidencias', 4 => 'Calificación', 5 => 'Nota Final', default => '' } }}</span>
+                                        <span id="fase-label-evaluado-{{ $ev->id_evaluacion }}" class="text-[9px] uppercase tracking-wide font-bold text-slate-400">Fase {{ $ev->fase_actual }}: {{ match($ev->fase_actual) { 1 => 'Concertación Pendiente', 2 => 'Concertación Parcial', 3 => 'Subir Evidencias', 4 => 'Calificación', 5 => 'Nota Final', default => '' } }}</span>
                                     </div>
                                 </div>
                             @empty
@@ -126,6 +126,15 @@
                                 <div id="compromisos-lista-evaluado" class="space-y-3"></div>
                             </div>
 
+                            <div id="confirmar-evidencias-bloque-evaluado" class="hidden mt-4 rounded-2xl border border-[#B5A160]/40 bg-[#FBF7EC] p-4 flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                    <p class="text-xs font-bold text-slate-800">Confirmar evidencias enviadas</p>
+                                    <p class="text-[10px] text-slate-500 mt-0.5">Cuando termine de registrar las evidencias de cada compromiso, confirme su entrega para habilitar la calificación.</p>
+                                </div>
+                                <span id="confirmar-evidencias-mensaje-evaluado" class="hidden text-xs font-semibold"></span>
+                                <button type="button" id="btn-confirmar-evidencias-evaluado" onclick="confirmarEvidenciasEvaluado()" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Confirmar evidencias</button>
+                            </div>
+
                             <div id="resultado-calculo-evaluado" class="hidden mt-6 space-y-3"></div>
 
                             <div id="notificacion-evaluado-seccion" class="hidden mt-6 pt-4 border-t border-slate-100 space-y-3">
@@ -180,6 +189,25 @@
                                 <div id="firmas-concertacion-evaluado" class="mt-3 hidden"></div>
                             </div>
                             
+                            <!-- Modal: Recusación -->
+                            <div id="modal-recusacion" class="hidden mt-6 bg-red-50 p-4 border border-red-200 rounded-xl">
+                                <h4 class="font-bold text-red-800 text-sm mb-2">Declarar Recusación contra el Evaluador</h4>
+                                <form method="POST" action="" id="form-recusacion-accion" class="space-y-3">
+                                    @csrf
+                                    <input type="hidden" name="tipo" value="RECUSACION">
+                                    <div>
+                                        <label class="text-[10px] font-bold text-red-700 uppercase">Motivo (Justificación)</label>
+                                        <textarea id="recusacion-motivo" name="motivo" class="w-full text-xs p-2 rounded border" required placeholder="Indica el motivo por el cual declaras la recusación..."></textarea>
+                                    </div>
+                                    <div>
+                                        <label class="text-[10px] font-bold text-red-700 uppercase">Evidencia (enlace de soporte)</label>
+                                        <input type="url" id="recusacion-evidencia" name="evidencia_url" class="w-full text-xs p-2 rounded border" placeholder="https://... (soporte, constancia o documento que justifica la recusación)" />
+                                        <p class="text-[10px] text-slate-400 mt-1">Opcional: pega el enlace del soporte que respalda la solicitud.</p>
+                                    </div>
+                                    <button type="submit" class="bg-red-700 text-white px-4 py-2 rounded-xl text-xs font-bold w-full">Radicar en Talento Humano</button>
+                                </form>
+                            </div>
+
                             <!-- Bloque: Desacuerdo durante la concertación -->
                             <div id="bloque-desacuerdo-evaluado" class="mt-6 pt-4 border-t border-slate-100 hidden">
                                 <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2 mb-2">Desacuerdo con la concertación</h4>
@@ -188,17 +216,6 @@
                                     <p class="text-[11px] text-slate-500">Disponible mientras la concertación esté pendiente de firma. Una vez firmada o calificada, podrás usar el trámite de recursos cuando corresponda.</p>
                                     <textarea name="desacuerdo" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" placeholder="Escribe los motivos de tu desacuerdo con los compromisos propuestos..." required></textarea>
                                     <button type="submit" class="bg-amber-600 text-white px-4 py-2 rounded-xl text-xs font-bold w-full md:w-auto">Enviar desacuerdo al evaluador</button>
-                                </form>
-                            </div>
-                            
-                            <!-- Modal: Recusación -->
-                            <div id="modal-recusacion" class="hidden mt-4 bg-red-50 p-4 border border-red-200 rounded-xl">
-                                <h4 class="font-bold text-red-800 text-sm mb-2">Declarar Recusación contra el Evaluador</h4>
-                                <form method="POST" action="" id="form-recusacion-accion" class="space-y-3">
-                                    @csrf
-                                    <input type="hidden" name="tipo" value="RECUSACION">
-                                    <div><label class="text-[10px] font-bold text-red-700 uppercase">Motivo y Evidencia (Justificación)</label><textarea name="motivo" class="w-full text-xs p-2 rounded border" required></textarea></div>
-                                    <button type="submit" class="bg-red-700 text-white px-4 py-2 rounded-xl text-xs font-bold w-full">Radicar en Talento Humano</button>
                                 </form>
                             </div>
                         </div>

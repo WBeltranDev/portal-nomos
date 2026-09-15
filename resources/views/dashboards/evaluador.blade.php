@@ -222,7 +222,7 @@
                                         <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#EAF2EF] text-[#00594E]">
                                             {{ $ev->sistema === 'RENDIMIENTO_LABORAL' ? 'RL' : 'AG' }}
                                         </span>
-                                        <span class="text-[9px] uppercase tracking-wide font-bold text-slate-400">Fase {{ $ev->fase_actual }}: {{ match($ev->fase_actual) { 1 => 'Concertación Pendiente', 2 => 'Concertación Parcial', 3 => 'Subir Evidencias', 4 => 'Calificación', 5 => 'Nota Final', default => '' } }}</span>
+                                        <span id="fase-label-evaluador-{{ $ev->id_evaluacion }}" class="text-[9px] uppercase tracking-wide font-bold text-slate-400">Fase {{ $ev->fase_actual }}: {{ match($ev->fase_actual) { 1 => 'Concertación Pendiente', 2 => 'Concertación Parcial', 3 => 'Subir Evidencias', 4 => 'Calificación', 5 => 'Nota Final', default => '' } }}</span>
                                     </div>
                                 </button>
                             @empty
@@ -309,7 +309,6 @@
                                             <div class="flex flex-wrap items-center gap-2">
                                                 <span id="compromisos-calificacion-mensaje-evaluador" class="hidden text-xs font-semibold"></span>
                                                 <button type="button" onclick="guardarCalificacionesCompromisos()" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Guardar compromisos</button>
-                                                <button type="button" onclick="previsualizarCalculoEvaluador()" class="bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs font-bold hover:border-[#00594E] transition">Ver cálculo</button>
                                                 <button type="button" onclick="calcularNotaFinal()" class="bg-[#B5A160] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Confirmar nota final del funcionario</button>
                                             </div>
                                         </div>
@@ -361,7 +360,15 @@
                                 <form method="POST" action="" id="form-impedimento-accion" class="space-y-3">
                                     @csrf
                                     <input type="hidden" name="tipo" value="IMPEDIMENTO">
-                                    <div><label class="text-[10px] font-bold text-red-700 uppercase">Motivo y Evidencia (Justificación)</label><textarea name="motivo" class="w-full text-xs p-2 rounded border" required></textarea></div>
+                                    <div>
+                                        <label class="text-[10px] font-bold text-red-700 uppercase">Motivo (Justificación)</label>
+                                        <textarea id="impedimento-motivo" name="motivo" class="w-full text-xs p-2 rounded border" required placeholder="Indica el motivo por el cual declaras el impedimento..."></textarea>
+                                    </div>
+                                    <div>
+                                        <label class="text-[10px] font-bold text-red-700 uppercase">Evidencia (enlace de soporte)</label>
+                                        <input type="url" id="impedimento-evidencia" name="evidencia_url" class="w-full text-xs p-2 rounded border" placeholder="https://... (soporte, constancia o documento que justifica el impedimento)" />
+                                        <p class="text-[10px] text-slate-400 mt-1">Opcional: pega el enlace del soporte que respalda la solicitud.</p>
+                                    </div>
                                     <button type="submit" class="bg-red-700 text-white px-4 py-2 rounded-xl text-xs font-bold w-full">Enviar a Talento Humano</button>
                                 </form>
                             </div>
@@ -419,6 +426,7 @@
                                     <div class="flex items-center justify-between gap-3">
                                         <span id="competencias-mensaje-evaluador" class="hidden text-xs font-semibold"></span>
                                         <button type="button" id="btn-guardar-competencias-evaluador" onclick="guardarCalificacionesCompetencias()" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Guardar competencias</button>
+                                        <button type="button" id="btn-confirmar-nota-competencias" onclick="calcularNotaFinal()" class="bg-[#B5A160] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Confirmar nota final del funcionario</button>
                                     </div>
                                 </div>
                             </div>
@@ -438,6 +446,7 @@
                                     <div class="flex items-center justify-between gap-3">
                                         <span id="ejes-mensaje-evaluador" class="hidden text-xs font-semibold"></span>
                                         <button type="button" id="btn-guardar-ejes-evaluador" onclick="guardarCalificacionesEjes()" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Guardar ejes</button>
+                                        <button type="button" id="btn-confirmar-nota-ejes" onclick="calcularNotaFinal()" class="bg-[#B5A160] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Confirmar nota final del funcionario</button>
                                     </div>
                                 </div>
                             </div>

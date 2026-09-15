@@ -444,15 +444,15 @@ class DashboardController extends Controller
                     $q->whereNull('f_no.renuencia')->orWhere('f_no.renuencia', 0);
                 })
                 ->where(function ($q) {
-                    $q->where('ev.categoria_final', 'NO_SATISFACTORIO')
+                    $q->whereIn('ev.categoria_final', ['NO_SATISFACTORIO', 'APROBADO_MEJORA'])
                       ->orWhere(function ($q2) {
                           $q2->whereNotNull('ev.calificacion_final')
-                             ->where('ev.calificacion_final', '<=', 70)
+                             ->where('ev.calificacion_final', '<=', 80)
                              ->where('ev.calificacion_final', '>', 0);
                       })
                       ->orWhere(function ($q3) {
                           $q3->whereNotNull('ev.calificacion_parcial')
-                             ->where('ev.calificacion_parcial', '<=', 70)
+                             ->where('ev.calificacion_parcial', '<=', 80)
                              ->where('ev.calificacion_parcial', '>', 0);
                       })
                       ->orWhereNotNull('pm.id_plan');
