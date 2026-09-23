@@ -782,9 +782,10 @@ class DashboardController extends Controller
                         ->where('v.id_vinculacion', $ir->id_vinc_solicitante)
                         ->first();
 
-                    $mensaje = "Se registró un nuevo {$tipo}.";
+                    $articulo = $ir->tipo === 'IMPEDIMENTO' ? 'un nuevo' : 'una nueva';
+                    $mensaje = "Se registró {$articulo} {$tipo}.";
                     if ($solicitante) {
-                        $mensaje = "{$solicitante->nombres} {$solicitante->apellidos} registró un nuevo {$tipo}.";
+                        $mensaje = "{$solicitante->nombres} {$solicitante->apellidos} registró {$articulo} {$tipo}.";
                     }
 
                     DB::table('notificacion')->insert([

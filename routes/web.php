@@ -1841,12 +1841,14 @@ Route::post('/admin/impedimentos/{id}/resolver', function (Request $request, int
                 $nombreEvaluado = $evaluado ? "{$evaluado->nombres} {$evaluado->apellidos}" : 'el funcionario';
                 $periodoTxt = $periodo ? "{$periodo->sistema} {$periodo->anio}/{$periodo->semestre}" : '';
                 $tipoTxt = $solicitud->tipo === 'IMPEDIMENTO' ? 'Impedimento' : 'Recusación';
+                $articuloImp = $solicitud->tipo === 'IMPEDIMENTO' ? 'un' : 'una';
+                $generoTxt = $solicitud->tipo === 'IMPEDIMENTO' ? 'aprobado' : 'aprobada';
 
                 if (Schema::hasTable('notificacion')) {
                     DB::table('notificacion')->insert([
                         'tipo' => 'IMPEDIMENTO_APROBADO',
                         'titulo' => "Evaluación reasignada - {$tipoTxt} #{$id}",
-                        'mensaje' => "Se le ha asignado la evaluación de {$nombreEvaluado} ({$periodoTxt}) debido a un {$tipoTxt} aprobado. Revise los compromisos y continúe el proceso.",
+                        'mensaje' => "Se le ha asignado la evaluación de {$nombreEvaluado} ({$periodoTxt}) debido a {$articuloImp} {$tipoTxt} {$generoTxt}. Revise los compromisos y continúe el proceso.",
                         'seccion' => 'impedimentos-admin',
                         'created_at' => now(),
                         'updated_at' => now(),
