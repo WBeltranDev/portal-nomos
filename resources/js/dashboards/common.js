@@ -99,6 +99,15 @@ export function closePasswordModal() {
     }
 }
 
+export function togglePasswordVisibility(id, button) {
+    const input = document.getElementById(id);
+    if (!input) return;
+    const isPassword = input.type === 'password';
+    input.type = isPassword ? 'text' : 'password';
+    const icon = button.querySelector('.material-symbols-outlined');
+    if (icon) icon.textContent = isPassword ? 'visibility_off' : 'visibility';
+}
+
 export const EJE_LABELS = {
     DOCENCIA: 'Docencia',
     INVESTIGACION: 'Investigación',
@@ -229,6 +238,7 @@ window.toggleSidebar = toggleSidebar;
 window.toggleProfileMenu = toggleProfileMenu;
 window.openPasswordModal = openPasswordModal;
 window.closePasswordModal = closePasswordModal;
+window.togglePasswordVisibility = togglePasswordVisibility;
 window.navegarMenu = navegarMenu;
 window.escapeHtml = escapeHtml;
 window.clampCalificacion = clampCalificacion;

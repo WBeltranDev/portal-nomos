@@ -17,11 +17,21 @@
             </div>
             <div>
                 <label class="block text-sm font-bold text-slate-700 mb-1">Nueva contraseña</label>
-                <input type="password" name="password" class="w-full rounded-xl border border-slate-200 px-4 py-3" required>
+                <div class="flex items-stretch rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                    <input type="password" name="password" id="nueva-password" class="w-full bg-transparent px-4 py-3 outline-none" required>
+                    <button type="button" onclick="togglePasswordVisibility('nueva-password', this)" class="flex flex-none items-center justify-center px-3 border-l border-slate-200 bg-slate-50 text-slate-500 hover:text-slate-700 hover:bg-slate-100 active:bg-slate-200 transition shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)]" title="Mostrar contraseña">
+                        <span class="material-symbols-outlined leading-none select-none pointer-events-none" style="font-size:20px;">visibility</span>
+                    </button>
+                </div>
             </div>
             <div>
                 <label class="block text-sm font-bold text-slate-700 mb-1">Confirmar nueva contraseña</label>
-                <input type="password" name="password_confirmation" class="w-full rounded-xl border border-slate-200 px-4 py-3" required>
+                <div class="flex items-stretch rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                    <input type="password" name="password_confirmation" id="confirmar-password" class="w-full bg-transparent px-4 py-3 outline-none" required>
+                    <button type="button" onclick="togglePasswordVisibility('confirmar-password', this)" class="flex flex-none items-center justify-center px-3 border-l border-slate-200 bg-slate-50 text-slate-500 hover:text-slate-700 hover:bg-slate-100 active:bg-slate-200 transition shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)]" title="Mostrar contraseña">
+                        <span class="material-symbols-outlined leading-none select-none pointer-events-none" style="font-size:20px;">visibility</span>
+                    </button>
+                </div>
             </div>
             <button type="submit" class="w-full rounded-2xl bg-[#00594E] text-white font-bold py-3">Guardar cambio</button>
         </form>
