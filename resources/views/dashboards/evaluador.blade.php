@@ -309,7 +309,7 @@
                                             <div class="flex flex-wrap items-center gap-2">
                                                 <span id="compromisos-calificacion-mensaje-evaluador" class="hidden text-xs font-semibold"></span>
                                                 <button type="button" onclick="guardarCalificacionesCompromisos()" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Guardar compromisos</button>
-                                                <button type="button" onclick="calcularNotaFinal()" class="bg-[#B5A160] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Confirmar nota final del funcionario</button>
+                                                <button type="button" onclick="calcularNotaFinal()" class="bg-[#B5A160] text-white px-6 py-3 rounded-xl text-sm font-bold hover:brightness-110 transition">Confirmar nota final del funcionario</button>
                                             </div>
                                         </div>
                                     </div>
@@ -426,7 +426,7 @@
                                     <div class="flex items-center justify-between gap-3">
                                         <span id="competencias-mensaje-evaluador" class="hidden text-xs font-semibold"></span>
                                         <button type="button" id="btn-guardar-competencias-evaluador" onclick="guardarCalificacionesCompetencias()" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Guardar competencias</button>
-                                        <button type="button" id="btn-confirmar-nota-competencias" onclick="calcularNotaFinal()" class="bg-[#B5A160] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Confirmar nota final del funcionario</button>
+                                        <button type="button" id="btn-confirmar-nota-competencias" onclick="calcularNotaFinal()" class="bg-[#B5A160] text-white px-6 py-3 rounded-xl text-sm font-bold hover:brightness-110 transition">Confirmar nota final del funcionario</button>
                                     </div>
                                 </div>
                             </div>
@@ -446,7 +446,7 @@
                                     <div class="flex items-center justify-between gap-3">
                                         <span id="ejes-mensaje-evaluador" class="hidden text-xs font-semibold"></span>
                                         <button type="button" id="btn-guardar-ejes-evaluador" onclick="guardarCalificacionesEjes()" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Guardar ejes</button>
-                                        <button type="button" id="btn-confirmar-nota-ejes" onclick="calcularNotaFinal()" class="bg-[#B5A160] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Confirmar nota final del funcionario</button>
+                                        <button type="button" id="btn-confirmar-nota-ejes" onclick="calcularNotaFinal()" class="bg-[#B5A160] text-white px-6 py-3 rounded-xl text-sm font-bold hover:brightness-110 transition">Confirmar nota final del funcionario</button>
                                     </div>
                                 </div>
                             </div>
