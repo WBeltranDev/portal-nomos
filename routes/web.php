@@ -869,7 +869,7 @@ Route::post('/admin/periodos', function (Request $request) {
         ->exists();
 
     if ($exists) {
-        return back()->withErrors(['periodo' => 'Este perodo ya existe registrado.']);
+        return back()->withErrors(['periodo' => 'Este perido ya existe.']);
     }
 
     $traslape = DB::table('periodo')
