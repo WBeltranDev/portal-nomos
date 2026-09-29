@@ -331,10 +331,6 @@ class DashboardController extends Controller
                     $join->on('f_er.id_evaluacion', '=', 'ev.id_evaluacion')
                         ->where('f_er.tipo_firma', '=', 'CONCERTACION_EVALUADOR');
                 })
-                ->leftJoin('firma as f_no', function ($join) {
-                    $join->on('f_no.id_evaluacion', '=', 'ev.id_evaluacion')
-                        ->where('f_no.tipo_firma', '=', 'NOTIFICACION_EVALUADO');
-                })
                 ->select(
                     'ev.id_evaluacion',
                     'ev.estado',
@@ -357,8 +353,7 @@ class DashboardController extends Controller
                     'forr.nombres as evaluador_nombres',
                     'forr.apellidos as evaluador_apellidos',
                     DB::raw('IF(f_ev.id_firma IS NOT NULL, 1, 0) as evaluado_firmado'),
-                    DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado'),
-                    DB::raw('IF(f_no.id_firma IS NOT NULL, 1, 0) as notificacion_firmada')
+                    DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado')
                 )
                 ->orderByDesc('ev.id_evaluacion')
                 ->get();
@@ -420,8 +415,6 @@ class DashboardController extends Controller
                     'ev.desacuerdo_evaluado',
                     DB::raw('IF(f_ev.id_firma IS NOT NULL, 1, 0) as evaluado_firmado'),
                     DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado'),
-                    DB::raw('IF(f_no.id_firma IS NOT NULL, 1, 0) as notificacion_firmada'),
-                    DB::raw('IF(f_no.renuencia = 1, 1, 0) as notificacion_renuencia'),
                     DB::raw('(SELECT COUNT(*) FROM concertacion_extratiempo ce WHERE ce.id_evaluacion = ev.id_evaluacion AND ce.activo = 1) as tiene_extratiempo')
                 )
                 ->orderByDesc('ev.id_evaluacion')
@@ -433,16 +426,8 @@ class DashboardController extends Controller
                 ->join('vinculacion as ve', 've.id_vinculacion', '=', 'ev.id_vinc_evaluado')
                 ->join('funcionario as fe', 'fe.id_funcionario', '=', 've.id_funcionario')
                 ->leftJoin('plan_mejoramiento as pm', 'pm.id_evaluacion', '=', 'ev.id_evaluacion')
-                ->leftJoin('firma as f_no', function ($join) {
-                    $join->on('f_no.id_evaluacion', '=', 'ev.id_evaluacion')
-                        ->where('f_no.tipo_firma', '=', 'NOTIFICACION_EVALUADO');
-                })
                 ->where('va.id_funcionario', $usuario['id_funcionario'])
                 ->where('ev.estado', 'CALIFICADA')
-                // Plan solo se habilita si no hubo renuencia y fue notificada/firmada
-                ->where(function ($q) {
-                    $q->whereNull('f_no.renuencia')->orWhere('f_no.renuencia', 0);
-                })
                 ->where(function ($q) {
                     $q->whereIn('ev.categoria_final', ['NO_SATISFACTORIO', 'APROBADO_MEJORA'])
                       ->orWhere(function ($q2) {
@@ -539,10 +524,6 @@ class DashboardController extends Controller
                     $join->on('f_er.id_evaluacion', '=', 'ev.id_evaluacion')
                         ->where('f_er.tipo_firma', '=', 'CONCERTACION_EVALUADOR');
                 })
-                ->leftJoin('firma as f_no', function ($join) {
-                    $join->on('f_no.id_evaluacion', '=', 'ev.id_evaluacion')
-                        ->where('f_no.tipo_firma', '=', 'NOTIFICACION_EVALUADO');
-                })
                 ->leftJoin('vinculacion as vs', 'vs.id_vinculacion', '=', 'ev.id_vinc_suplente')
                 ->leftJoin('funcionario as fs', 'fs.id_funcionario', '=', 'vs.id_funcionario')
                 ->select(
@@ -573,13 +554,7 @@ class DashboardController extends Controller
                     've.aplica_eje_misional',
                     DB::raw('IF(f_ev.id_firma IS NOT NULL, 1, 0) as evaluado_firmado'),
                     DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado'),
-                    DB::raw('IF(f_no.id_firma IS NOT NULL, 1, 0) as notificacion_firmada'),
-                    DB::raw('IF(f_no.renuencia = 1, 1, 0) as notificacion_renuencia'),
-                    DB::raw('(SELECT COUNT(*) FROM concertacion_extratiempo ce WHERE ce.id_evaluacion = ev.id_evaluacion AND ce.activo = 1) as tiene_extratiempo'),
-                    'f_no.fecha_firma as notificacion_fecha',
-                    'f_no.testigo_nombre',
-                    'f_no.testigo_documento',
-                    'f_no.observacion_renuencia'
+                    DB::raw('(SELECT COUNT(*) FROM concertacion_extratiempo ce WHERE ce.id_evaluacion = ev.id_evaluacion AND ce.activo = 1) as tiene_extratiempo')
                 )
                 ->orderByDesc('ev.id_evaluacion')
                 ->get();

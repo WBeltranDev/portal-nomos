@@ -1357,7 +1357,7 @@ export function calcularNotaFinal() {
         .then(async res => {
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo calcular la nota final.'));
-            showInlineMessage(msgId, `${data.message || 'Nota final calculada.'} El evaluado ya puede firmar la notificación de la calificación o registrar renuencia.`);
+            showInlineMessage(msgId, `${data.message || 'Nota final calculada.'} El evaluado ya puede revisar su nota final y radicar los recursos cuando corresponda.`);
             if (selectedEvaluacionData) {
                 selectedEvaluacionData = { ...selectedEvaluacionData, estado: 'CALIFICADA', fase_actual: 5 };
                 actualizarFaseLabel(selectedEvaluacionId, 5, 'evaluador');
@@ -1370,15 +1370,6 @@ export function calcularNotaFinal() {
             }
         })
         .catch(error => showInlineMessage(msgId, error.message, true));
-}
-
-export function mostrarModalRenuencia() {
-    const modal = document.getElementById('modal-renuencia');
-    const form = document.getElementById('form-renuencia-accion');
-    if (modal && form) {
-        modal.classList.toggle('hidden');
-        form.action = `/evaluaciones/${selectedEvaluacionId}/renuencia`;
-    }
 }
 
 export function mostrarModalImpedimento() {
@@ -1442,7 +1433,6 @@ window.guardarCalificacionesCompetencias = guardarCalificacionesCompetencias;
 window.guardarCalificacionesEjes = guardarCalificacionesEjes;
 window.calcularNotaFinal = calcularNotaFinal;
 window.previsualizarCalculoEvaluador = previsualizarCalculoEvaluador;
-window.mostrarModalRenuencia = mostrarModalRenuencia;
 window.mostrarModalImpedimento = mostrarModalImpedimento;
 window.mostrarModalSolicitudModificacion = mostrarModalSolicitudModificacion;
 window.cambiarCompromisoSeleccionado = cambiarCompromisoSeleccionado;

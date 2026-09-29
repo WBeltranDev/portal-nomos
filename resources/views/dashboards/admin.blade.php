@@ -802,24 +802,11 @@
                         <div>
                             <p class="text-xs font-bold uppercase tracking-[0.22em] text-[#00594E]">Planes de mejoramiento</p>
                             <h2 class="text-2xl sm:text-3xl font-black text-slate-900">Planes condicionados a la calificación</h2>
-                            <p class="text-sm text-slate-500 mt-1">Solo habilitados cuando la nota fue firmada y aceptada sin renuencia.</p>
+                            <p class="text-sm text-slate-500 mt-1">Solo habilitados cuando la nota fue firmada y aceptada por el evaluado.</p>
                         </div>
                     </div>
                     <div id="planes-admin-lista" class="grid gap-4 lg:grid-cols-2">
                         <div class="py-10 text-center text-slate-500 text-xs">Cargando planes...</div>
-                    </div>
-                </div>
-
-                <div class="panel-card rounded-3xl p-6">
-                    <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between mb-6">
-                        <div>
-                            <p class="text-xs font-bold uppercase tracking-[0.22em] text-[#00594E]">Renuencia</p>
-                            <h2 class="text-2xl sm:text-3xl font-black text-slate-900">Renuncias a la firma con testigos</h2>
-                            <p class="text-sm text-slate-500 mt-1">Notificaciones con constancia de testigo institucional y evidencias.</p>
-                        </div>
-                    </div>
-                    <div id="renuencias-admin-lista" class="grid gap-4 lg:grid-cols-2">
-                        <div class="py-10 text-center text-slate-500 text-xs">Cargando renuencias...</div>
                     </div>
                 </div>
             </section>

@@ -323,10 +323,7 @@
                                     <form id="form-firmar-evaluacion" method="POST" action="" onsubmit="firmarConcertacion(event, 'evaluador')" class="shrink-0">
                                         @csrf
                                         <button type="submit" id="btn-firmar-evaluador" class="bg-[#00594E] text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:brightness-110 transition disabled:opacity-50" disabled>Firmar concertación</button>
-                                        
-                                        <!-- Botón de Renuencia -->
-                                        <button type="button" id="btn-renuencia-evaluador" onclick="mostrarModalRenuencia()" class="bg-amber-600 text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-amber-700 transition hidden ml-2">Registrar Renuencia</button>
-                                        
+
                                         <!-- Botón de Impedimento/Recusación -->
                                         <button type="button" id="btn-impedimento-evaluador" onclick="mostrarModalImpedimento()" class="bg-red-600 text-white px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-red-700 transition ml-2 hidden">Declarar Impedimento</button>
                                     </form>
@@ -342,19 +339,6 @@
                             </div>
 
                             <!-- Formularios modales dinámicos (ocultos inicialmente) -->
-                            <div id="modal-renuencia" class="hidden mt-4 bg-amber-50 p-4 border border-amber-200 rounded-xl">
-                                <h4 class="font-bold text-amber-800 text-sm mb-2">Registrar Renuencia a Firmar</h4>
-                                <form method="POST" action="" id="form-renuencia-accion" class="space-y-3">
-                                    @csrf
-                                    <div class="grid grid-cols-2 gap-2">
-                                        <div><label class="text-[10px] font-bold text-amber-700 uppercase">Nombre Testigo</label><input type="text" name="testigo_nombre" class="w-full text-xs p-2 rounded border" required></div>
-                                        <div><label class="text-[10px] font-bold text-amber-700 uppercase">Documento Testigo</label><input type="text" name="testigo_documento" class="w-full text-xs p-2 rounded border" required></div>
-                                    </div>
-                                    <div><label class="text-[10px] font-bold text-amber-700 uppercase">Observación</label><textarea name="observacion_renuencia" class="w-full text-xs p-2 rounded border" required></textarea></div>
-                                    <button type="submit" class="bg-amber-700 text-white px-4 py-2 rounded-xl text-xs font-bold w-full">Guardar Renuencia y Notificar</button>
-                                </form>
-                            </div>
-
                             <div id="modal-impedimento" class="hidden mt-4 bg-red-50 p-4 border border-red-200 rounded-xl">
                                 <h4 class="font-bold text-red-800 text-sm mb-2">Declarar Impedimento / Recusación</h4>
                                 <form method="POST" action="" id="form-impedimento-accion" class="space-y-3">

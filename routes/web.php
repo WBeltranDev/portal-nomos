@@ -1909,27 +1909,6 @@ Route::get('/evaluaciones/{id}/compromisos', function (int $id) {
         ->where('tipo_firma', 'CONCERTACION_EVALUADOR')
         ->first();
 
-    $notificacionFirmada = DB::table('firma')
-        ->where('id_evaluacion', $id)
-        ->where('tipo_firma', 'NOTIFICACION_EVALUADO')
-        ->first();
-
-    $testigosNotificacion = [];
-    if ($notificacionFirmada && $notificacionFirmada->renuencia) {
-        $testigosNotificacion = DB::table('testigo_renuencia')
-            ->where('id_firma', $notificacionFirmada->id_firma)
-            ->select('nombre_testigo', 'cargo_testigo')
-            ->get();
-    }
-
-    $evidenciasNotificacion = [];
-    if ($notificacionFirmada && $notificacionFirmada->renuencia) {
-        $evidenciasNotificacion = DB::table('renuencia_evidencia')
-            ->where('id_firma', $notificacionFirmada->id_firma)
-            ->select('descripcion', 'url')
-            ->get();
-    }
-
     return response()->json([
         'compromisos' => $compromisos,
         'evidencias' => $evidencias,
@@ -1940,12 +1919,7 @@ Route::get('/evaluaciones/{id}/compromisos', function (int $id) {
             'evaluador_firmado' => (bool) $evaluadorFirmado,
             'renuencia_evaluador' => false,
             'renuencia_evaluado' => false,
-            'notificacion_firmada' => (bool) $notificacionFirmada,
-            'renuencia_notificacion' => (bool) ($notificacionFirmada->renuencia ?? false),
-            'fecha_notificacion' => $notificacionFirmada->fecha_firma ?? null,
             'testigos' => getTestigosConcertacion($id),
-            'testigos_notificacion' => $testigosNotificacion,
-            'evidencias_notificacion' => $evidenciasNotificacion,
             'congelada' => (bool) $evaluacion->concertacion_firmada,
             'traslado' => (bool) $evaluacion->es_traslado,
             'calificada' => $evaluacion->estado === 'CALIFICADA',
@@ -2686,136 +2660,6 @@ Route::post('/evaluaciones/{id}/firmar', function (Request $request, int $id) {
 
     return back()->with('success_firma', 'Firma registrada con éxito.');
 })->name('evaluaciones.firmar');
-
-
-// --- POST: Firmar notificación de la calificación / registrar renuencia con testigos ---
-Route::post('/evaluaciones/{id}/firmar-notificacion', function (Request $request, int $id) {
-    $auth = session('usuario_autenticado');
-    abort_unless($auth, 403);
-    $rolActivo = session('usuario_autenticado.rol_activo');
-
-    $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
-    abort_unless($evaluacion, 404);
-    abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
-    abort_unless($evaluacion->estado === 'CALIFICADA', 422, 'La evaluación aún no ha sido calificada.');
-
-    $renuncia = filter_var($request->input('renuencia', false), FILTER_VALIDATE_BOOLEAN);
-    $testigos = collect($request->input('testigos', []))
-        ->filter(fn ($t) => is_array($t)
-            && !empty(trim((string) ($t['nombre'] ?? '')))
-            && !empty(trim((string) ($t['cargo'] ?? ''))))
-        ->map(fn ($t) => [
-            'nombre_testigo' => trim((string) ($t['nombre'] ?? '')),
-            'cargo_testigo' => trim((string) ($t['cargo'] ?? '')),
-        ])
-        ->values()
-        ->all();
-
-    $evidencias = collect($request->input('evidencias', []))
-        ->filter(fn ($e) => is_array($e)
-            && !empty(trim((string) ($e['url'] ?? ''))))
-        ->map(fn ($e) => [
-            'descripcion' => trim((string) ($e['descripcion'] ?? '')),
-            'url' => trim((string) ($e['url'] ?? '')),
-        ])
-        ->values()
-        ->all();
-
-    if ($renuncia && count($testigos) < 1) {
-        return response()->json(['error' => 'Debes registrar al menos un testigo (nombre y cargo) cuando renuncias a firmar.'], 422);
-    }
-
-    if ($renuncia && count($evidencias) < 1) {
-        return response()->json(['error' => 'Debes adjuntar al menos un enlace (link) con el acta de renuencia digitalizada en PDF.'], 422);
-    }
-
-    foreach ($evidencias as $evidencia) {
-        if (!filter_var($evidencia['url'], FILTER_VALIDATE_URL)) {
-            return response()->json(['error' => 'Cada enlace de evidencia debe ser una URL válida (ej. https://...).'], 422);
-        }
-    }
-
-    $puedeFirmar = false;
-    if ($rolActivo === 'evaluado') {
-        $puedeFirmar = DB::table('vinculacion')
-            ->where('id_vinculacion', $evaluacion->id_vinc_evaluado)
-            ->where('id_funcionario', $auth['id_funcionario'] ?? null)
-            ->exists();
-    } elseif (in_array($rolActivo, ['evaluador', 'admin'])) {
-        $puedeFirmar = true;
-    }
-
-    abort_unless($puedeFirmar, 403);
-
-    $testigoNombre = trim((string) ($request->input('testigo_nombre', '')));
-    $testigoDoc = trim((string) ($request->input('testigo_documento', '')));
-    $observacionRenuencia = trim((string) ($request->input('observacion_renuencia', '')));
-
-    if ($renuncia && empty($testigos) && !empty($testigoNombre)) {
-        $testigos[] = [
-            'nombre_testigo' => $testigoNombre,
-            'cargo_testigo' => $testigoDoc ?: 'Testigo Institucional',
-        ];
-    }
-
-    $firmaValues = [
-        'id_vinc_firmante' => (int) $evaluacion->id_vinc_evaluado,
-        'fecha_firma' => date('Y-m-d H:i:s'),
-        'renuencia' => $renuncia ? 1 : 0,
-    ];
-
-    if (Schema::hasColumn('firma', 'testigo_nombre')) {
-        $firmaValues['testigo_nombre'] = $testigoNombre ?: ($testigos[0]['nombre_testigo'] ?? null);
-    }
-    if (Schema::hasColumn('firma', 'testigo_documento')) {
-        $firmaValues['testigo_documento'] = $testigoDoc ?: ($testigos[0]['cargo_testigo'] ?? null);
-    }
-    if (Schema::hasColumn('firma', 'observacion_renuencia')) {
-        $firmaValues['observacion_renuencia'] = $observacionRenuencia ?: null;
-    }
-
-    DB::table('firma')->updateOrInsert(
-        ['id_evaluacion' => $id, 'tipo_firma' => 'NOTIFICACION_EVALUADO'],
-        $firmaValues
-    );
-
-    $firmaRegistrada = DB::table('firma')
-        ->where('id_evaluacion', $id)
-        ->where('tipo_firma', 'NOTIFICACION_EVALUADO')
-        ->first();
-
-    if ($firmaRegistrada) {
-        DB::table('testigo_renuencia')->where('id_firma', $firmaRegistrada->id_firma)->delete();
-        if ($renuncia) {
-            foreach ($testigos as $testigo) {
-                DB::table('testigo_renuencia')->insert([
-                    'id_firma' => $firmaRegistrada->id_firma,
-                    'nombre_testigo' => $testigo['nombre_testigo'],
-                    'cargo_testigo' => $testigo['cargo_testigo'],
-                    'fecha_registro' => date('Y-m-d H:i:s'),
-                ]);
-            }
-        }
-
-        DB::table('renuencia_evidencia')->where('id_firma', $firmaRegistrada->id_firma)->delete();
-        if ($renuncia) {
-            foreach ($evidencias as $evidencia) {
-                DB::table('renuencia_evidencia')->insert([
-                    'id_firma' => $firmaRegistrada->id_firma,
-                    'descripcion' => $evidencia['descripcion'],
-                    'url' => $evidencia['url'],
-                    'fecha_inclusion' => date('Y-m-d H:i:s'),
-                ]);
-            }
-        }
-    }
-
-    return response()->json([
-        'success' => true,
-        'message' => $renuncia ? 'Renuencia con testigos registrada con éxito.' : 'Notificación de la calificación firmada con éxito.'
-    ]);
-})->name('evaluaciones.firmar-notificacion');
-
 
 
 /**
@@ -3636,7 +3480,7 @@ if (!function_exists('getTestigosConcertacion')) {
         return DB::table('testigo_renuencia as t')
             ->join('firma as f', 'f.id_firma', '=', 't.id_firma')
             ->where('f.id_evaluacion', $idEvaluacion)
-            ->whereIn('f.tipo_firma', ['NOTIFICACION_EVALUADO', 'CONCERTACION_EVALUADOR', 'CONCERTACION_EVALUADO'])
+            ->whereIn('f.tipo_firma', ['CONCERTACION_EVALUADOR', 'CONCERTACION_EVALUADO'])
             ->select('f.tipo_firma', 't.nombre_testigo', 't.cargo_testigo')
             ->orderBy('f.tipo_firma')
             ->orderBy('t.id_testigo')
@@ -3826,18 +3670,11 @@ Route::get('/evaluaciones/{id}/recursos', function (int $id) {
         abort_unless($puedeVer, 403);
     }
 
-    $notificacion = DB::table('firma')
-        ->where('id_evaluacion', $id)
-        ->where('tipo_firma', 'NOTIFICACION_EVALUADO')
-        ->first();
-
     return response()->json([
         'recursos' => getRecursosEvaluacion($id),
         'estado' => $evaluacion->estado,
         'categoria_final' => $evaluacion->categoria_final,
         'calificacion_final' => $evaluacion->calificacion_final,
-        'notificacion_firmada' => (bool) $notificacion,
-        'notificacion_renuencia' => (bool) ($notificacion->renuencia ?? false),
         'traslado' => (bool) $evaluacion->es_traslado,
     ]);
 })->name('evaluaciones.recursos');
@@ -3851,13 +3688,6 @@ Route::post('/evaluaciones/{id}/recursos', function (Request $request, int $id) 
     abort_unless($evaluacion, 404);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
     abort_unless($evaluacion->estado === 'CALIFICADA', 422, 'Solo puedes radicar un recurso cuando la evaluación haya sido calificada y calculada.');
-
-    $notificacionFirmada = DB::table('firma')
-        ->where('id_evaluacion', $id)
-        ->where('tipo_firma', 'NOTIFICACION_EVALUADO')
-        ->exists();
-
-    abort_unless($notificacionFirmada, 422, 'Debes firmar la notificación de la calificación antes de radicar un recurso.');
 
     $auth = session('usuario_autenticado');
     $vinculacionSolicitante = DB::table('vinculacion')
@@ -4134,14 +3964,9 @@ Route::get('/evaluaciones/{id}/plan-mejoramiento', function (int $id) {
 
     $plan = DB::table('plan_mejoramiento')->where('id_evaluacion', $id)->first();
     $requiere = evaluacionRequierePlanMejoramiento($evaluacion);
-    $notificacion = DB::table('firma')
-        ->where('id_evaluacion', $id)
-        ->where('tipo_firma', 'NOTIFICACION_EVALUADO')
-        ->first();
     $habilitado = $requiere
         && (bool) $evaluacion->concertacion_firmada
-        && $notificacion
-        && ! (bool) $notificacion->renuencia;
+        && $evaluacion->estado === 'CALIFICADA';
 
     return response()->json([
         'plan' => $plan,
@@ -4165,12 +3990,7 @@ Route::post('/evaluaciones/{id}/plan-mejoramiento', function (Request $request, 
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
     abort_unless(evaluacionRequierePlanMejoramiento($evaluacion), 422, 'Esta evaluación no requiere plan de mejoramiento según la calificación obtenida.');
     abort_unless($evaluacion->concertacion_firmada, 422, 'El evaluado debe firmar la concertación antes de habilitar el plan de mejoramiento.');
-
-    $notificacion = DB::table('firma')
-        ->where('id_evaluacion', $id)
-        ->where('tipo_firma', 'NOTIFICACION_EVALUADO')
-        ->first();
-    abort_unless($notificacion && ! $notificacion->renuencia, 422, 'El evaluado debe firmar la notificación de la calificación sin registrar renuencia antes de habilitar el plan de mejoramiento.');
+    abort_unless($evaluacion->estado === 'CALIFICADA', 422, 'El plan de mejoramiento se habilita cuando la evaluación haya sido calificada.');
 
     $auth = session('usuario_autenticado');
     $puedeEditar = DB::table('vinculacion')
@@ -4222,12 +4042,7 @@ Route::post('/plan-mejoramiento/{id}/firmar', function (Request $request, int $i
     abort_unless($evaluacion, 404);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
     abort_unless($evaluacion->concertacion_firmada, 422, 'El evaluado debe firmar la concertación antes de firmar el plan de mejoramiento.');
-
-    $notificacion = DB::table('firma')
-        ->where('id_evaluacion', $evaluacion->id_evaluacion)
-        ->where('tipo_firma', 'NOTIFICACION_EVALUADO')
-        ->first();
-    abort_unless($notificacion && ! $notificacion->renuencia, 422, 'El plan de mejoramiento solo se habilita cuando el evaluado firma la notificación de la calificación sin renuencia.');
+    abort_unless($evaluacion->estado === 'CALIFICADA', 422, 'El plan de mejoramiento se habilita cuando la evaluación haya sido calificada.');
 
     $auth = session('usuario_autenticado');
     $rolActivo = $auth['rol_activo'] ?? null;
@@ -4309,52 +4124,6 @@ Route::get('/planes-mejoramiento', function () {
 
     return response()->json(['planes' => $planes]);
 })->name('planes-mejoramiento.index');
-
-
-// --- GET: Renuncias a la firma de concertación (renuencia) con testigos ---
-Route::get('/renuncias', function () {
-    abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
-
-    $renuencias = DB::table('firma as f')
-        ->join('evaluacion as ev', 'ev.id_evaluacion', '=', 'f.id_evaluacion')
-        ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
-        ->join('vinculacion as ve', 've.id_vinculacion', '=', 'ev.id_vinc_evaluado')
-        ->join('funcionario as fe', 'fe.id_funcionario', '=', 've.id_funcionario')
-        ->join('vinculacion as va', 'va.id_vinculacion', '=', 'ev.id_vinc_evaluador')
-        ->join('funcionario as fa', 'fa.id_funcionario', '=', 'va.id_funcionario')
-        ->where('f.renuencia', 1)
-        ->whereIn('f.tipo_firma', ['NOTIFICACION_EVALUADO', 'CONCERTACION_EVALUADOR', 'CONCERTACION_EVALUADO'])
-        ->select(
-            'f.id_firma',
-            'f.id_evaluacion',
-            'f.tipo_firma',
-            'f.fecha_firma',
-            'p.sistema',
-            'ev.tipo_evaluacion',
-            'fe.nombres as evaluado_nombres',
-            'fe.apellidos as evaluado_apellidos',
-            'fa.nombres as evaluador_nombres',
-            'fa.apellidos as evaluador_apellidos'
-        )
-        ->orderByDesc('f.fecha_firma')
-        ->get();
-
-    foreach ($renuencias as $r) {
-        $r->testigos = DB::table('testigo_renuencia')
-            ->where('id_firma', $r->id_firma)
-            ->select('nombre_testigo', 'cargo_testigo')
-            ->orderBy('id_testigo')
-            ->get();
-
-        $r->evidencias = DB::table('renuencia_evidencia')
-            ->where('id_firma', $r->id_firma)
-            ->select('descripcion', 'url')
-            ->orderBy('id_renuncia_evidencia')
-            ->get();
-    }
-
-    return response()->json(['renuencias' => $renuencias]);
-})->name('renuencias.index');
 
 
 // ============================================================================
@@ -4469,25 +4238,6 @@ if (!function_exists('prepararInformeSemestral')) {
                 return $rec;
             });
 
-        // Renuencia del evaluado con testigos (en notificación de la nota)
-        $renuencias = DB::table('firma')
-            ->where('id_evaluacion', $idEvaluacion)
-            ->whereIn('tipo_firma', ['NOTIFICACION_EVALUADO', 'CONCERTACION_EVALUADO'])
-            ->where('renuencia', 1)
-            ->get(['id_firma', 'fecha_firma']);
-
-        foreach ($renuencias as $r) {
-            $r->testigos = DB::table('testigo_renuencia')
-                ->where('id_firma', $r->id_firma)
-                ->select('nombre_testigo', 'cargo_testigo')
-                ->get();
-
-            $r->evidencias = DB::table('renuencia_evidencia')
-                ->where('id_firma', $r->id_firma)
-                ->select('descripcion', 'url')
-                ->get();
-        }
-
         $calculo = calcularNotaEvaluacion($idEvaluacion);
 
         return [
@@ -4503,7 +4253,6 @@ if (!function_exists('prepararInformeSemestral')) {
             'plan' => $plan,
             'requiere_plan' => (bool) ($calculo['requiere_plan_mejoramiento'] ?? false),
             'recursos' => $recursos,
-            'renuencias' => $renuencias,
             'capacitaciones' => '',
             'escudo' => 'data:image/png;base64,' . base64_encode(file_get_contents(public_path('escudo-color.png'))),
             'logo' => 'data:image/png;base64,' . base64_encode(file_get_contents(public_path('logo.png'))),

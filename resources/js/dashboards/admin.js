@@ -333,47 +333,6 @@ export function cargarPlanesAdmin() {
         .catch(() => {});
 }
 
-export function cargarRenuenciasAdmin() {
-    const lista = document.getElementById('renuencias-admin-lista');
-    if (!lista) return;
-    fetchJson('/renuncias')
-        .then(res => res.json())
-        .then(payload => {
-            const renuencias = payload.renuencias || [];
-            if (!renuencias.length) {
-                lista.innerHTML = '<div class="col-span-full rounded-xl border border-dashed border-slate-200 bg-white p-8 text-xs text-slate-500 text-center">No hay renuencias a la firma de notificación registradas.</div>';
-                return;
-            }
-            lista.innerHTML = renuencias.map(r => `
-                <div class="rounded-2xl border border-slate-100 bg-white p-4 space-y-2">
-                    <div class="flex items-center justify-between gap-3">
-                        <div class="min-w-0">
-                            <p class="text-xs font-black text-slate-800 truncate">${escapeHtml(r.evaluado_nombres || '')} ${escapeHtml(r.evaluado_apellidos || '')}</p>
-                            <p class="text-[10px] text-slate-400">Evaluador: ${escapeHtml(r.evaluador_nombres || '')} ${escapeHtml(r.evaluador_apellidos || '')} · ${r.sistema === 'RENDIMIENTO_LABORAL' ? 'RL' : 'AG'} · ${r.tipo_evaluacion === 'SEMESTRE_1' ? 'Semestre 1' : 'Otro'}</p>
-                        </div>
-                        <span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-amber-50 text-amber-700">${r.tipo_firma === 'NOTIFICACION_EVALUADO' ? 'Renuencia de notificación' : (r.tipo_firma === 'CONCERTACION_EVALUADOR' ? 'Evaluador renunció' : 'Evaluado renunció')}</span>
-                    </div>
-                    <p class="text-[10px] text-slate-400">Firma registrada: ${escapeHtml(r.fecha_firma || '')}</p>
-                    ${(r.testigos || []).length ? `
-                        <div class="pt-2 border-t border-slate-100 space-y-1">
-                            ${(r.testigos || []).map(t => `
-                                <p class="text-[10px] text-slate-500">Testigo: <b>${escapeHtml(t.nombre_testigo)}</b> — ${escapeHtml(t.cargo_testigo)}</p>
-                            `).join('')}
-                        </div>` : ''}
-                    ${(r.evidencias || []).length ? `
-                        <div class="pt-2 border-t border-slate-100 space-y-1">
-                            <p class="text-[10px] font-bold uppercase text-slate-500">Evidencia (acta digitalizada)</p>
-                            ${(r.evidencias || []).map(ev => `
-                                <a href="${escapeHtml(ev.url)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 text-[11px] text-[#00594E] hover:underline min-w-0">
-                                    <span class="material-symbols-outlined text-sm shrink-0">open_in_new</span>
-                                    <span class="truncate">${escapeHtml(ev.descripcion || ev.url)}</span>
-                                </a>`).join('')}
-                        </div>` : ''}
-                </div>`).join('');
-        })
-        .catch(() => {});
-}
-
 export function cargarTrasladosAdmin() {
     const lista = document.getElementById('traslados-admin-lista');
     const contador = document.getElementById('traslados-admin-contador');
@@ -947,7 +906,6 @@ window.addEventListener('DOMContentLoaded', () => {
     navegarMenu(null, 'usuarios');
     cargarRecursosAdmin();
     cargarPlanesAdmin();
-    cargarRenuenciasAdmin();
     cargarTrasladosAdmin();
     cargarDelegacionesAdmin();
     cargarImpedimentosAdmin();

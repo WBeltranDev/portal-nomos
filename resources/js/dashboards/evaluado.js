@@ -105,7 +105,7 @@ export function abrirConcertacionEvaluado(card, ev) {
     if (tabBtnRecursos) {
         const esNoSatisfactorio = ev.categoria_final === 'NO_SATISFACTORIO'
             || (Number.isFinite(Number(ev.calificacion_final)) && Number(ev.calificacion_final) <= 70);
-        const puedeRecursos = !!ev.notificacion_firmada && ev.estado === 'CALIFICADA' && esNoSatisfactorio;
+        const puedeRecursos = ev.estado === 'CALIFICADA' && esNoSatisfactorio;
         tabBtnRecursos.classList.toggle('hidden', !puedeRecursos);
     }
 
@@ -133,7 +133,6 @@ export function abrirConcertacionEvaluado(card, ev) {
     cargarRecursosEvaluado(ev);
     cargarPlanMejoramientoEvaluado(ev);
     cargarResultadoEvaluado(ev);
-    renderNotificacionEvaluado(ev);
 
     document.querySelectorAll('.evaluacion-card').forEach(el => el.classList.remove('ring-2', 'ring-[#00594E]'));
     if (card) card.classList.add('ring-2', 'ring-[#00594E]');
@@ -413,8 +412,7 @@ export function cargarRecursosEvaluado(ev) {
             const notaFinal = Number(payload.calificacion_final);
             const categoriaNoSatisfactoria = categoria === 'NO_SATISFACTORIO'
                 || (Number.isFinite(notaFinal) && notaFinal <= 70);
-            const esNoSatisfactorio = !!payload.notificacion_firmada
-                && estado === 'CALIFICADA'
+            const esNoSatisfactorio = estado === 'CALIFICADA'
                 && categoriaNoSatisfactoria;
             const tabBtnRecursos = document.getElementById('tabbtn-evaluado-recursos');
             if (tabBtnRecursos) tabBtnRecursos.classList.toggle('hidden', !esNoSatisfactorio);
@@ -695,245 +693,6 @@ function formatearFechaHora(valor) {
     }
 }
 
-export function resetFormRenuenciaEvaluado() {
-    const form = document.getElementById('form-renuncia-evaluado');
-    if (form) form.classList.add('hidden');
-    const msg = document.getElementById('renuncia-mensaje-evaluado');
-    if (msg) { msg.classList.add('hidden'); msg.innerText = ''; }
-    const testigos = document.getElementById('renuncia-testigos-lista-evaluado');
-    if (testigos) testigos.innerHTML = '';
-    const evidencias = document.getElementById('renuncia-evidencias-lista-evaluado');
-    if (evidencias) evidencias.innerHTML = '';
-}
-
-export function renderNotificacionEvaluado(ev) {
-    const seccion = document.getElementById('notificacion-evaluado-seccion');
-    if (!seccion || !ev) return;
-
-    const visible = ev.estado === 'CALIFICADA';
-    seccion.classList.toggle('hidden', !visible);
-    if (!visible) return;
-
-    const estadoBadge = document.getElementById('notificacion-estado-evaluado');
-    if (estadoBadge) {
-        estadoBadge.classList.remove('hidden');
-        if (ev.notificacion_firmada) {
-            estadoBadge.className = 'text-[10px] font-bold uppercase rounded-full px-2.5 py-1 ' + (ev.notificacion_renuencia ? 'bg-red-50 text-red-600' : 'bg-[#EAF2EF] text-[#00594E]');
-            estadoBadge.innerText = ev.notificacion_renuencia ? 'Renuencia registrada' : 'Notificación firmada';
-        } else {
-            estadoBadge.className = 'text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-amber-50 text-amber-700';
-            estadoBadge.innerText = 'Pendiente';
-        }
-    }
-
-    const acciones = document.getElementById('notificacion-acciones-evaluado');
-    if (acciones) acciones.classList.toggle('hidden', !!ev.notificacion_firmada);
-    const btnAbrir = document.getElementById('btn-abrir-renuncia-evaluado');
-    if (btnAbrir) btnAbrir.classList.toggle('hidden', !!ev.notificacion_firmada);
-    resetFormRenuenciaEvaluado();
-
-    const detalle = document.getElementById('notificacion-detalle-evaluado');
-    if (!detalle) return;
-    if (!ev.notificacion_firmada) {
-        detalle.classList.add('hidden');
-        detalle.innerHTML = '';
-        return;
-    }
-
-    detalle.classList.remove('hidden');
-    const fecha = formatearFechaHora(ev.notificacion_fecha);
-    const base = `<p class="text-[11px] text-slate-600">${ev.notificacion_renuencia ? 'Renuencia a la firma de la notificación registrada' : 'Notificación de la calificación firmada'}${fecha ? ` el <b>${escapeHtml(fecha)}</b>` : ''}.</p>`;
-    detalle.innerHTML = base;
-
-    if (!ev.notificacion_renuencia) return;
-
-    detalle.innerHTML = base + '<p class="text-[10px] text-slate-400">Cargando testigos y acta...</p>';
-    fetchJson(`/evaluaciones/${ev.id_evaluacion}/compromisos`)
-        .then(res => res.json())
-        .then(payload => {
-            const estado = payload.estado || {};
-            const testigos = estado.testigos_notificacion || [];
-            const evidencias = estado.evidencias_notificacion || [];
-            const obsRenuencia = ev.observacion_renuencia || '';
-            const testigoDirecto = (ev.testigo_nombre || ev.testigo_documento) ? `${ev.testigo_nombre || ''} (${ev.testigo_documento || ''})`.trim() : '';
-
-            let testigosHtml = testigos.length ? testigos.map(t => `<p class="text-[11px] text-slate-600"><b>${escapeHtml(t.nombre_testigo)}</b> — ${escapeHtml(t.cargo_testigo)}</p>`).join('') : '';
-            if (testigoDirecto && !testigosHtml) {
-                testigosHtml = `<p class="text-[11px] text-slate-600"><b>${escapeHtml(testigoDirecto)}</b></p>`;
-            }
-            if (!testigosHtml) {
-                testigosHtml = '<p class="text-[11px] text-slate-400">Sin testigos registrados.</p>';
-            }
-
-            detalle.innerHTML = base + `
-                <div class="pt-1 space-y-1 bg-amber-50/70 p-3 rounded-xl border border-amber-200/60 mt-2">
-                    <p class="text-[10px] font-bold uppercase text-amber-800">Testigo Institucional Asignado por el Evaluador</p>
-                    ${testigosHtml}
-                    ${obsRenuencia ? `<p class="text-[10px] font-bold uppercase text-amber-800 pt-1">Observación del Proceso</p><p class="text-[11px] text-slate-700 italic">${escapeHtml(obsRenuencia)}</p>` : ''}
-                    <p class="text-[10px] font-bold uppercase text-amber-800 pt-1">Acta digitalizada (PDF)</p>
-                    ${evidencias.length ? evidencias.map(evi => `
-                        <a href="${escapeHtml(evi.url)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 text-[11px] text-[#00594E] hover:underline min-w-0">
-                            <span class="material-symbols-outlined text-sm shrink-0">open_in_new</span>
-                            <span class="truncate">${escapeHtml(evi.descripcion || evi.url)}</span>
-                        </a>`).join('') : '<p class="text-[11px] text-slate-400">Sin archivo adjunto.</p>'}
-                </div>`;
-        })
-        .catch(() => {
-            detalle.innerHTML = base;
-        });
-}
-
-export function firmarNotificacionEvaluado(e) {
-    if (!selectedEvaluacionId) return;
-    if (!confirm('¿Confirmas que te fue notificada la calificación y firmas la notificación?')) return;
-    fetchJson(`/evaluaciones/${selectedEvaluacionId}/firmar-notificacion`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ renuencia: false, testigos: [], evidencias: [] }),
-    })
-        .then(async res => {
-            const payload = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(parseErrorMessage(payload, 'No se pudo firmar la notificación.'));
-            alert(payload.message || 'Notificación firmada con éxito.');
-            if (selectedEvaluacionData) {
-                selectedEvaluacionData = { ...selectedEvaluacionData, notificacion_firmada: true, notificacion_renuencia: false };
-                renderNotificacionEvaluado(selectedEvaluacionData);
-                cargarRecursosEvaluado(selectedEvaluacionData);
-                cargarPlanMejoramientoEvaluado(selectedEvaluacionData);
-            }
-        })
-        .catch(error => alert(error.message));
-}
-
-export function toggleFormRenuenciaEvaluado() {
-    const form = document.getElementById('form-renuncia-evaluado');
-    if (!form) return;
-    const abrir = form.classList.contains('hidden');
-    form.classList.toggle('hidden', !abrir);
-    if (abrir) {
-        if (form.querySelectorAll('.renuncia-testigo-nombre').length === 0) agregarTestigoRenuencia();
-        if (form.querySelectorAll('.renuncia-evidencia-url').length === 0) agregarEvidenciaRenuencia();
-    }
-}
-
-export function agregarTestigoRenuencia() {
-    const contenedor = document.getElementById('renuncia-testigos-lista-evaluado');
-    if (!contenedor) return;
-    const esPrimero = contenedor.children.length === 0;
-    const fila = document.createElement('div');
-    fila.className = 'flex items-start gap-2';
-    fila.innerHTML = `
-        <div class="grid sm:grid-cols-2 gap-2 flex-1">
-            <input type="text" class="renuncia-testigo-nombre w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Nombre del testigo" maxlength="200" ${esPrimero ? 'required' : ''} />
-            <input type="text" class="renuncia-testigo-cargo w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Cargo del testigo" maxlength="200" ${esPrimero ? 'required' : ''} />
-        </div>
-        ${!esPrimero ? `
-        <button type="button" onclick="eliminarTestigoRenuencia(this)" class="mt-1 text-red-400 hover:text-red-600 shrink-0" title="Quitar testigo">
-            <span class="material-symbols-outlined text-base">close</span>
-        </button>` : ''}`;
-    contenedor.appendChild(fila);
-    if (!esPrimero) fila.querySelector('.renuncia-testigo-nombre')?.focus();
-}
-
-export function eliminarTestigoRenuencia(btn) {
-    const fila = btn.closest('div');
-    if (fila) fila.remove();
-}
-
-export function agregarEvidenciaRenuencia() {
-    const contenedor = document.getElementById('renuncia-evidencias-lista-evaluado');
-    if (!contenedor) return;
-    const esPrimero = contenedor.children.length === 0;
-    const fila = document.createElement('div');
-    fila.className = 'flex items-start gap-2';
-    fila.innerHTML = `
-        <div class="grid gap-1.5 flex-1">
-            <input type="url" class="renuncia-evidencia-url w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="https://ejemplo.com/acta-renuncia.pdf" ${esPrimero ? 'required' : ''} />
-            <input type="text" class="renuncia-evidencia-desc w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Descripción (opcional)" maxlength="200" />
-        </div>
-        ${!esPrimero ? `
-        <button type="button" onclick="eliminarEvidenciaRenuencia(this)" class="mt-1 text-red-400 hover:text-red-600 shrink-0" title="Quitar evidencia">
-            <span class="material-symbols-outlined text-base">close</span>
-        </button>` : ''}`;
-    contenedor.appendChild(fila);
-    if (!esPrimero) fila.querySelector('.renuncia-evidencia-url')?.focus();
-}
-
-export function eliminarEvidenciaRenuencia(btn) {
-    const fila = btn.closest('div');
-    if (fila) fila.remove();
-}
-
-export function registrarRenuenciaEvaluado(e) {
-    e.preventDefault();
-    if (!selectedEvaluacionId) return;
-    const mensaje = document.getElementById('renuncia-mensaje-evaluado');
-
-    const testigos = Array.from(document.querySelectorAll('#renuncia-testigos-lista-evaluado .renuncia-testigo-nombre'))
-        .map(input => {
-            const fila = input.closest('div');
-            const nombre = (input.value || '').trim();
-            const cargo = (fila?.querySelector('.renuncia-testigo-cargo')?.value || '').trim();
-            if (!nombre && !cargo) return null;
-            return { nombre, cargo };
-        })
-        .filter(Boolean);
-
-    if (!testigos.length) {
-        if (mensaje) { mensaje.classList.remove('hidden'); mensaje.className = 'text-xs font-semibold text-red-600'; mensaje.innerText = 'Debes registrar al menos un testigo (nombre y cargo).'; }
-        return;
-    }
-    for (const t of testigos) {
-        if (!t.nombre || !t.cargo) {
-            if (mensaje) { mensaje.classList.remove('hidden'); mensaje.className = 'text-xs font-semibold text-red-600'; mensaje.innerText = 'Completa el nombre y cargo de cada testigo.'; }
-            return;
-        }
-    }
-
-    const evidencias = Array.from(document.querySelectorAll('#renuncia-evidencias-lista-evaluado .renuncia-evidencia-url'))
-        .map(input => {
-            const url = (input.value || '').trim();
-            if (!url) return null;
-            const fila = input.closest('div');
-            const descripcion = (fila?.querySelector('.renuncia-evidencia-desc')?.value || '').trim();
-            return { url, descripcion };
-        })
-        .filter(Boolean);
-
-    if (!evidencias.length) {
-        if (mensaje) { mensaje.classList.remove('hidden'); mensaje.className = 'text-xs font-semibold text-red-600'; mensaje.innerText = 'Debes adjuntar al menos un enlace (link) con el acta de renuencia digitalizada en PDF.'; }
-        return;
-    }
-    for (const ev of evidencias) {
-        try {
-            new URL(ev.url);
-        } catch (_) {
-            if (mensaje) { mensaje.classList.remove('hidden'); mensaje.className = 'text-xs font-semibold text-red-600'; mensaje.innerText = 'Por favor ingresa un enlace (link) válido (ej. https://ejemplo.com/acta.pdf).'; }
-            return;
-        }
-    }
-
-    fetchJson(`/evaluaciones/${selectedEvaluacionId}/firmar-notificacion`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ renuencia: true, testigos, evidencias }),
-    })
-        .then(async res => {
-            const payload = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(parseErrorMessage(payload, 'No se pudo registrar la renuencia.'));
-            if (mensaje) { mensaje.classList.remove('hidden'); mensaje.className = 'text-xs font-semibold text-[#00594E]'; mensaje.innerText = payload.message || 'Renuencia registrada.'; }
-            if (selectedEvaluacionData) {
-                selectedEvaluacionData = { ...selectedEvaluacionData, notificacion_firmada: true, notificacion_renuencia: true };
-                renderNotificacionEvaluado(selectedEvaluacionData);
-                cargarRecursosEvaluado(selectedEvaluacionData);
-                cargarPlanMejoramientoEvaluado(selectedEvaluacionData);
-            }
-        })
-        .catch(error => {
-            if (mensaje) { mensaje.classList.remove('hidden'); mensaje.className = 'text-xs font-semibold text-red-600'; mensaje.innerText = error.message; }
-        });
-}
-
 export function mostrarModalRecusacion() {
     const modal = document.getElementById('modal-recusacion');
     const form = document.getElementById('form-recusacion-accion');
@@ -953,14 +712,6 @@ window.firmarPlanMejoramiento = firmarPlanMejoramiento;
 window.guardarEvidenciaEvaluado = guardarEvidenciaEvaluado;
 window.confirmarEvidenciasEvaluado = confirmarEvidenciasEvaluado;
 window.firmarConcertacion = firmarConcertacion;
-window.renderNotificacionEvaluado = renderNotificacionEvaluado;
-window.firmarNotificacionEvaluado = firmarNotificacionEvaluado;
-window.toggleFormRenuenciaEvaluado = toggleFormRenuenciaEvaluado;
-window.agregarTestigoRenuencia = agregarTestigoRenuencia;
-window.eliminarTestigoRenuencia = eliminarTestigoRenuencia;
-window.agregarEvidenciaRenuencia = agregarEvidenciaRenuencia;
-window.eliminarEvidenciaRenuencia = eliminarEvidenciaRenuencia;
-window.registrarRenuenciaEvaluado = registrarRenuenciaEvaluado;
 window.mostrarModalRecusacion = mostrarModalRecusacion;
 window.toggleCompromisoColapsadoEvaluado = toggleCompromisoColapsadoEvaluado;
 
