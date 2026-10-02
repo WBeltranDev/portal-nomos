@@ -495,14 +495,30 @@ class DashboardController extends Controller
                         ->orderBy('f.apellidos')
                         ->get();
 
-                    $idsConPeriodoParcialAbierto = DB::table('periodo_parcial')
+                    $periodosParcialesAbiertos = DB::table('periodo_parcial')
                         ->where('estado', 'ABIERTO')
+                        ->get(['id_vinc_funcionario', 'fecha_inicio', 'fecha_fin', 'referencia']);
+
+                    $idsConPeriodoParcialAbierto = $periodosParcialesAbiertos
                         ->pluck('id_vinc_funcionario')
                         ->map(fn ($id) => (int) $id)
                         ->all();
 
                     foreach ($evaluadosDisponibles as $evaluado) {
-                        $evaluado->tiene_periodo_parcial = in_array((int) $evaluado->id_vinculacion, $idsConPeriodoParcialAbierto, true);
+                        $vincId = (int) $evaluado->id_vinculacion;
+                        $tiene = in_array($vincId, $idsConPeriodoParcialAbierto, true);
+                        $evaluado->tiene_periodo_parcial = $tiene;
+                        $evaluado->dias_periodo_parcial = null;
+                        $evaluado->referencia_periodo_parcial = null;
+                        if ($tiene) {
+                            $tramo = $periodosParcialesAbiertos->first(fn ($pp) => (int) $pp->id_vinc_funcionario === $vincId);
+                            if ($tramo) {
+                                if ($tramo->fecha_inicio && $tramo->fecha_fin) {
+                                    $evaluado->dias_periodo_parcial = max(1, (int) (\Carbon\Carbon::parse($tramo->fecha_inicio)->diffInDays(\Carbon\Carbon::parse($tramo->fecha_fin))) + 1);
+                                }
+                                $evaluado->referencia_periodo_parcial = $tramo->referencia ?? null;
+                            }
+                        }
                     }
                 }
             }

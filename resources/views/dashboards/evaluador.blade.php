@@ -81,7 +81,7 @@
                                 <div class="flex justify-between gap-4 py-2 border-b border-slate-50"><span class="text-slate-500">Período</span><span id="apertura-periodo" class="text-slate-800 font-medium text-right">-</span></div>
                                 <div class="flex justify-between gap-4 py-2 border-b border-slate-50"><span class="text-slate-500">Vigencia</span><span id="apertura-vigencia" class="text-slate-800 font-medium text-right">-</span></div>
                                 <div class="flex justify-between gap-4 py-2 border-b border-slate-50"><span class="text-slate-500">Ciclo</span><span id="apertura-ciclo" class="text-slate-800 font-medium text-right">-</span></div>
-                                <div class="flex justify-between gap-4 py-2 border-b border-slate-50"><span class="text-slate-500">Días laborados</span><span class="text-slate-800 font-medium text-right">Opcional</span></div>
+                                <div class="flex justify-between gap-4 py-2 border-b border-slate-50"><span class="text-slate-500">Días laborados</span><span id="apertura-dias-resumen" class="text-slate-800 font-medium text-right">Opcional</span></div>
                             </div>
                             <form id="form-abrir-evaluacion" method="POST" action="{{ route('evaluador.asignaciones.store') }}" class="mt-5 space-y-3">
                                 @csrf
@@ -89,10 +89,15 @@
                                 <input type="hidden" name="id_periodo" id="apertura-id-periodo" />
                                 <div>
                                     <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Tipo de ciclo</label>
-                                    <select name="tipo_evaluacion" id="apertura-ciclo-select" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
+                                    <select name="tipo_evaluacion" id="apertura-ciclo-select" onchange="cambiarCicloEvaluador()" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
                                         <option value="SEMESTRE_1">Primer Semestre</option>
                                         <option value="SEMESTRE_2">Segundo Semestre</option>
                                     </select>
+                                </div>
+                                <div id="apertura-dias-laborados" class="hidden">
+                                    <label for="apertura-dias-laborados-input" class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Días laborados en el tramo</label>
+                                    <input type="number" name="dias_laborados" id="apertura-dias-laborados-input" min="1" step="1" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Ej.: 120" />
+                                    <p class="text-[10px] text-slate-500 mt-1">Se precalcula desde las fechas del periodo parcial (inicio a fin). Ajusta solo si el funcionario no laboró todos esos días; no puede superar la duración del tramo.</p>
                                 </div>
                                 <div id="apertura-ejes-misionales" class="hidden rounded-2xl border border-slate-100 bg-slate-50/50 p-4">
                                     <h4 class="text-xs font-bold text-slate-800 uppercase tracking-wide mb-2">Ejes misionales adicionales</h4>

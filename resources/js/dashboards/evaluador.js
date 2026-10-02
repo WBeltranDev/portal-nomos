@@ -84,6 +84,30 @@ export function actualizarPeriodoSeleccionado(persona) {
     }
 }
 
+export function cambiarCicloEvaluador() {
+    const cicloSelect = document.getElementById('apertura-ciclo-select');
+    const tipo = cicloSelect ? cicloSelect.value : 'SEMESTRE_1';
+    const bloqueDias = document.getElementById('apertura-dias-laborados');
+    const inputDias = document.getElementById('apertura-dias-laborados-input');
+    const resumenDias = document.getElementById('apertura-dias-resumen');
+    const esParcial = tipo === 'PARCIAL';
+
+    if (bloqueDias) bloqueDias.classList.toggle('hidden', !esParcial);
+
+    if (inputDias) {
+        inputDias.value = esParcial && selectedEvaluacionData
+            ? (selectedEvaluacionData.dias_periodo_parcial || '')
+            : '';
+    }
+
+    if (resumenDias) {
+        const dias = esParcial ? (selectedEvaluacionData?.dias_periodo_parcial ?? null) : null;
+        resumenDias.innerText = dias ? `${dias} días` : (esParcial ? 'Por definir' : 'Opcional');
+    }
+
+    actualizarPeriodoSeleccionado(selectedEvaluacionData);
+}
+
 export function seleccionarPersonaEvaluador(card, persona) {
     selectedEvaluacionData = persona;
     const nombreCompleto = `${persona.nombres || ''} ${persona.apellidos || ''}`.trim();
@@ -137,6 +161,7 @@ export function seleccionarPersonaEvaluador(card, persona) {
     }
 
     actualizarPeriodoSeleccionado(selectedEvaluacionData);
+    cambiarCicloEvaluador();
     document.querySelectorAll('.evaluado-card').forEach(el => el.classList.remove('ring-[#00594E]', 'ring-2'));
     if (card) card.classList.add('ring-2', 'ring-[#00594E]');
 }
@@ -1434,6 +1459,7 @@ window.guardarCalificacionesEjes = guardarCalificacionesEjes;
 window.calcularNotaFinal = calcularNotaFinal;
 window.previsualizarCalculoEvaluador = previsualizarCalculoEvaluador;
 window.mostrarModalImpedimento = mostrarModalImpedimento;
+window.cambiarCicloEvaluador = cambiarCicloEvaluador;
 window.mostrarModalSolicitudModificacion = mostrarModalSolicitudModificacion;
 window.cambiarCompromisoSeleccionado = cambiarCompromisoSeleccionado;
 window.enviarSolicitudModificacion = enviarSolicitudModificacion;

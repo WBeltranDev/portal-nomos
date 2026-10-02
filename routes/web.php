@@ -821,14 +821,33 @@ Route::post('/evaluador/asignaciones', function (Request $request) {
         if (! $referenciaEvaluacion) {
             $referenciaEvaluacion = $periodoParcial->referencia;
         }
-        if ($diasLaborados === null && $periodoParcial->fecha_inicio && $periodoParcial->fecha_fin) {
-            $diasLaborados = max(1, \Carbon\Carbon::parse($periodoParcial->fecha_inicio)->diffInDays(\Carbon\Carbon::parse($periodoParcial->fecha_fin)) + 1);
+
+        $diasTramo = null;
+        if ($periodoParcial->fecha_inicio && $periodoParcial->fecha_fin) {
+            $diasTramo = max(1, \Carbon\Carbon::parse($periodoParcial->fecha_inicio)->diffInDays(\Carbon\Carbon::parse($periodoParcial->fecha_fin)) + 1);
         }
 
-        if ($diasLaborados !== null && $diasLaborados < 90) {
+        if ($diasLaborados === null) {
+            $diasLaborados = $diasTramo;
+        }
+
+        if ($diasLaborados === null) {
+            return back()->withErrors(['asignaciones' => 'No se pudo calcular los días laborados del tramo parcial. Verifica que el periodo parcial tenga fecha de inicio y de fin.']);
+        }
+
+        if ($diasLaborados < 90) {
             return back()->withErrors(['asignaciones' => 'No se puede concertar ni crear una evaluación parcial con un período evaluable inferior a 90 días (duración calculada: ' . $diasLaborados . ' días). La normativa institucional exige un mínimo de 90 días de servicio para ser evaluable.']);
         }
+
+        if ($diasTramo !== null && $diasLaborados > $diasTramo) {
+            return back()->withErrors(['asignaciones' => 'Los días laborados (' . $diasLaborados . ') no pueden superar la duración total del tramo parcial (' . $diasTramo . ' días según sus fechas).']);
+        }
     }
+
+    $auditaDias = $data['tipo_evaluacion'] === 'PARCIAL'
+        && is_int($diasTramo ?? null)
+        && $diasLaborados !== null
+        && $diasLaborados !== $diasTramo;
 
     $evaluacionId = DB::table('evaluacion')->insertGetId([
         'id_periodo' => $periodo->id_periodo,
@@ -840,6 +859,8 @@ Route::post('/evaluador/asignaciones', function (Request $request) {
         'estado' => 'EN_PROCESO',
         'dias_laborados' => $diasLaborados,
         'referencia' => $referenciaEvaluacion,
+        'dias_laborados_ajustado_por' => $auditaDias ? ($auth['id_usuario'] ?? null) : null,
+        'dias_laborados_ajustado_el' => $auditaDias ? date('Y-m-d H:i:s') : null,
     ]);
 
     if (strtoupper(trim((string) $periodo->sistema)) === 'ACUERDO_GESTION' && $evaluadoVinc->aplica_eje_misional) {
