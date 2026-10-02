@@ -557,7 +557,7 @@ export function cargarCompromisosEvaluador(ev, ejes = {}) {
                         </div>
                     </div>
                     <div id="detalle-comp-evaluador-${c.id_compromiso}" class="space-y-3 pt-2 border-t border-slate-100">
-                        <p class="text-[11px] text-slate-500"><span class="font-bold">Metas:</span> ${(c.metas || []).join(', ') || '-'}</p>
+                        <p class="text-[11px] text-slate-500"><span class="font-bold">Metas:</span> ${(c.metas || []).map(m => escapeHtml(m)).join(', ') || '-'}</p>
                         <div id="editar-compromiso-contenedor-${c.id_compromiso}" class="hidden"></div>
                         <div class="pt-2 border-t border-slate-100">
                             <p class="text-[10px] font-bold uppercase text-slate-400 mb-1">Evidencias Registradas</p>

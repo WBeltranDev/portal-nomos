@@ -648,7 +648,15 @@ Route::post('/evaluacion/{id}/desacuerdo', function (\Illuminate\Http\Request $r
 })->name('evaluacion.desacuerdo');
 
 Route::post('/evaluacion/{id}/impedimento', function (\Illuminate\Http\Request $request, $id) {
+    $auth = session('usuario_autenticado');
+    abort_unless($auth && in_array($auth['rol_activo'] ?? null, ['evaluado', 'evaluador'], true), 403);
+
     $evaluacion = \Illuminate\Support\Facades\DB::table('evaluacion')->where('id_evaluacion', $id)->first();
+    $esParticipante = $evaluacion && \Illuminate\Support\Facades\DB::table('vinculacion')
+        ->whereIn('id_vinculacion', [$evaluacion->id_vinc_evaluado, $evaluacion->id_vinc_evaluador])
+        ->where('id_funcionario', $auth['id_funcionario'] ?? null)
+        ->exists();
+    abort_unless($esParticipante, 403);
     abort_unless(
         $evaluacion
         && $evaluacion->estado === 'EN_PROCESO'
@@ -664,11 +672,12 @@ Route::post('/evaluacion/{id}/impedimento', function (\Illuminate\Http\Request $
         'evidencia_url' => 'nullable|url|max:1000',
     ]);
     
-    $vinc = \Illuminate\Support\Facades\DB::table('vinculacion')->where('id_funcionario', session('usuario_autenticado.id_funcionario'))->where('activa', 1)->first();
-    
+    $vinc = \Illuminate\Support\Facades\DB::table('vinculacion')->where('id_funcionario', $auth['id_funcionario'] ?? null)->where('activa', 1)->first();
+    abort_unless($vinc, 403);
+
     \App\Models\ImpedimentoRecusacion::create([
         'id_evaluacion' => $id,
-        'id_vinc_solicitante' => $vinc->id_vinculacion ?? 0,
+        'id_vinc_solicitante' => $vinc->id_vinculacion,
         'tipo' => $data['tipo'],
         'motivo' => $data['motivo'],
         'evidencia_url' => trim($data['evidencia_url'] ?? '') ?: null,
@@ -712,7 +721,8 @@ Route::post('/cambiar-contrasena', function (Request $request) {
 })->name('password.update');
 
 Route::post('/usuarios/{id_usuario}/reset-contrasena', function (Request $request, int $id_usuario) {
-    abort_unless(session()->has('usuario_autenticado'), 403);
+    $auth = session('usuario_autenticado');
+    abort_unless($auth && ($auth['rol_activo'] ?? null) === 'admin', 403);
 
     $tempPassword = substr(str_replace(['+', '/', '='], '', base64_encode(random_bytes(10))), 0, 10);
 
@@ -2077,8 +2087,10 @@ Route::post('/evaluaciones/{id}/evidencias', function (Request $request, int $id
     $data = $request->validate([
         'componente' => ['nullable', 'in:B,C,D,F'],
         'id_compromiso' => ['required_if:componente,B', 'nullable', 'integer'],
-        'descripcion' => ['nullable', 'string', 'max:500'],
+        'descripcion' => ['required', 'string', 'max:500'],
         'url' => ['required', 'url', 'max:1000'],
+    ], [
+        'descripcion.required' => 'La descripción de la evidencia es obligatoria.',
     ]);
 
     $componente = $data['componente'] ?? 'B';
@@ -2098,7 +2110,7 @@ Route::post('/evaluaciones/{id}/evidencias', function (Request $request, int $id
         'id_evaluacion' => $id,
         'id_compromiso' => $idCompromiso,
         'componente' => $componente,
-        'descripcion' => ($data['descripcion'] ?? null) ?: 'Evidencia registrada',
+        'descripcion' => $data['descripcion'],
         'tipo_evidencia' => 'LINK',
         'url_o_ubicacion' => $data['url'],
         'fecha_inclusion' => date('Y-m-d H:i:s'),
@@ -2228,6 +2240,14 @@ Route::post('/evaluaciones/{id}/compromisos', function (Request $request, int $i
 
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
+
+    $authCompromiso = session('usuario_autenticado');
+    $puedeEditarCompromiso = DB::table('vinculacion')
+        ->where('id_vinculacion', $evaluacion->id_vinc_evaluador)
+        ->where('id_funcionario', $authCompromiso['id_funcionario'] ?? null)
+        ->exists();
+    abort_unless($puedeEditarCompromiso, 403);
+
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
 
     if ($evaluacion->concertacion_firmada) {
@@ -2294,6 +2314,13 @@ Route::delete('/compromisos/{id}', function (int $id) {
 
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $compromiso->id_evaluacion)->first();
 
+    $authCompromiso = session('usuario_autenticado');
+    $puedeEditarCompromiso = DB::table('vinculacion')
+        ->where('id_vinculacion', $evaluacion->id_vinc_evaluador)
+        ->where('id_funcionario', $authCompromiso['id_funcionario'] ?? null)
+        ->exists();
+    abort_unless($puedeEditarCompromiso, 403);
+
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
 
     if ($evaluacion->concertacion_firmada) {
@@ -2328,6 +2355,13 @@ Route::put('/compromisos/{id}', function (Request $request, int $id) {
     abort_unless($compromiso, 404);
 
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $compromiso->id_evaluacion)->first();
+
+    $authCompromiso = session('usuario_autenticado');
+    $puedeEditarCompromiso = DB::table('vinculacion')
+        ->where('id_vinculacion', $evaluacion->id_vinc_evaluador)
+        ->where('id_funcionario', $authCompromiso['id_funcionario'] ?? null)
+        ->exists();
+    abort_unless($puedeEditarCompromiso, 403);
 
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
 

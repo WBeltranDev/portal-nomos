@@ -666,7 +666,7 @@ class DashboardController extends Controller
         // 1. Periodos a punto de cerrar (5 días o menos)
         if (Schema::hasTable('periodo')) {
             $periodosProximos = DB::table('periodo')
-                ->where('estado', 'ACTIVO')
+                ->where('estado', 'ABIERTO')
                 ->whereBetween('fecha_fin', [$now, $now->copy()->addDays(5)])
                 ->get();
 

@@ -244,7 +244,7 @@ export function cargarCompromisosEvaluado(ev) {
                         </div>
                         <div class="grid sm:grid-cols-2 gap-2">
                             <input type="url" required class="evidencia-url-input w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="https://ejemplo.com/evidencia" />
-                            <input type="text" class="evidencia-descripcion-input w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Descripción (opcional)" maxlength="500" />
+                            <input type="text" required class="evidencia-descripcion-input w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Descripción" maxlength="500" />
                         </div>
                         <div class="flex items-center justify-between gap-2">
                             <span id="evidencia-mensaje-evaluado-${c.id_compromiso}" class="hidden text-xs font-semibold"></span>
@@ -264,7 +264,7 @@ export function cargarCompromisosEvaluado(ev) {
                         <span class="text-xs font-black rounded-xl px-2.5 py-1 bg-[#EAF2EF] text-[#00594E] shrink-0">${c.porcentaje_peso}%</span>
                     </div>
                     <div id="detalle-comp-evaluado-${c.id_compromiso}" class="space-y-3 pt-2 border-t border-slate-100">
-                        <p class="text-[11px] text-slate-500"><span class="font-bold">Metas:</span> ${(c.metas || []).join(', ') || '-'}</p>
+                        <p class="text-[11px] text-slate-500"><span class="font-bold">Metas:</span> ${(c.metas || []).map(m => escapeHtml(m)).join(', ') || '-'}</p>
                         <div class="pt-2 border-t border-slate-100">
                             <p class="text-[10px] font-bold uppercase text-slate-400 mb-1">Evidencias Registradas</p>
                             ${renderEvidenciasCompactas(gruposEvidencias[String(c.id_compromiso)] || [])}
@@ -620,6 +620,10 @@ export function guardarEvidenciaEvaluado(e, idCompromiso) {
     const mensajeId = `evidencia-mensaje-evaluado-${idCompromiso}`;
     if (!url) {
         showInlineMessage(mensajeId, 'Indica la URL de la evidencia.', true);
+        return;
+    }
+    if (!descripcion) {
+        showInlineMessage(mensajeId, 'La descripción de la evidencia es obligatoria.', true);
         return;
     }
     fetchJson(`/evaluaciones/${selectedEvaluacionId}/evidencias`, {
