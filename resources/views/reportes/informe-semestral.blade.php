@@ -218,8 +218,8 @@
     <tr>
         <td>Compromisos Laborales</td>
         <td class="centro">{{ $pesoCompromisos }}%</td>
-        <td class="centro">{{ $calculo['nota_compromisos_raw'] ?? 0 }}</td>
-        <td class="centro negrita">{{ $calculo['subtotal_compromisos'] ?? 0 }}</td>
+        <td class="centro">{{ $calculo['nota_compromisos_raw'] ?? '-' }}</td>
+        <td class="centro negrita">{{ $calculo['subtotal_compromisos'] ?? '-' }}</td>
     </tr>
     <tr>
         <td>Competencias Comportamentales</td>

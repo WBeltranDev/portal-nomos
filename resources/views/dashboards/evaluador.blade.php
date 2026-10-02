@@ -310,7 +310,7 @@
 
                                     <div id="compromisos-calificacion-bloque" class="hidden mt-4 rounded-2xl border border-slate-100 bg-white p-4 space-y-3">
                                         <div class="flex flex-wrap items-center justify-between gap-3">
-                                            <p class="text-xs text-slate-500 leading-tight">Califica cada compromiso de 0 a 100 y luego calcula la nota final.</p>
+                                            <p class="text-xs text-slate-500 leading-tight">Califica cada compromiso de 1.0 a 5.0 (un decimal) y luego calcula la nota final.</p>
                                             <div class="flex flex-wrap items-center gap-2">
                                                 <span id="compromisos-calificacion-mensaje-evaluador" class="hidden text-xs font-semibold"></span>
                                                 <button type="button" onclick="guardarCalificacionesCompromisos()" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Guardar compromisos</button>
@@ -409,7 +409,7 @@
                                         </h4>
                                         <span id="competencias-suma-peso-evaluador" class="text-sm font-black text-[#00594E]">-</span>
                                     </div>
-                                    <p class="text-[11px] text-slate-500 leading-tight">Califica cada competencia de 0 a 100. Las comunes y las del nivel jerárquico del evaluado.</p>
+                                    <p class="text-[11px] text-slate-500 leading-tight">Califica cada competencia de 1.0 a 5.0 (un decimal). Las comunes y las del nivel jerárquico del evaluado.</p>
                                     <div id="competencias-bloqueado-evaluador" class="hidden rounded-xl border border-slate-200 bg-slate-100 p-3 text-[11px] font-semibold text-slate-600"></div>
                                     <div id="competencias-lista-evaluador" class="space-y-3"></div>
                                     <div class="flex items-center justify-between gap-3">
@@ -429,7 +429,7 @@
                                         </h4>
                                         <span id="ejes-suma-peso-evaluador" class="text-sm font-black text-[#00594E]">-</span>
                                     </div>
-                                    <p class="text-[11px] text-slate-500 leading-tight">Califica cada eje misional activo de 0 a 100.</p>
+                                    <p class="text-[11px] text-slate-500 leading-tight">Califica cada eje misional activo de 1.0 a 5.0 (un decimal).</p>
                                     <div id="ejes-bloqueado-evaluador" class="hidden rounded-xl border border-slate-200 bg-slate-100 p-3 text-[11px] font-semibold text-slate-600"></div>
                                     <div id="ejes-lista-evaluador" class="space-y-3"></div>
                                     <div class="flex items-center justify-between gap-3">

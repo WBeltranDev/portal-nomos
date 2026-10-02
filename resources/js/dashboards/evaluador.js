@@ -526,8 +526,8 @@ export function cargarCompromisosEvaluador(ev, ejes = {}) {
                 const calificacionControl = ev.concertacion_firmada
                     ? (ev.estado !== 'CALIFICADA'
                         ? `<div class="flex flex-col items-end gap-1">
-                            <label class="text-[10px] font-bold uppercase text-slate-500">Calificación (0-100)</label>
-                            <input type="number" min="0" max="100" step="0.01" class="compromiso-calificacion-input w-20 text-xs rounded-lg border border-slate-200 p-1.5 bg-white outline-none focus:border-[#00594E]" data-id="${c.id_compromiso}" value="${c.calificacion_definitiva ?? ''}" onblur="clampCalificacion(this)" />
+                            <label class="text-[10px] font-bold uppercase text-slate-500">Calificación (1.0-5.0)</label>
+                            <input type="number" min="1" max="5" step="0.1" class="compromiso-calificacion-input w-20 text-xs rounded-lg border border-slate-200 p-1.5 bg-white outline-none focus:border-[#00594E]" data-id="${c.id_compromiso}" value="${c.calificacion_definitiva ?? ''}" onblur="clampCalificacion(this)" />
                         </div>`
                         : `<div class="flex flex-col items-end gap-1">
                             <label class="text-[10px] font-bold uppercase text-slate-500">Calificación</label>
@@ -1147,8 +1147,8 @@ export function cargarCompetenciasEvaluador(ev) {
                             ${c.afirmacion ? `<p class="text-[10px] text-slate-400 mt-0.5">${escapeHtml(c.afirmacion)}</p>` : ''}
                         </div>
                         <div class="flex items-center gap-2 shrink-0">
-                            <label class="text-[10px] font-bold text-slate-500 uppercase">Nota (0-100)</label>
-                            <input type="number" min="0" max="100" step="0.01" class="competencia-calificacion-input w-24 text-xs rounded-lg border border-slate-200 p-1.5 disabled:bg-slate-100 disabled:text-slate-500" data-id="${c.id_competencia}" value="${valor}" onblur="clampCalificacion(this)" ${bloqueado ? 'disabled' : ''} />
+                            <label class="text-[10px] font-bold text-slate-500 uppercase">Nota (1.0-5.0)</label>
+                            <input type="number" min="1" max="5" step="0.1" class="competencia-calificacion-input w-24 text-xs rounded-lg border border-slate-200 p-1.5 disabled:bg-slate-100 disabled:text-slate-500" data-id="${c.id_competencia}" value="${valor}" onblur="clampCalificacion(this)" ${bloqueado ? 'disabled' : ''} />
                         </div>
                     </div>`;
             }).join('');
@@ -1244,8 +1244,8 @@ export function cargarEjesEvaluador(ev) {
                                 <p class="text-[10px] text-slate-400">Peso ${pesos[eje] ?? '-'}%</p>
                             </div>
                             <div class="flex items-center gap-2 shrink-0">
-                                <label class="text-[10px] font-bold text-slate-500 uppercase">Nota (0-100)</label>
-                                <input type="number" min="0" max="100" step="0.01" class="eje-calificacion-input w-24 text-xs rounded-lg border border-slate-200 p-1.5 disabled:bg-slate-100 disabled:text-slate-500" data-eje="${eje}" value="${valor}" onblur="clampCalificacion(this)" ${bloqueado ? 'disabled' : ''} />
+                                <label class="text-[10px] font-bold text-slate-500 uppercase">Nota (1.0-5.0)</label>
+                                <input type="number" min="1" max="5" step="0.1" class="eje-calificacion-input w-24 text-xs rounded-lg border border-slate-200 p-1.5 disabled:bg-slate-100 disabled:text-slate-500" data-eje="${eje}" value="${valor}" onblur="clampCalificacion(this)" ${bloqueado ? 'disabled' : ''} />
                             </div>
                         </div>
                         <textarea class="eje-calificacion-observacion w-full text-xs rounded-lg border border-slate-200 p-2 disabled:bg-slate-100 disabled:text-slate-500" rows="2" data-eje="${eje}" placeholder="Observaciones (opcional)" ${bloqueado ? 'disabled' : ''}></textarea>

@@ -28,6 +28,150 @@ if (!function_exists('defaultPonderacionesConfig')) {
     }
 }
 
+if (!function_exists('escalaCalificacionConfig')) {
+    /**
+     * Escala institucional de calificación: de 1.0 a 5.0 con un (1) decimal.
+     *
+     * Aplica por igual a los dos sistemas y a los cuatro lugares donde se
+     * califica: calificación general (nota final), y las notas específicas de
+     * compromisos, competencias y ejes misionales.
+     *
+     * Las cuatro bandas son también las categorías finales:
+     *   1.0 a 3.4 → No satisfactorio
+     *   3.5 a 4.0 → Susceptible a plan de mejora (aplica plan de mejoramiento)
+     *   4.1 a 4.5 → Bueno
+     *   4.6 a 5.0 → Sobresaliente
+     */
+    function escalaCalificacionConfig(): array {
+        return [
+            'minimo'    => 1.0,
+            'maximo'    => 5.0,
+            'decimales' => 1,
+            'step'      => '0.1',
+            'bandas'    => [
+                [
+                    'desde'                  => 1.0,
+                    'hasta'                  => 3.4,
+                    'nivel'                  => 'NO_SATISFACTORIO',
+                    'etiqueta'               => 'No satisfactorio',
+                    'aplica_plan_mejoramiento' => false,
+                ],
+                [
+                    'desde'                  => 3.5,
+                    'hasta'                  => 4.0,
+                    'nivel'                  => 'APROBADO_MEJORA',
+                    'etiqueta'               => 'Susceptible a plan de mejora',
+                    'aplica_plan_mejoramiento' => true,
+                ],
+                [
+                    'desde'                  => 4.1,
+                    'hasta'                  => 4.5,
+                    'nivel'                  => 'BUENO',
+                    'etiqueta'               => 'Bueno',
+                    'aplica_plan_mejoramiento' => false,
+                ],
+                [
+                    'desde'                  => 4.6,
+                    'hasta'                  => 5.0,
+                    'nivel'                  => 'SOBRESALIENTE',
+                    'etiqueta'               => 'Sobresaliente',
+                    'aplica_plan_mejoramiento' => false,
+                ],
+            ],
+        ];
+    }
+}
+
+if (!function_exists('redondearEscala')) {
+    /**
+     * Normaliza cualquier nota a la escala institucional: un (1) decimal,
+     * acotada entre el mínimo y el máximo. Evita que un cálculo ponderado
+     * devuelva 3.46 o un valor por debajo de 1.0.
+     */
+    function redondearEscala($valor): float
+    {
+        $escala = escalaCalificacionConfig();
+        $valor  = (float) $valor;
+
+        $valor = round($valor, $escala['decimales']);
+
+        if ($valor < $escala['minimo']) {
+            return (float) $escala['minimo'];
+        }
+        if ($valor > $escala['maximo']) {
+            return (float) $escala['maximo'];
+        }
+
+        return $valor;
+    }
+}
+
+if (!function_exists('nivelEscalaCalificacion')) {
+    /**
+     * Devuelve la categoría institucional que corresponde a una nota:
+     * NO_SATISFACTORIO, APROBADO_MEJORA, BUENO o SOBRESALIENTE.
+     * Una nota por debajo del mínimo (por ejemplo un 0.0 previo a la
+     * conversión) se trata como NO_SATISFACTORIO.
+     */
+    function nivelEscalaCalificacion($valor): string
+    {
+        $valor = (float) $valor;
+        $bandas = escalaCalificacionConfig()['bandas'];
+
+        // La banda correcta es la que CONTIENE la nota, no la primera que
+        // arranca por debajo de ella (si no, un 4.6 caería en la banda 1.0-3.4).
+        foreach ($bandas as $banda) {
+            if ($valor >= $banda['desde'] && $valor <= $banda['hasta']) {
+                return $banda['nivel'];
+            }
+        }
+
+        // Fuera de la escala: por debajo del mínimo se trata como
+        // NO_SATISFACTORIO y por encima del máximo como SOBRESALIENTE.
+        return $valor > $bandas[count($bandas) - 1]['hasta'] ? 'SOBRESALIENTE' : 'NO_SATISFACTORIO';
+    }
+}
+
+if (!function_exists('escalaCalificacionCatalogo')) {
+    /**
+     * La escala en el formato que consume el frontend, derivada de
+     * escalaCalificacionConfig() para que haya una sola fuente de verdad.
+     */
+    function escalaCalificacionCatalogo(): array
+    {
+        $escala = escalaCalificacionConfig();
+        $dec    = $escala['decimales'];
+
+        $formato = static function (float $v) use ($dec): string {
+            return number_format($v, $dec, '.', '');
+        };
+
+        $rangos = [];
+        foreach ($escala['bandas'] as $i => $banda) {
+            $rangos[] = [
+                'rango'                  => $formato($banda['desde']) . ' a ' . $formato($banda['hasta']),
+                'nivel'                  => $banda['etiqueta'],
+                'codigo'                 => $i + 1,
+                'desde'                  => $banda['desde'],
+                'hasta'                  => $banda['hasta'],
+                'aplica_plan_mejoramiento' => $banda['aplica_plan_mejoramiento'],
+            ];
+        }
+
+        return [
+            'descripcion' => 'Escala de calificación institucional de '
+                . $formato($escala['minimo']) . ' a ' . $formato($escala['maximo'])
+                . ' con ' . ($escala['decimales'] === 1 ? 'un (1) decimal' : $escala['decimales'] . ' decimales')
+                . ', para compromisos, competencias y ejes misionales de los dos sistemas',
+            'minimo'    => $escala['minimo'],
+            'maximo'    => $escala['maximo'],
+            'decimales' => $escala['decimales'],
+            'step'      => $escala['step'],
+            'rangos'    => $rangos,
+        ];
+    }
+}
+
 if (!function_exists('getPonderacionesConfig')) {
     function getPonderacionesConfig() {
         $configData = defaultPonderacionesConfig();
@@ -2724,9 +2868,9 @@ Route::post('/evaluaciones/{id}/firmar', function (Request $request, int $id) {
  * (tabla `ponderacion` o defaultPonderacionesConfig()):
  *
  * RENDIMIENTO_LABORAL (RL):
- *   - Compromisos:              80 %  (suma ponderada en escala 0-100)
- *   - Competencias comunes:     10 %  (promedio en escala 0-100)
- *   - Competencias nivel jer:   10 %  (promedio en escala 0-100)
+ *   - Compromisos:              80 %  (suma ponderada en escala 1.0-5.0)
+ *   - Competencias comunes:     10 %  (promedio en escala 1.0-5.0)
+ *   - Competencias nivel jer:   10 %  (promedio en escala 1.0-5.0)
  *   Total:                     100 %
  *
  * ACUERDO_GESTION (AG) sin ejes misionales:
@@ -2742,18 +2886,22 @@ Route::post('/evaluaciones/{id}/firmar', function (Request $request, int $id) {
  *   - Con 2 ejes activos: compromisos=60%, ejes=20%, comun=10%, nivel=10%   → 100%
  *   - Con 3 ejes activos: compromisos=50%, ejes=30%, comun=10%, nivel=10%   → 100%
  *
- * Escala individual (0-100):
- *    0-50: Deficiente | 51-70: Bajo | 71-80: Aceptable | 81-90: Alto | 91-100: Muy alto
+ * Escala institucional (1.0-5.0, un decimal). Las mismas cuatro bandas se usan
+ * para calificar cada nota y para determinar la categoría final:
+ *    1.0 a 3.4: No satisfactorio
+ *    3.5 a 4.0: Susceptible a plan de mejora (Aceptable)
+ *    4.1 a 4.5: Bueno (Alto)
+ *    4.6 a 5.0: Sobresaliente (Muy alto)
  *
- * Categorías finales (0-100):
- *   ≥ 91:           SOBRESALIENTE
- *   81 a 90:        BUENO
- *   71 a 80:        APROBADO_MEJORA  (Susceptible a plan de mejora)
- *    0 a 70:        NO_SATISFACTORIO
+ * Categorías finales (mismas bandas de la escala):
+ *   ≥ 4.6:          SOBRESALIENTE
+ *   4.1 a 4.5:      BUENO
+ *   3.5 a 4.0:      APROBADO_MEJORA  (Susceptible a plan de mejora)
+ *   1.0 a 3.4:      NO_SATISFACTORIO
  *
  * Plan de mejoramiento (1er semestre):
- *   RL: aplica si calificación ∈ [0, 80]   (No satisfactorio o susceptible a plan)
- *   AG: aplica si calificación ∈ [0, 80]   (No satisfactorio o susceptible a plan)
+ *   RL: aplica si calificación ∈ [1.0, 4.0]  (No satisfactorio o susceptible a plan)
+ *   AG: aplica si calificación ∈ [1.0, 4.0]  (No satisfactorio o susceptible a plan)
  *
  * Prorrateo RF3:
  *   nota_final_prorrateo = nota_final × (dias_laborados / dias_totales_periodo)
@@ -2822,7 +2970,10 @@ if (!function_exists('calcularNotaEvaluacion')) {
             ->toArray();
 
         foreach ($ejesActivos as $tipoEje) {
-            $notasPorEje[$tipoEje] = isset($ejeCals[$tipoEje]) ? (float)$ejeCals[$tipoEje] : 0.0;
+            // Sin nota cargada se usa el mínimo de la escala (1.0), no 0.0:
+            // un 0.0 ya no es un valor válido y hundiría la nota final por
+            // debajo del mínimo institucional.
+            $notasPorEje[$tipoEje] = isset($ejeCals[$tipoEje]) ? (float)$ejeCals[$tipoEje] : 1.0;
         }
 
         // Los ejes que NO aplican devuelven su peso a compromisos
@@ -2843,7 +2994,7 @@ if (!function_exists('calcularNotaEvaluacion')) {
     }
 
     // -------------------------------------------------------
-    // 1. NOTA COMPROMISOS — suma ponderada (0-100 cada uno)
+    // 1. NOTA COMPROMISOS — suma ponderada (1.0 a 5.0 cada uno)
     // -------------------------------------------------------
     $compromisos = DB::table('compromiso')
         ->where('id_evaluacion', $idEvaluacion)
@@ -2863,7 +3014,7 @@ if (!function_exists('calcularNotaEvaluacion')) {
     }
 
     // -------------------------------------------------------
-    // 2. NOTA COMPETENCIAS COMUNES (promedio escala 0-100)
+    // 2. NOTA COMPETENCIAS COMUNES (promedio escala 1.0 a 5.0)
     // -------------------------------------------------------
     $compComun = DB::table('competencia_evaluada as ce')
         ->join('competencia_catalogo as cc', 'cc.id_competencia', '=', 'ce.id_competencia')
@@ -2871,10 +3022,10 @@ if (!function_exists('calcularNotaEvaluacion')) {
         ->where('cc.tipo', 'COMUN')
         ->whereNotNull('ce.calificacion_definitiva')
         ->avg('ce.calificacion_definitiva');
-    $notaCompComun = $compComun ? (float)$compComun : 0.0;
+    $notaCompComun = is_null($compComun) ? 1.0 : (float)$compComun;
 
     // -------------------------------------------------------
-    // 3. NOTA COMPETENCIAS NIVEL JERÁRQUICO (promedio 0-100)
+    // 3. NOTA COMPETENCIAS NIVEL JERÁRQUICO (promedio 1.0 a 5.0)
     // -------------------------------------------------------
     $compNivel = DB::table('competencia_evaluada as ce')
         ->join('competencia_catalogo as cc', 'cc.id_competencia', '=', 'ce.id_competencia')
@@ -2882,7 +3033,7 @@ if (!function_exists('calcularNotaEvaluacion')) {
         ->where('cc.tipo', 'NIVEL_JERARQUICO')
         ->whereNotNull('ce.calificacion_definitiva')
         ->avg('ce.calificacion_definitiva');
-    $notaCompNivel = $compNivel ? (float)$compNivel : 0.0;
+    $notaCompNivel = is_null($compNivel) ? 1.0 : (float)$compNivel;
 
     // -------------------------------------------------------
     // 4. NOTA FINAL (antes de prorrateo)
@@ -2894,12 +3045,12 @@ if (!function_exists('calcularNotaEvaluacion')) {
     $subtotalesEjes = [];
     $subtotalEjesTotal = 0.0;
     foreach ($pesoEjes as $tipoEje => $pesoEje) {
-        $subtotalEje = ($notasPorEje[$tipoEje] ?? 0.0) * ($pesoEje / 100.0);
-        $subtotalesEjes[$tipoEje] = round($subtotalEje, 4);
+        $subtotalEje = ($notasPorEje[$tipoEje] ?? 1.0) * ($pesoEje / 100.0);
+        $subtotalesEjes[$tipoEje] = redondearEscala($subtotalEje);
         $subtotalEjesTotal += $subtotalEje;
     }
 
-    $notaFinal = round($subtotalCompromisos + $subtotalComun + $subtotalNivel + $subtotalEjesTotal, 2);
+    $notaFinal = redondearEscala($subtotalCompromisos + $subtotalComun + $subtotalNivel + $subtotalEjesTotal);
 
     // -------------------------------------------------------
     // 5. PRORRATEO RF3 — evaluaciones eventuales/parciales
@@ -2912,7 +3063,7 @@ if (!function_exists('calcularNotaEvaluacion')) {
         $diasPeriodo = $fechaInicio->diff($fechaFin)->days + 1;
         if ($diasPeriodo > 0 && (int)$evaluacion->dias_laborados < $diasPeriodo) {
             $factorProrrateo = (int)$evaluacion->dias_laborados / $diasPeriodo;
-            $notaProrrateo   = round($notaFinal * $factorProrrateo, 2);
+            $notaProrrateo   = redondearEscala($notaFinal * $factorProrrateo);
         }
     }
 
@@ -2920,12 +3071,7 @@ if (!function_exists('calcularNotaEvaluacion')) {
     // 6. CATEGORÍA FINAL
     // -------------------------------------------------------
     $notaParaCategoria = $notaProrrateo ?? $notaFinal;
-    $categoria = match(true) {
-        $notaParaCategoria >= 91 => 'SOBRESALIENTE',
-        $notaParaCategoria >= 81 => 'BUENO',
-        $notaParaCategoria >= 71 => 'APROBADO_MEJORA',
-        default                  => 'NO_SATISFACTORIO',
-    };
+    $categoria = nivelEscalaCalificacion($notaParaCategoria);
 
     // -------------------------------------------------------
     // 7. PLAN DE MEJORAMIENTO (1er semestre)
@@ -2996,14 +3142,14 @@ if (!function_exists('calcularNotaEvaluacion')) {
         ],
         'ejes_activos'              => $ejesActivos,
         'notas_ejes_raw'            => $notasPorEje,
-        'nota_compromisos_raw'      => round($notaCompromisos, 4),
-        'nota_comp_comun_raw'       => round($notaCompComun, 4),
-        'nota_comp_nivel_raw'       => round($notaCompNivel, 4),
-        'subtotal_compromisos'      => round($subtotalCompromisos, 4),
-        'subtotal_comun'            => round($subtotalComun, 4),
-        'subtotal_nivel'            => round($subtotalNivel, 4),
+        'nota_compromisos_raw'      => redondearEscala($notaCompromisos),
+        'nota_comp_comun_raw'       => redondearEscala($notaCompComun),
+        'nota_comp_nivel_raw'       => redondearEscala($notaCompNivel),
+        'subtotal_compromisos'      => redondearEscala($subtotalCompromisos),
+        'subtotal_comun'            => redondearEscala($subtotalComun),
+        'subtotal_nivel'            => redondearEscala($subtotalNivel),
         'subtotales_ejes'           => $subtotalesEjes,
-        'subtotal_ejes_total'       => round($subtotalEjesTotal, 4),
+        'subtotal_ejes_total'       => redondearEscala($subtotalEjesTotal),
         'nota_final'                => $notaFinal,
         'dias_laborados'            => $evaluacion->dias_laborados,
         'factor_prorrateo'          => $factorProrrateo ? round($factorProrrateo, 6) : null,
@@ -3077,7 +3223,7 @@ if (!function_exists('obtenerNotaSemestreConsolidada')) {
                 return [
                     'tipo' => 'PARCIALES_PROMEDIADAS',
                     'id_evaluacion' => $parciales->first()->id_evaluacion,
-                    'nota' => round($sumaNotasParciales / count($detallesParciales), 2),
+                    'nota' => redondearEscala($sumaNotasParciales / count($detallesParciales)),
                     'dias_laborados' => $totalDias,
                     'parciales' => $detallesParciales,
                 ];
@@ -3210,9 +3356,9 @@ Route::post('/evaluaciones/{id}/calificar-compromisos', function (Request $reque
     $data = $request->validate([
         'compromisos' => ['required', 'array'],
         'compromisos.*.id_compromiso'          => ['required', 'integer'],
-        'compromisos.*.calificacion_sem1'      => ['nullable', 'numeric', 'min:0', 'max:100'],
-        'compromisos.*.calificacion_sem2'      => ['nullable', 'numeric', 'min:0', 'max:100'],
-        'compromisos.*.calificacion_definitiva'=> ['nullable', 'numeric', 'min:0', 'max:100'],
+        'compromisos.*.calificacion_sem1'      => ['nullable', 'numeric', 'min:1', 'max:5', 'decimal:0,1'],
+        'compromisos.*.calificacion_sem2'      => ['nullable', 'numeric', 'min:1', 'max:5', 'decimal:0,1'],
+        'compromisos.*.calificacion_definitiva'=> ['nullable', 'numeric', 'min:1', 'max:5', 'decimal:0,1'],
     ]);
 
     foreach ($data['compromisos'] as $item) {
@@ -3272,9 +3418,9 @@ Route::post('/evaluaciones/{id}/calificar-competencias', function (Request $requ
     $data = $request->validate([
         'competencias'   => ['required', 'array'],
         'competencias.*.id_competencia'         => ['required', 'integer', 'exists:competencia_catalogo,id_competencia'],
-        'competencias.*.calificacion_definitiva'=> ['nullable', 'numeric', 'min:0', 'max:100'],
-        'competencias.*.calificacion_sem1'      => ['nullable', 'numeric', 'min:0', 'max:100'],
-        'competencias.*.calificacion_sem2'      => ['nullable', 'numeric', 'min:0', 'max:100'],
+        'competencias.*.calificacion_definitiva'=> ['nullable', 'numeric', 'min:1', 'max:5', 'decimal:0,1'],
+        'competencias.*.calificacion_sem1'      => ['nullable', 'numeric', 'min:1', 'max:5', 'decimal:0,1'],
+        'competencias.*.calificacion_sem2'      => ['nullable', 'numeric', 'min:1', 'max:5', 'decimal:0,1'],
     ]);
 
     foreach ($data['competencias'] as $item) {
@@ -3412,10 +3558,9 @@ Route::get('/evaluaciones/{id}/competencias', function (int $id) {
 Route::get('/catalogo/competencias', function (Request $request) {
     abort_unless(session()->has('usuario_autenticado'), 403);
 
-    $catalogoPath = storage_path('app/competencias_catalogo.json');
-    $escala = file_exists($catalogoPath)
-        ? (json_decode(file_get_contents($catalogoPath), true)['escala_calificacion'] ?? [])
-        : [];
+    // La escala sale de la configuración institucional en PHP, no del JSON del
+    // catálogo, para que exista una sola fuente de verdad.
+    $escala = escalaCalificacionCatalogo();
 
     // Filtrar por sistema y nivel si se pasan como query params
     $sistema = strtoupper($request->query('sistema', ''));
@@ -3497,7 +3642,7 @@ Route::post('/evaluaciones/{id}/calificar-ejes', function (Request $request, int
     $data = $request->validate([
         'ejes' => ['required', 'array'],
         'ejes.*.tipo_eje'    => ['required', 'in:DOCENCIA,INVESTIGACION,PROYECCION_SOCIAL'],
-        'ejes.*.calificacion'=> ['required', 'numeric', 'min:0', 'max:100'],
+        'ejes.*.calificacion'=> ['required', 'numeric', 'min:1', 'max:5', 'decimal:0,1'],
         'ejes.*.observacion' => ['nullable', 'string', 'max:500'],
     ]);
 
