@@ -79,6 +79,7 @@ class DashboardController extends Controller
         $funcionariosParaPeriodoParcial = collect();
         $evaluacionesEvaluador = collect();
         $evaluacionesEvaluado = collect();
+        $informesEvaluador = collect();
         $evaluadosDisponibles = collect();
         $evaluacionesInstanciaExterna = collect();
         $planesPendientesEvaluador = collect();
@@ -435,6 +436,7 @@ class DashboardController extends Controller
                 ->leftJoin('funcionario as fs', 'fs.id_funcionario', '=', 'vs.id_funcionario')
                 ->select(
                     'ev.id_evaluacion',
+                    'ev.id_vinc_evaluado',
                     'ev.estado',
                     'p.anio',
                     'p.semestre',
@@ -620,33 +622,65 @@ class DashboardController extends Controller
                 ->orderByDesc('ev.id_evaluacion')
                 ->get();
 
-            // Marcar disponibilidad de informe anual
-            $clavesConInformeAnual = [];
+            // Marcar disponibilidad de informe anual.
+            // El consolidado anual es el promedio de los dos semestres, así que
+            // solo se ofrece en el segundo semestre y solo si ese semestre ya
+            // tiene nota consolidada. La fila se evalúa individualmente: si se
+            // marcara por grupo, la fila del semestre 1 del mismo año también
+            // quedaría habilitada y aparecería un PDF anual que no aplica.
             if ($evaluacionesEvaluado->isNotEmpty()) {
                 $gruposSemestres = DB::table('evaluacion as ev')
                     ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
                     ->join('vinculacion as ve', 've.id_vinculacion', '=', 'ev.id_vinc_evaluado')
                     ->where('ve.id_funcionario', $usuario['id_funcionario'])
-                    ->whereIn('ev.tipo_evaluacion', ['SEMESTRE_1', 'SEMESTRE_2'])
+                    ->where('p.semestre', 2)
                     ->where('ev.estado', 'CALIFICADA')
-                    ->get(['p.anio', 'p.sistema', 'ev.id_vinc_evaluado', 'ev.tipo_evaluacion'])
-                    ->groupBy(fn ($r) => "{$r->anio}|{$r->sistema}|{$r->id_vinc_evaluado}");
-
-                foreach ($gruposSemestres as $clave => $filas) {
-                    $tipos = $filas->pluck('tipo_evaluacion');
-                    if (($tipos->contains('SEMESTRE_1') && $tipos->contains('SEMESTRE_2')) || $tipos->contains('SEMESTRE_2')) {
-                        $clavesConInformeAnual[] = $clave;
-                    }
-                }
+                    ->get(['p.anio', 'p.sistema', 'ev.id_vinc_evaluado'])
+                    ->map(fn ($r) => "{$r->anio}|{$r->sistema}|{$r->id_vinc_evaluado}")
+                    ->unique()
+                    ->values();
 
                 foreach ($evaluacionesEvaluado as $ev) {
-                    $ev->tiene_informe_anual = in_array(
-                        "{$ev->anio}|{$ev->sistema}|{$ev->id_vinc_evaluado}",
-                        $clavesConInformeAnual,
-                        true
-                    );
+                    $ev->tiene_informe_anual = (int) $ev->semestre === 2
+                        && $gruposSemestres->contains("{$ev->anio}|{$ev->sistema}|{$ev->id_vinc_evaluado}");
                 }
             }
+        }
+
+        // 4. Informes en PDF de las personas evaluadas por este evaluador,
+        // agrupados por evaluado. Se listan solo las evaluaciones calificadas,
+        // porque no hay informe que descargar de una evaluación sin nota.
+        if ($rolActivo === 'evaluador' && $usuario['id_funcionario']) {
+            $informesEvaluador = $evaluacionesEvaluador
+                ->filter(fn ($e) => $e->estado === 'CALIFICADA')
+                ->groupBy(fn ($e) => (int) $e->id_vinc_evaluado)
+                ->map(function ($filas, $idVincEvaluado) {
+                    $primera = $filas->first();
+
+                    // El consolidado anual solo aplica en el segundo semestre y
+                    // exige nota consolidada de ese semestre.
+                    $gruposSem2 = $filas
+                        ->filter(fn ($e) => (int) $e->semestre === 2)
+                        ->map(fn ($e) => "{$e->anio}|{$e->sistema}|{$idVincEvaluado}")
+                        ->unique();
+
+                    $evaluaciones = $filas->map(function ($e) use ($gruposSem2, $idVincEvaluado) {
+                        $e->tiene_informe_anual = (int) $e->semestre === 2
+                            && $gruposSem2->contains("{$e->anio}|{$e->sistema}|{$idVincEvaluado}");
+                        return $e;
+                    })->values();
+
+                    return [
+                        'id_vinc_evaluado' => (int) $idVincEvaluado,
+                        'nombres' => $primera->evaluado_nombres,
+                        'apellidos' => $primera->evaluado_apellidos,
+                        'cargo' => $primera->evaluado_cargo,
+                        'area' => $primera->evaluado_area,
+                        'evaluaciones' => $evaluaciones,
+                    ];
+                })
+                ->sortBy(fn ($g) => $g['nombres'] . ' ' . $g['apellidos'])
+                ->values();
         }
 
 
@@ -684,7 +718,7 @@ class DashboardController extends Controller
             'usuario', 'rolActivo', 'usuarios', 'empleados', 'evaluaciones',
             'evaluacionesAdmin',
             'periodos', 'ponderaciones', 'evaluacionesEvaluador', 'evaluacionesEvaluado',
-            'evaluadosDisponibles', 'miVinculacionEvaluador', 'acuerdosRL', 'acuerdosAG',
+            'informesEvaluador', 'evaluadosDisponibles', 'miVinculacionEvaluador', 'acuerdosRL', 'acuerdosAG',
             'ponderacionesConfig', 'planesPendientesEvaluador',
             'periodosParciales', 'funcionariosParaPeriodoParcial', 'vinculacionesReemplazo',
             'evaluadoresDelegacion', 'delegadosDisponibles', 'impedimentos',

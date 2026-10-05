@@ -24,12 +24,19 @@
     $notasEjes = $calculo['notas_ejes_raw'] ?? [];
     $ponderadosEjes = $calculo['subtotales_ejes'] ?? [];
     $etiquetasEjes = ['DOCENCIA' => 'Docencia', 'INVESTIGACION' => 'Investigación', 'PROYECCION_SOCIAL' => 'Proyección Social'];
-    $catLabel = [
-        'SOBRESALIENTE' => 'Sobresaliente (91-100)',
-        'BUENO' => 'Bueno (81-90)',
-        'APROBADO_MEJORA' => 'Susceptible a plan de mejora (Aprobado) (71-80)',
-        'NO_SATISFACTORIO' => 'No satisfactorio (0-70)',
-    ][$calculo['categoria']] ?? $calculo['categoria'];
+    // La etiqueta de categoría se arma desde la escala institucional vigente
+    // (1.0 a 5.0) para que el rango impreso nunca quede desactualizado.
+    $formatoNota = fn($v) => number_format((float) $v, 1, '.', '');
+    $catLabel = '';
+    foreach (escalaCalificacionConfig()['bandas'] as $banda) {
+        if ($banda['nivel'] === $calculo['categoria']) {
+            $catLabel = $banda['etiqueta'] . ' (' . $formatoNota($banda['desde']) . ' a ' . $formatoNota($banda['hasta']) . ')';
+            break;
+        }
+    }
+    if ($catLabel === '') {
+        $catLabel = 'No disponible';
+    }
 @endphp
 <!DOCTYPE html>
 <html lang="es">

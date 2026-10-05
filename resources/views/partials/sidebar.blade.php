@@ -63,10 +63,10 @@
             <span class="material-symbols-outlined">fact_check</span>
             Evaluaciones
         </button>
-        @if ($rolActivo === 'evaluado')
+        @if ($rolActivo === 'evaluado' || $rolActivo === 'evaluador')
         <button type="button" class="sidebar-link w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-slate-700 transition" onclick="navegarMenu(this, 'reportes')">
             <span class="material-symbols-outlined">description</span>
-            Exportar PDF
+            {{ $rolActivo === 'evaluador' ? 'Informes de evaluados' : 'Exportar PDF' }}
         </button>
         @endif
     </nav>

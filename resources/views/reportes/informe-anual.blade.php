@@ -1,11 +1,18 @@
 @php
     $sistema = $info['sistema'] === 'RENDIMIENTO_LABORAL' ? 'Rendimiento Laboral' : 'Acuerdos de Gestión';
-    $catLabel = [
-        'SOBRESALIENTE' => 'Sobresaliente (91-100)',
-        'BUENO' => 'Bueno (81-90)',
-        'APROBADO_MEJORA' => 'Susceptible a plan de mejora (Aprobado) (71-80)',
-        'NO_SATISFACTORIO' => 'No satisfactorio (0-70)',
-    ][$info['categoria']] ?? $info['categoria'];
+    // La etiqueta de categoría se arma desde la escala institucional vigente
+    // (1.0 a 5.0) para que el rango impreso nunca quede desactualizado.
+    $formatoNota = fn($v) => number_format((float) $v, 1, '.', '');
+    $catLabel = '';
+    foreach (escalaCalificacionConfig()['bandas'] as $banda) {
+        if ($banda['nivel'] === $info['categoria']) {
+            $catLabel = $banda['etiqueta'] . ' (' . $formatoNota($banda['desde']) . ' a ' . $formatoNota($banda['hasta']) . ')';
+            break;
+        }
+    }
+    if ($catLabel === '') {
+        $catLabel = 'No disponible';
+    }
 @endphp
 <!DOCTYPE html>
 <html lang="es">
@@ -94,14 +101,14 @@
     <tr><th colspan="2" class="cab">Resultado Consolidado Anual</th></tr>
     <tr>
         <td class="info-cell" style="width:50%;"><b>Semestre A (Primer Semestre)</b></td>
-        <td class="info-cell resaltado centro">{{ $info['nota_semestre_a'] ?? 'N/A' }}</td>
+        <td class="info-cell resaltado centro">{{ $info['tiene_semestre_a'] ? $formatoNota($info['nota_semestre_a']) : 'N/A' }}</td>
     </tr>
     @if (!$info['tiene_semestre_a'] && $info['tiene_semestre_b'])
         <tr><td colspan="2" class="nota"><b>Nota:</b> El funcionario ingresó en el Semestre B; por normativa institucional, la calificación obtenida en el Semestre B rige como la calificación definitiva anual.</td></tr>
     @endif
     <tr>
         <td class="info-cell"><b>Semestre B (Segundo Semestre)</b></td>
-        <td class="info-cell resaltado centro">{{ $info['nota_semestre_b'] ?? 'N/A' }}</td>
+        <td class="info-cell resaltado centro">{{ $info['tiene_semestre_b'] ? $formatoNota($info['nota_semestre_b']) : 'N/A' }}</td>
     </tr>
     <tr>
         <td class="info-cell"><b>Categoría Final</b></td>
@@ -109,7 +116,7 @@
     </tr>
     <tr>
         <td class="info-cell" style="background:#EAF2EF;"><b>CALIFICACIÓN DEFINITIVA ANUAL</b></td>
-        <td class="info-cell resaltado centro" style="background:#EAF2EF; font-size:12px;">{{ $info['nota_anual'] }}</td>
+        <td class="info-cell resaltado centro" style="background:#EAF2EF; font-size:12px;">{{ $info['nota_anual'] !== null ? $formatoNota($info['nota_anual']) : 'N/A' }}</td>
     </tr>
 </table>
 

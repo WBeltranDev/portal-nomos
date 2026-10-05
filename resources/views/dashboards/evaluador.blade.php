@@ -487,6 +487,104 @@
                     </div>
                 </div>
             </section>
+
+            <!-- SECTION: INFORMES EN PDF DE LOS EVALUADOS (por evaluado) -->
+            <section id="section-reportes" class="section-content hidden space-y-6">
+                <div class="panel-card rounded-3xl p-6">
+                    <div class="flex items-start justify-between gap-4 mb-1">
+                        <div>
+                            <p class="text-xs font-bold uppercase tracking-[0.22em] text-[#00594E]">Exportar PDF</p>
+                            <h2 class="text-xl font-black text-slate-900 mt-1">Informes de tus evaluados</h2>
+                        </div>
+                        <span class="text-[10px] font-bold px-2.5 py-1 rounded-full bg-slate-100 text-slate-500">{{ $informesEvaluador->count() }} evaluados</span>
+                    </div>
+                    <p class="text-xs text-slate-500 mb-5">
+                        Informes oficiales de las evaluaciones que ya calificaste, separados por persona.
+                        El <b>informe anual</b> es el consolidado de los dos semestres y solo está disponible en el
+                        segundo semestre.
+                    </p>
+
+                    @if($informesEvaluador->isEmpty())
+                        <div class="py-10 text-center text-slate-500 text-sm">
+                            <span class="material-symbols-outlined text-4xl text-slate-300 mb-2 block">picture_as_pdf</span>
+                            Aún no tienes informes disponibles. Cuando califiques una evaluación, aparecerá aquí el informe de esa persona.
+                        </div>
+                    @else
+                        <div class="space-y-5">
+                            @foreach($informesEvaluador as $grupo)
+                                <div class="rounded-2xl border border-slate-200 overflow-hidden">
+                                    {{-- Encabezado con el nombre del evaluado: separa un bloque por persona --}}
+                                    <div class="flex items-center gap-3 px-4 py-3 bg-[#EAF2EF] border-b border-slate-200">
+                                        <span class="w-9 h-9 rounded-full bg-[#00594E] text-white flex items-center justify-center text-[11px] font-black shrink-0">
+                                            {{ strtoupper(substr($grupo['nombres'], 0, 1) . substr($grupo['apellidos'], 0, 1)) }}
+                                        </span>
+                                        <div class="min-w-0">
+                                            <h3 class="font-black text-slate-900 text-sm leading-snug truncate">
+                                                {{ $grupo['nombres'] }} {{ $grupo['apellidos'] }}
+                                            </h3>
+                                            <p class="text-[11px] text-slate-500 truncate">{{ $grupo['cargo'] }} - {{ $grupo['area'] }}</p>
+                                        </div>
+                                        <span class="ml-auto text-[10px] font-bold text-[#00594E] shrink-0">
+                                            {{ $grupo['evaluaciones']->count() }} informe(s)
+                                        </span>
+                                    </div>
+
+                                    <div class="overflow-x-auto">
+                                        <table class="w-full text-left text-xs">
+                                            <thead>
+                                                <tr class="bg-slate-50 text-slate-500 uppercase tracking-wide">
+                                                    <th class="px-4 py-2.5 font-black">Sistema</th>
+                                                    <th class="px-4 py-2.5 font-black">Evaluación</th>
+                                                    <th class="px-4 py-2.5 font-black">Periodo</th>
+                                                    <th class="px-4 py-2.5 font-black">Nota</th>
+                                                    <th class="px-4 py-2.5 font-black text-right">Descargar</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach($grupo['evaluaciones'] as $ev)
+                                                    <tr class="border-t border-slate-100 odd:bg-white even:bg-slate-50/50">
+                                                        <td class="px-4 py-3">
+                                                            <span class="font-bold px-2 py-0.5 rounded-full bg-[#EAF2EF] text-[#00594E]">
+                                                                {{ $ev->sistema === 'RENDIMIENTO_LABORAL' ? 'RL' : 'AG' }}
+                                                            </span>
+                                                        </td>
+                                                        <td class="px-4 py-3 font-bold text-slate-800">{{ $ev->tipo_nombre }}</td>
+                                                        <td class="px-4 py-3 text-slate-600">
+                                                            {{ $ev->anio }}-{{ (int) $ev->semestre === 1 ? 'A' : 'B' }}
+                                                            <span class="block text-[10px] text-slate-400">
+                                                                {{ \Carbon\Carbon::parse($ev->fecha_inicio)->format('d/m/Y') }} al {{ \Carbon\Carbon::parse($ev->fecha_fin)->format('d/m/Y') }}
+                                                            </span>
+                                                        </td>
+                                                        <td class="px-4 py-3 font-bold text-slate-800">
+                                                            {{ $ev->calificacion_final !== null ? number_format((float) $ev->calificacion_final, 1) : '-' }}
+                                                        </td>
+                                                        <td class="px-4 py-3">
+                                                            <div class="flex justify-end gap-2">
+                                                                <a href="/evaluaciones/{{ $ev->id_evaluacion }}/informe"
+                                                                   class="inline-flex items-center gap-1.5 rounded-lg bg-[#00594E] text-white px-3 py-1.5 text-[11px] font-bold hover:brightness-110 transition"
+                                                                   title="Informe semestral en PDF">
+                                                                    <span class="material-symbols-outlined text-sm">picture_as_pdf</span> PDF semestral
+                                                                </a>
+                                                                @if($ev->tiene_informe_anual)
+                                                                    <a href="/evaluaciones/{{ $ev->id_evaluacion }}/informe-anual"
+                                                                       class="inline-flex items-center gap-1.5 rounded-lg bg-[#B5A160] text-white px-3 py-1.5 text-[11px] font-bold hover:brightness-110 transition"
+                                                                       title="Consolidado de los dos semestres. Solo disponible en el segundo semestre.">
+                                                                        <span class="material-symbols-outlined text-sm">picture_as_pdf</span> PDF anual
+                                                                    </a>
+                                                                @endif
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                @endforeach
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    @endif
+                </div>
+            </section>
         </main>
     </div>
 </div>

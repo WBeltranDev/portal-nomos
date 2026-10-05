@@ -3083,29 +3083,67 @@ if (!function_exists('obtenerNotaSemestreConsolidada')) {
 
 if (!function_exists('informeAnualDisponible')) {
     /**
-     * Indica si el informe anual está disponible para una evaluación:
-     * se requiere que AMBOS semestres (A y B) del mismo año/sistema/evaluado
-     * cuenten con calificaciones consolidadas válidas.
+     * Indica si el informe anual está disponible para una evaluación.
+     *
+     * El consolidado anual es el promedio de los dos semestres, así que solo
+     * tiene sentido una vez cerrado el segundo semestre: la opción anual nunca
+     * se ofrece en el semestre 1, porque allí no existe todavía el promedio.
+     *
+     * Se exige que el semestre 2 tenga nota consolidada. La del semestre 1 es
+     * opcional porque, cuando el funcionario ingresó en el semestre B, la nota
+     * de ese semestre rige como definitiva anual (caso que el propio informe
+     * explica al pie).
      */
     function informeAnualDisponible(int $idEvaluacion): bool
     {
         $evaluacion = DB::table('evaluacion as ev')
             ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
             ->where('ev.id_evaluacion', $idEvaluacion)
-            ->select('ev.id_vinc_evaluado', 'p.anio', 'p.sistema')
+            ->select('ev.id_vinc_evaluado', 'p.anio', 'p.sistema', 'p.semestre')
             ->first();
 
-        if (!$evaluacion) {
+        if (!$evaluacion || (int) $evaluacion->semestre !== 2) {
             return false;
         }
 
-        $sem1 = obtenerNotaSemestreConsolidada((int)$evaluacion->id_vinc_evaluado, (int)$evaluacion->anio, (string)$evaluacion->sistema, 1);
         $sem2 = obtenerNotaSemestreConsolidada((int)$evaluacion->id_vinc_evaluado, (int)$evaluacion->anio, (string)$evaluacion->sistema, 2);
 
-        return ($sem1 !== null && $sem1['nota'] !== null) && ($sem2 !== null && $sem2['nota'] !== null);
+        return $sem2 !== null && $sem2['nota'] !== null;
     }
 }
 
+if (!function_exists('puedeDescargarInforme')) {
+    /**
+     * Quién puede descargar los informes en PDF de una evaluación.
+     *
+     * Además del evaluado (que siempre puede ver los suyos), el evaluador a
+     * cargo de esa evaluación puede consultar los informes de las personas que
+     * evalúa, y el administrador puede consultar los de cualquiera.
+     */
+    function puedeDescargarInforme(int $idEvaluacion): bool
+    {
+        $auth = session('usuario_autenticado');
+        if (!$auth || empty($auth['id_funcionario'])) {
+            return false;
+        }
+
+        if (($auth['rol_activo'] ?? null) === 'admin') {
+            return true;
+        }
+
+        $idFuncionario = (int) $auth['id_funcionario'];
+
+        return DB::table('evaluacion as ev')
+            ->join('vinculacion as ve', 've.id_vinculacion', '=', 'ev.id_vinc_evaluado')
+            ->join('vinculacion as va', 'va.id_vinculacion', '=', 'ev.id_vinc_evaluador')
+            ->where('ev.id_evaluacion', $idEvaluacion)
+            ->where(function ($q) use ($idFuncionario) {
+                $q->where('ve.id_funcionario', $idFuncionario)
+                    ->orWhere('va.id_funcionario', $idFuncionario);
+            })
+            ->exists();
+    }
+}
 
 
 // --- GET: Vista previa del cálculo de nota (sin guardar) ---
@@ -4319,20 +4357,15 @@ if (!function_exists('prepararInformeAnual')) {
         $notaSemA = $sem1Data['nota'] ?? null;
         $notaSemB = $sem2Data['nota'] ?? null;
 
+        // Consolidado anual en la escala institucional de 1.0 a 5.0 con un decimal.
         $notaAnual = null;
         if ($notaSemA !== null && $notaSemB !== null) {
-            $notaAnual = round(($notaSemA + $notaSemB) / 2, 2);
+            $notaAnual = redondearEscala(($notaSemA + $notaSemB) / 2);
         } elseif ($notaSemA === null && $notaSemB !== null) {
-            $notaAnual = round($notaSemB, 2);
+            $notaAnual = redondearEscala($notaSemB);
         }
 
-        $categoria = match (true) {
-            $notaAnual >= 91 => 'SOBRESALIENTE',
-            $notaAnual >= 81 => 'BUENO',
-            $notaAnual >= 71 => 'APROBADO_MEJORA',
-            $notaAnual !== null => 'NO_SATISFACTORIO',
-            default => '',
-        };
+        $categoria = $notaAnual !== null ? nivelEscalaCalificacion($notaAnual) : '';
 
         return [
             'sistema' => $sistema,
@@ -4378,19 +4411,14 @@ if (!function_exists('descargarInformePdf')) {
     }
 }
 
-// --- GET: Informe semestral en PDF (solo evaluado) ---
+// --- GET: Informe semestral en PDF (evaluado de la evaluación o su evaluador) ---
 Route::get('/evaluaciones/{id}/informe', function (int $id) {
-    abort_unless(session('usuario_autenticado.rol_activo') === 'evaluado', 403);
+    abort_unless(session()->has('usuario_autenticado'), 403);
 
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
 
-    $auth = session('usuario_autenticado');
-    $esEvaluado = DB::table('vinculacion')
-        ->where('id_vinculacion', $evaluacion->id_vinc_evaluado)
-        ->where('id_funcionario', $auth['id_funcionario'] ?? null)
-        ->exists();
-    abort_unless($esEvaluado, 403);
+    abort_unless(puedeDescargarInforme($id), 403, 'No tienes permisos para descargar el informe de esta evaluación.');
 
     $info = prepararInformeSemestral($id);
     $nombre = 'Informe_Evaluacion_Semestral_' . $id . '.pdf';
@@ -4398,19 +4426,22 @@ Route::get('/evaluaciones/{id}/informe', function (int $id) {
     return descargarInformePdf('reportes.informe-semestral', $info, $nombre, 'landscape');
 })->name('evaluaciones.informe');
 
-// --- GET: Informe anual en PDF (solo evaluado, promedia ambos semestres) ---
+// --- GET: Informe anual en PDF (solo en semestre 2; promedia ambos semestres) ---
 Route::get('/evaluaciones/{id}/informe-anual', function (int $id) {
-    abort_unless(session('usuario_autenticado.rol_activo') === 'evaluado', 403);
+    abort_unless(session()->has('usuario_autenticado'), 403);
 
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
 
-    $auth = session('usuario_autenticado');
-    $esEvaluado = DB::table('vinculacion')
-        ->where('id_vinculacion', $evaluacion->id_vinc_evaluado)
-        ->where('id_funcionario', $auth['id_funcionario'] ?? null)
-        ->exists();
-    abort_unless($esEvaluado, 403);
+    abort_unless(puedeDescargarInforme($id), 403, 'No tienes permisos para descargar el informe de esta evaluación.');
+
+    // El consolidado anual es el promedio de los dos semestres: en el semestre 1
+    // no aplica, por eso la opción no se ofrece y aquí se bloquea la descarga.
+    abort_unless(
+        informeAnualDisponible($id),
+        403,
+        'El informe anual solo está disponible en el segundo semestre, cuando ya existe nota consolidada de ambos semestres.'
+    );
 
     $info = prepararInformeAnual($id);
     $nombre = 'Informe_Evaluacion_Anual_' . $id . '.pdf';
