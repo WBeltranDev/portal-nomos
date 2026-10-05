@@ -35,30 +35,31 @@ class PruebasCoberturaSemanas1a9Seeder extends Seeder
             }
 
             // Semanas 3 a 7: cuatro decisiones de recursos con evaluados distintos.
-            $repoAprobada = $this->evaluacion($periodoAg2, 4, $evaluador, 'SEMESTRE_2', 'EN_PROCESO', 'REPOSICION APROBADA', 62);
-            $repoNegada = $this->evaluacion($periodoAg2, 5, $evaluador, 'SEMESTRE_2', 'CALIFICADA', 'REPOSICION NEGADA', 63);
-            $apelAprobada = $this->evaluacion($periodoAg2, 11, $evaluador, 'SEMESTRE_2', 'EN_PROCESO', 'APELACION APROBADA', 60);
-            $apelNegada = $this->evaluacion($periodoAg2, 14, $evaluador, 'SEMESTRE_2', 'CALIFICADA', 'APELACION NEGADA', 64);
+            // Las notas respetan la escala institucional vigente (1.0 a 5.0).
+            $repoAprobada = $this->evaluacion($periodoAg2, 4, $evaluador, 'SEMESTRE_2', 'EN_PROCESO', 'REPOSICION APROBADA', 3.2);
+            $repoNegada = $this->evaluacion($periodoAg2, 5, $evaluador, 'SEMESTRE_2', 'CALIFICADA', 'REPOSICION NEGADA', 3.3);
+            $apelAprobada = $this->evaluacion($periodoAg2, 11, $evaluador, 'SEMESTRE_2', 'EN_PROCESO', 'APELACION APROBADA', 3.1);
+            $apelNegada = $this->evaluacion($periodoAg2, 14, $evaluador, 'SEMESTRE_2', 'CALIFICADA', 'APELACION NEGADA', 3.4);
 
             foreach ([[$repoAprobada, 4], [$repoNegada, 5], [$apelAprobada, 11], [$apelNegada, 14]] as [$id, $evaluado]) {
                 $this->firmasCompletas($id, $evaluado, $evaluador);
-                $this->compromisoYEvidencia($id, $evaluado, 62);
+                $this->compromisoYEvidencia($id, $evaluado, 3.2);
             }
             $this->recurso($repoAprobada, 'REPOSICION', $evaluador, 'APROBADO', 'Luz Mary Alegría', 'REP', 'Se reabre para ajustar la calificación con el soporte aportado.');
             $this->recurso($repoNegada, 'REPOSICION', $evaluador, 'NEGADO', 'Yeimy Katerine Avella', 'REP', 'La evidencia fue revisada y no modifica la calificación final.');
             $this->recurso($apelAprobada, 'APELACION', $admin, 'APROBADO', 'Daniela Smith Bermudez', 'APL', 'Talento Humano aprueba y reabre la evaluación para nuevo cálculo.');
             $this->recurso($apelNegada, 'APELACION', $admin, 'NEGADO', 'Ligia Joana Bolaños', 'APL', 'La apelación fue estudiada y se conserva la decisión inicial.');
 
-            // Semana 7: renuencia documentada que también habilita el recurso para nota no satisfactoria.
-            $renuencia = $this->evaluacion($periodoRl2, 17, $evaluador, 'SEMESTRE_2', 'CALIFICADA', 'RENUENCIA DE NOTIFICACION', 58);
-            $this->firmasCompletas($renuencia, 17, $evaluador, true);
-            $this->compromisoYEvidencia($renuencia, 17, 58);
-            $this->recurso($renuencia, 'REPOSICION', $evaluador, 'PENDIENTE', 'Never Caceres', 'REP', 'Radicado pendiente después de la renuencia documentada.');
+            // Semana 7: notificación de la calificación firmada y recurso pendiente de decisión.
+            $notificada = $this->evaluacion($periodoRl2, 17, $evaluador, 'SEMESTRE_2', 'CALIFICADA', 'NOTIFICACION FIRMADA', 2.9);
+            $this->firmasCompletas($notificada, 17, $evaluador);
+            $this->compromisoYEvidencia($notificada, 17, 2.9);
+            $this->recurso($notificada, 'REPOSICION', $evaluador, 'PENDIENTE', 'Never Caceres', 'REP', 'Radicado después de firmado el aviso de notificación.');
 
             // Semana 7: plan ya concertado y congelado después de ambas firmas.
-            $planCongelado = $this->evaluacion($periodoRl2, 20, $evaluador, 'SEMESTRE_2', 'CALIFICADA', 'PLAN CONGELADO', 61);
+            $planCongelado = $this->evaluacion($periodoRl2, 20, $evaluador, 'SEMESTRE_2', 'CALIFICADA', 'PLAN CONGELADO', 3.6);
             $this->firmasCompletas($planCongelado, 20, $evaluador);
-            $this->compromisoYEvidencia($planCongelado, 20, 61);
+            $this->compromisoYEvidencia($planCongelado, 20, 3.6);
             $plan = DB::table('plan_mejoramiento')->insertGetId([
                 'id_evaluacion' => $planCongelado,
                 'descripcion_temas' => 'PRUEBA COBERTURA: seguimiento a indicadores y comunicación de resultados.',
@@ -75,16 +76,16 @@ class PruebasCoberturaSemanas1a9Seeder extends Seeder
             ]);
 
             // Semana 6/8: una parcial válida (90 días) no consolida semestre; dos sí se promedian.
-            $unaParcial = $this->evaluacion($periodoRl2, 21, $evaluador, 'PARCIAL', 'CALIFICADA', 'PARCIAL UNICA 90 DIAS', 75, true, 90);
+            $unaParcial = $this->evaluacion($periodoRl2, 21, $evaluador, 'PARCIAL', 'CALIFICADA', 'PARCIAL UNICA 90 DIAS', 3.9, true, 90);
             $this->firmasCompletas($unaParcial, 21, $evaluador);
-            $this->compromisoYEvidencia($unaParcial, 21, 75);
+            $this->compromisoYEvidencia($unaParcial, 21, 3.9);
             DB::table('periodo_parcial')->insert([
                 'id_periodo' => $periodoRl2, 'id_vinc_funcionario' => 21,
                 'fecha_inicio' => '2026-08-02', 'fecha_fin' => '2026-10-30',
                 'referencia' => self::PREFIJO . ' parcial única válida (90 días)', 'estado' => 'ABIERTO',
             ]);
 
-            foreach ([['2026-01-01', '2026-03-31', 72], ['2026-04-01', '2026-06-30', 88]] as $orden => [$inicio, $fin, $nota]) {
+            foreach ([['2026-01-01', '2026-03-31', 3.7], ['2026-04-01', '2026-06-30', 4.4]] as $orden => [$inicio, $fin, $nota]) {
                 $id = $this->evaluacion($periodoRl1, 22, $evaluador, 'PARCIAL', 'CALIFICADA', 'PARCIALES PROMEDIABLES ' . ($orden + 1), $nota, true, $orden === 0 ? 90 : 91);
                 $this->firmasCompletas($id, 22, $evaluador);
                 $this->compromisoYEvidencia($id, 22, $nota);
@@ -96,9 +97,9 @@ class PruebasCoberturaSemanas1a9Seeder extends Seeder
             }
 
             // Semana 6 y 8: traslado bloqueado para consulta y delegación activa visible en la evaluación.
-            $traslado = $this->evaluacion($periodoAg2, 23, $evaluador, 'PARCIAL', 'CALIFICADA', 'TRASLADO BLOQUEADO', 70, true, 90, true);
+            $traslado = $this->evaluacion($periodoAg2, 23, $evaluador, 'PARCIAL', 'CALIFICADA', 'TRASLADO BLOQUEADO', 3.5, true, 90, true);
             $this->firmasCompletas($traslado, 23, $evaluador);
-            $this->compromisoYEvidencia($traslado, 23, 70);
+            $this->compromisoYEvidencia($traslado, 23, 3.5);
             DB::table('traslado')->insert([
                 'id_vinc_funcionario' => 23, 'id_vinc_evaluador_origen' => $evaluador, 'id_vinc_evaluador_nuevo' => $delegado,
                 'area_origen' => 'VICERRECTORIA DE PROYECCION SOCIAL', 'cargo_origen' => 'AUXILIAR ADMINISTRATIVO',
@@ -138,20 +139,15 @@ class PruebasCoberturaSemanas1a9Seeder extends Seeder
         ]);
     }
 
-    private function firmasCompletas(int $evaluacion, int $evaluado, int $evaluador, bool $renuencia = false): void
+    private function firmasCompletas(int $evaluacion, int $evaluado, int $evaluador): void
     {
-        foreach ([['CONCERTACION_EVALUADO', $evaluado, 0], ['CONCERTACION_EVALUADOR', $evaluador, 0], ['NOTIFICACION_EVALUADO', $evaluado, $renuencia ? 1 : 0]] as [$tipo, $firmante, $esRenuencia]) {
-            $idFirma = DB::table('firma')->insertGetId([
+        // La notificación de la calificación se firma siempre, sin renuencia:
+        // la constancia de notificación es lo que habilita recursos y plan.
+        foreach ([['CONCERTACION_EVALUADO', $evaluado], ['CONCERTACION_EVALUADOR', $evaluador], ['NOTIFICACION_EVALUADO', $evaluado]] as [$tipo, $firmante]) {
+            DB::table('firma')->insert([
                 'id_evaluacion' => $evaluacion, 'tipo_firma' => $tipo, 'id_vinc_firmante' => $firmante,
-                'fecha_firma' => now(), 'renuencia' => $esRenuencia,
-                'testigo_nombre' => $esRenuencia ? 'Testigo Cobertura' : null,
-                'testigo_documento' => $esRenuencia ? 'Profesional universitario' : null,
-                'observacion_renuencia' => $esRenuencia ? 'PRUEBA COBERTURA: renuencia registrada con soporte.' : null,
+                'fecha_firma' => now(),
             ]);
-            if ($esRenuencia) {
-                DB::table('testigo_renuencia')->insert(['id_firma' => $idFirma, 'nombre_testigo' => 'Testigo Cobertura', 'cargo_testigo' => 'Profesional universitario']);
-                DB::table('renuencia_evidencia')->insert(['id_firma' => $idFirma, 'descripcion' => 'Acta de renuencia de prueba', 'url' => 'https://unitropico.edu.co/acta-prueba-renuencia.pdf']);
-            }
         }
     }
 

@@ -27,29 +27,35 @@ class PruebasRealesSemana9Seeder extends Seeder
 
             // Funcionarios existentes: Javier Achagua (RL), Alda Caro (AG/ejes),
             // Claudia Aguirre (plan/recurso), Astrid Barrera (extratiempo) y Darwin Calderón (parcial).
+            // Las notas de prueba respetan la escala institucional vigente
+            // (1.0 a 5.0) y sus cuatro bandas:
+            //   1.0 a 3.4 No satisfactorio | 3.5 a 4.0 Susceptible a plan
+            //   4.1 a 4.5 Bueno             | 4.6 a 5.0 Sobresaliente
             $evRl = $this->evaluacion($periodoRl, 1, $evaluador, 'SEMESTRE_2', 1, 'EN_PROCESO', 'PRUEBA S9: RL - concertación pendiente');
-            $evAg = $this->evaluacion($periodoAg, 25, $evaluador, 'SEMESTRE_2', 5, 'CALIFICADA', 'PRUEBA S9: AG con ejes misionales', 92.50, 'SOBRESALIENTE');
-            $evPlan = $this->evaluacion($periodoAg, 3, $evaluador, 'SEMESTRE_2', 5, 'CALIFICADA', 'PRUEBA S9: recurso y plan de mejoramiento', 65.00, 'APROBADO_MEJORA');
+            $evAg = $this->evaluacion($periodoAg, 25, $evaluador, 'SEMESTRE_2', 5, 'CALIFICADA', 'PRUEBA S9: AG con ejes misionales', 4.7, 'SOBRESALIENTE');
+            $evPlan = $this->evaluacion($periodoAg, 3, $evaluador, 'SEMESTRE_2', 5, 'CALIFICADA', 'PRUEBA S9: recurso y plan de mejoramiento', 3.8, 'APROBADO_MEJORA');
             $evExtra = $this->evaluacion($periodoAg, 10, $evaluador, 'SEMESTRE_2', 1, 'EN_PROCESO', 'PRUEBA S9: concertación extratiempo');
-            $evParcial = $this->evaluacion($periodoAg, 19, $evaluador, 'PARCIAL', 5, 'CALIFICADA', 'PRUEBA S9: traslado y prorrateo', 78.00, 'BUENO', true);
+            $evParcial = $this->evaluacion($periodoAg, 19, $evaluador, 'PARCIAL', 5, 'CALIFICADA', 'PRUEBA S9: traslado y prorrateo', 4.3, 'BUENO', true);
 
             $this->compromisos($evRl, 80, null);
             $this->competencias($evRl, null);
-            $this->compromisos($evAg, 50, 93);
-            $this->competencias($evAg, 93);
-            $this->compromisos($evPlan, 80, 65);
-            $this->competencias($evPlan, 65);
+            $this->compromisos($evAg, 50, 4.7);
+            $this->competencias($evAg, 4.7);
+            $this->compromisos($evPlan, 80, 3.8);
+            $this->competencias($evPlan, 3.8);
             $this->compromisos($evExtra, 80, null);
             $this->competencias($evExtra, null);
-            $this->compromisos($evParcial, 80, 78);
-            $this->competencias($evParcial, 78);
+            $this->compromisos($evParcial, 80, 4.3);
+            $this->competencias($evParcial, 4.3);
 
-            DB::table('evaluacion')->where('id_evaluacion', $evAg)->update(['nota_compromisos' => 57.50, 'nota_competencias' => 15.00, 'nota_ejes_misionales' => 20.00, 'concertacion_firmada' => 1]);
-            DB::table('evaluacion')->where('id_evaluacion', $evPlan)->update(['nota_compromisos' => 45.00, 'nota_competencias' => 20.00, 'nota_ejes_misionales' => 0, 'concertacion_firmada' => 1]);
-            DB::table('evaluacion')->where('id_evaluacion', $evParcial)->update(['dias_laborados' => 61, 'calificacion_parcial' => 31.20, 'nota_compromisos' => 62.00, 'nota_competencias' => 16.00, 'concertacion_firmada' => 1]);
+            // Los componentes quedan ya ponderados, así que deben sumar la nota final
+            // de la evaluación en la escala 1.0 a 5.0.
+            DB::table('evaluacion')->where('id_evaluacion', $evAg)->update(['nota_compromisos' => 2.92, 'nota_competencias' => 0.76, 'nota_ejes_misionales' => 1.02, 'concertacion_firmada' => 1]);
+            DB::table('evaluacion')->where('id_evaluacion', $evPlan)->update(['nota_compromisos' => 2.63, 'nota_competencias' => 1.17, 'nota_ejes_misionales' => 0, 'concertacion_firmada' => 1]);
+            DB::table('evaluacion')->where('id_evaluacion', $evParcial)->update(['dias_laborados' => 61, 'calificacion_parcial' => 2.91, 'nota_compromisos' => 3.42, 'nota_competencias' => 0.88, 'concertacion_firmada' => 1]);
 
             DB::table('evaluacion_eje')->insert(['id_evaluacion' => $evAg, 'investigacion' => 1, 'proyeccion_social' => 1]);
-            foreach ([['DOCENCIA', 95], ['INVESTIGACION', 90], ['PROYECCION_SOCIAL', 92]] as [$eje, $nota]) {
+            foreach ([['DOCENCIA', 4.8], ['INVESTIGACION', 4.5], ['PROYECCION_SOCIAL', 4.7]] as [$eje, $nota]) {
                 DB::table('eje_misional_calificacion')->insert(['id_evaluacion' => $evAg, 'eje' => $eje, 'calificacion' => $nota, 'observaciones' => 'Prueba S9: nota cargada por instancia externa.', 'id_usuario_ingresador' => 59, 'origen' => 'INSTANCIA_EXTERNA']);
             }
             $compromiso = DB::table('compromiso')->where('id_evaluacion', $evAg)->value('id_compromiso');
@@ -57,7 +63,7 @@ class PruebasRealesSemana9Seeder extends Seeder
 
             foreach ([[$evAg, 25], [$evPlan, 3], [$evParcial, 19]] as [$id, $evaluado]) {
                 foreach ([['CONCERTACION_EVALUADO', $evaluado], ['CONCERTACION_EVALUADOR', $evaluador], ['NOTIFICACION_EVALUADO', $evaluado]] as [$tipo, $firmante]) {
-                    DB::table('firma')->insert(['id_evaluacion' => $id, 'tipo_firma' => $tipo, 'id_vinc_firmante' => $firmante, 'fecha_firma' => now(), 'renuencia' => 0]);
+                    DB::table('firma')->insert(['id_evaluacion' => $id, 'tipo_firma' => $tipo, 'id_vinc_firmante' => $firmante, 'fecha_firma' => now()]);
                 }
             }
 
@@ -85,7 +91,7 @@ class PruebasRealesSemana9Seeder extends Seeder
         return DB::table('evaluacion')->insertGetId(['id_periodo' => $periodo, 'id_vinc_evaluado' => $evaluado, 'id_vinc_evaluador' => $evaluador, 'tipo_evaluacion' => $tipo, 'fase_actual' => $fase, 'concertacion_firmada' => 0, 'estado' => $estado, 'calificacion_final' => $nota, 'categoria_final' => $categoria, 'es_parcial' => $parcial, 'dias_laborados' => $parcial ? 61 : null, 'referencia' => $referencia]);
     }
 
-    private function compromisos(int $evaluacion, int $total, ?int $calificacion): void
+    private function compromisos(int $evaluacion, int $total, ?float $calificacion): void
     {
         $pesos = $total === 50 ? [8, 7, 7, 7, 7, 7, 7] : [12, 12, 12, 11, 11, 11, 11];
         foreach ($pesos as $orden => $peso) {
@@ -94,7 +100,7 @@ class PruebasRealesSemana9Seeder extends Seeder
         }
     }
 
-    private function competencias(int $evaluacion, ?int $calificacion): void
+    private function competencias(int $evaluacion, ?float $calificacion): void
     {
         $contexto = DB::table('evaluacion as e')
             ->join('periodo as p', 'p.id_periodo', '=', 'e.id_periodo')
