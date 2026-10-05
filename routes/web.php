@@ -1896,9 +1896,7 @@ Route::get('/evaluaciones/{id}/compromisos', function (int $id) {
         'estado' => [
             'evaluado_firmado' => (bool) $evaluadoFirmado,
             'evaluador_firmado' => (bool) $evaluadorFirmado,
-            'renuencia_evaluador' => false,
-            'renuencia_evaluado' => false,
-            'testigos' => getTestigosConcertacion($id),
+            'notificacion_firmada' => notificacionCalificacionFirmada($id),
             'congelada' => (bool) $evaluacion->concertacion_firmada,
             'traslado' => (bool) $evaluacion->es_traslado,
             'calificada' => $evaluacion->estado === 'CALIFICADA',
@@ -2637,7 +2635,6 @@ Route::post('/evaluaciones/{id}/firmar', function (Request $request, int $id) {
         [
             'id_vinc_firmante' => $idVincFirmante,
             'fecha_firma' => date('Y-m-d H:i:s'),
-            'renuencia' => 0
         ]
     );
 
@@ -3506,26 +3503,47 @@ Route::post('/evaluaciones/{id}/calificar-ejes', function (Request $request, int
 
 
 // ============================================================================
-// S6 — RECURSOS EN LÍNEA (Reposición / Apelación), RENUENCIA CON TESTIGOS y
-//      PLAN DE MEJORAMIENTO CONDICIONADO
+// S12 — NOTIFICACIÓN DE LA CALIFICACIÓN (firma de trazabilidad, sin renuencia)
 // ============================================================================
 
 /**
- * Testigos de la renuencia de las firmas de concertación de una evaluación.
- * Devuelve una lista de {tipo_firma, nombre_testigo, cargo_testigo}.
+ * Registro de la firma de notificación de la calificación de una evaluación.
+ * Devuelve la fila {id_firma, fecha_firma} o null si el evaluado aún no firma.
  */
-if (!function_exists('getTestigosConcertacion')) {
-    function getTestigosConcertacion(int $idEvaluacion) {
-        return DB::table('testigo_renuencia as t')
-            ->join('firma as f', 'f.id_firma', '=', 't.id_firma')
-            ->where('f.id_evaluacion', $idEvaluacion)
-            ->whereIn('f.tipo_firma', ['CONCERTACION_EVALUADOR', 'CONCERTACION_EVALUADO'])
-            ->select('f.tipo_firma', 't.nombre_testigo', 't.cargo_testigo')
-            ->orderBy('f.tipo_firma')
-            ->orderBy('t.id_testigo')
-            ->get();
+if (!function_exists('getNotificacionCalificacion')) {
+    function getNotificacionCalificacion(int $idEvaluacion) {
+        return DB::table('firma')
+            ->where('id_evaluacion', $idEvaluacion)
+            ->where('tipo_firma', 'NOTIFICACION_EVALUADO')
+            ->first();
     }
 }
+
+/**
+ * ¿El evaluado ya firmó la notificación de la calificación? La firma es la
+ * constancia de que fue notificado, esté o no de acuerdo con la nota. No hay
+ * renuencia: si no está de acuerdo, radica un recurso de reposición o apelación.
+ */
+if (!function_exists('notificacionCalificacionFirmada')) {
+    function notificacionCalificacionFirmada(int $idEvaluacion): bool {
+        return getNotificacionCalificacion($idEvaluacion) !== null;
+    }
+}
+
+/**
+ * Mensaje de bloqueo común para recursos y plan de mejoramiento cuando falta la
+ * firma de notificación de la calificación.
+ */
+if (!function_exists('mensajeNotificacionPendiente')) {
+    function mensajeNotificacionPendiente(): string {
+        return 'Primero debes firmar la notificación de la calificación para dejar constancia de que fuiste notificado.';
+    }
+}
+
+// ============================================================================
+// S6 — RECURSOS EN LÍNEA (Reposición / Apelación) y
+//      PLAN DE MEJORAMIENTO CONDICIONADO
+// ============================================================================
 
 /**
  * Devuelve los recursos de una evaluación con nombres de receptor/solicitante.
@@ -3734,8 +3752,45 @@ Route::get('/evaluaciones/{id}/recursos', function (int $id) {
         'categoria_final' => $evaluacion->categoria_final,
         'calificacion_final' => $evaluacion->calificacion_final,
         'traslado' => (bool) $evaluacion->es_traslado,
+        'notificacion_firmada' => notificacionCalificacionFirmada($id),
     ]);
 })->name('evaluaciones.recursos');
+
+
+// --- POST: Firmar la notificación de la calificación (solo el evaluado) ---
+// La firma es obligatoria y no admite renuencia: el evaluado firma esté o no
+// de acuerdo con la nota, para dejar trazabilidad de que fue notificado. Si no
+// está de acuerdo, el trámite es el recurso de reposición o apelación con sus
+// soportes, que se habilita después de esta firma.
+Route::post('/evaluaciones/{id}/firmar-notificacion', function (int $id) {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'evaluado', 403);
+
+    $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
+    abort_unless($evaluacion, 404);
+    abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
+    abort_unless($evaluacion->estado === 'CALIFICADA', 422, 'La notificación de la calificación se firma cuando la evaluación ya fue calificada.');
+
+    $auth = session('usuario_autenticado');
+    $esEvaluado = DB::table('vinculacion')
+        ->where('id_vinculacion', $evaluacion->id_vinc_evaluado)
+        ->where('id_funcionario', $auth['id_funcionario'] ?? null)
+        ->exists();
+
+    abort_unless($esEvaluado, 403);
+
+    DB::table('firma')->updateOrInsert(
+        ['id_evaluacion' => $id, 'tipo_firma' => 'NOTIFICACION_EVALUADO'],
+        [
+            'id_vinc_firmante' => (int) $evaluacion->id_vinc_evaluado,
+            'fecha_firma' => date('Y-m-d H:i:s'),
+        ]
+    );
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Notificación de la calificación firmada. Queda registrada tu constancia de que fuiste notificado.',
+    ]);
+})->name('evaluaciones.firmar-notificacion');
 
 
 // --- POST: Radicar un recurso (solo el evaluado, evaluación calificada) ---
@@ -3746,6 +3801,9 @@ Route::post('/evaluaciones/{id}/recursos', function (Request $request, int $id) 
     abort_unless($evaluacion, 404);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
     abort_unless($evaluacion->estado === 'CALIFICADA', 422, 'Solo puedes radicar un recurso cuando la evaluación haya sido calificada y calculada.');
+    // La firma de la notificación es previa y obligatoria: es la constancia de
+    // que el funcionario supo su nota antes de interponer el recurso.
+    abort_unless(notificacionCalificacionFirmada($id), 422, mensajeNotificacionPendiente());
 
     $auth = session('usuario_autenticado');
     $vinculacionSolicitante = DB::table('vinculacion')
@@ -4024,7 +4082,8 @@ Route::get('/evaluaciones/{id}/plan-mejoramiento', function (int $id) {
     $requiere = evaluacionRequierePlanMejoramiento($evaluacion);
     $habilitado = $requiere
         && (bool) $evaluacion->concertacion_firmada
-        && $evaluacion->estado === 'CALIFICADA';
+        && $evaluacion->estado === 'CALIFICADA'
+        && notificacionCalificacionFirmada($id);
 
     return response()->json([
         'plan' => $plan,
@@ -4049,6 +4108,7 @@ Route::post('/evaluaciones/{id}/plan-mejoramiento', function (Request $request, 
     abort_unless(evaluacionRequierePlanMejoramiento($evaluacion), 422, 'Esta evaluación no requiere plan de mejoramiento según la calificación obtenida.');
     abort_unless($evaluacion->concertacion_firmada, 422, 'El evaluado debe firmar la concertación antes de habilitar el plan de mejoramiento.');
     abort_unless($evaluacion->estado === 'CALIFICADA', 422, 'El plan de mejoramiento se habilita cuando la evaluación haya sido calificada.');
+    abort_unless(notificacionCalificacionFirmada($id), 422, mensajeNotificacionPendiente());
 
     $auth = session('usuario_autenticado');
     $puedeEditar = DB::table('vinculacion')
@@ -4101,6 +4161,7 @@ Route::post('/plan-mejoramiento/{id}/firmar', function (Request $request, int $i
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
     abort_unless($evaluacion->concertacion_firmada, 422, 'El evaluado debe firmar la concertación antes de firmar el plan de mejoramiento.');
     abort_unless($evaluacion->estado === 'CALIFICADA', 422, 'El plan de mejoramiento se habilita cuando la evaluación haya sido calificada.');
+    abort_unless(notificacionCalificacionFirmada((int) $evaluacion->id_evaluacion), 422, mensajeNotificacionPendiente());
 
     $auth = session('usuario_autenticado');
     $rolActivo = $auth['rol_activo'] ?? null;
@@ -4297,9 +4358,12 @@ if (!function_exists('prepararInformeSemestral')) {
             });
 
         $calculo = calcularNotaEvaluacion($idEvaluacion);
+        $notificacion = getNotificacionCalificacion($idEvaluacion);
 
         return [
             'tipo_nombre' => $evaluacion->tipo_evaluacion,
+            'notificacion_firmada' => $notificacion !== null,
+            'fecha_notificacion' => $notificacion->fecha_firma ?? null,
             'sistema' => $sistema,
             'periodo' => $periodo,
             'evaluador' => $evaluador,
@@ -4386,8 +4450,24 @@ if (!function_exists('prepararInformeAnual')) {
 
         $categoria = $notaAnual !== null ? nivelEscalaCalificacion($notaAnual) : '';
 
+        // Trazabilidad de la notificación: se consolida la de cada semestre,
+        // de modo que el informe anual deje constancia de en cuál de los dos
+        // semestres el funcionario firmó su nota.
+        $notificaciones = [];
+        foreach ([['A', $sem1Data], ['B', $sem2Data]] as [$sem, $data]) {
+            $idEvalSem = $data['id_evaluacion'] ?? null;
+            $firma = $idEvalSem ? getNotificacionCalificacion((int) $idEvalSem) : null;
+            if ($firma) {
+                $notificaciones[] = [
+                    'semestre' => $sem,
+                    'fecha_firma' => $firma->fecha_firma,
+                ];
+            }
+        }
+
         return [
             'sistema' => $sistema,
+            'notificaciones' => $notificaciones,
             'periodo' => $periodo,
             'evaluador' => $evaluador,
             'evaluado' => $evaluado,

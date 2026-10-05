@@ -19,11 +19,6 @@ class Firma extends Model
         'tipo_firma',
         'id_vinc_firmante',
         'fecha_firma',
-        'renuencia',
-    ];
-
-    protected $casts = [
-        'renuencia' => 'boolean',
     ];
 
     public function evaluacion(): BelongsTo

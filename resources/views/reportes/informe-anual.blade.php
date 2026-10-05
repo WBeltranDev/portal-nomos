@@ -120,6 +120,35 @@
     </tr>
 </table>
 
+{{-- ============ NOTIFICACIÓN DE LA CALIFICACIÓN ============ --}}
+<table>
+    <tr><th colspan="2" class="cab">Notificación de la Calificación</th></tr>
+    <tr>
+        <td class="info-cell" style="width:50%;"><b>Semestre A — Constancia de notificación</b></td>
+        <td class="info-cell">
+            @php $notifA = collect($info['notificaciones'])->firstWhere('semestre', 'A'); @endphp
+            @if ($notifA)
+                Firmada el <span class="resaltado">{{ \Carbon\Carbon::parse($notifA['fecha_firma'])->format('d/m/Y') }}</span>
+                a las {{ \Carbon\Carbon::parse($notifA['fecha_firma'])->format('H:i') }}
+            @else
+                Pendiente de firma del evaluado
+            @endif
+        </td>
+    </tr>
+    <tr>
+        <td class="info-cell"><b>Semestre B — Constancia de notificación</b></td>
+        <td class="info-cell">
+            @php $notifB = collect($info['notificaciones'])->firstWhere('semestre', 'B'); @endphp
+            @if ($notifB)
+                Firmada el <span class="resaltado">{{ \Carbon\Carbon::parse($notifB['fecha_firma'])->format('d/m/Y') }}</span>
+                a las {{ \Carbon\Carbon::parse($notifB['fecha_firma'])->format('H:i') }}
+            @else
+                Pendiente de firma del evaluado
+            @endif
+        </td>
+    </tr>
+</table>
+
 <div style="margin:8px 0;"><b>Capacitaciones sugeridas:</b> {{ $info['capacitaciones'] ?: 'Ninguna registrada' }}</div>
 
 {{-- ============ FIRMAS ============ --}}

@@ -387,6 +387,7 @@ class DashboardController extends Controller
                     'ev.categoria_final',
                     'ev.fase_actual',
                     'ev.concertacion_firmada',
+                    'f_no.fecha_firma as fecha_notificacion',
                     'p.anio',
                     'p.semestre',
                     'p.sistema',
@@ -587,6 +588,10 @@ class DashboardController extends Controller
                     $join->on('f_er.id_evaluacion', '=', 'ev.id_evaluacion')
                         ->where('f_er.tipo_firma', '=', 'CONCERTACION_EVALUADOR');
                 })
+                ->leftJoin('firma as f_no', function ($join) {
+                    $join->on('f_no.id_evaluacion', '=', 'ev.id_evaluacion')
+                        ->where('f_no.tipo_firma', '=', 'NOTIFICACION_EVALUADO');
+                })
                 ->leftJoin('vinculacion as vs', 'vs.id_vinculacion', '=', 'ev.id_vinc_suplente')
                 ->leftJoin('funcionario as fs', 'fs.id_funcionario', '=', 'vs.id_funcionario')
                 ->select(
@@ -617,6 +622,8 @@ class DashboardController extends Controller
                     've.aplica_eje_misional',
                     DB::raw('IF(f_ev.id_firma IS NOT NULL, 1, 0) as evaluado_firmado'),
                     DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado'),
+                    DB::raw('IF(f_no.id_firma IS NOT NULL, 1, 0) as notificacion_firmada'),
+                    DB::raw('f_no.fecha_firma as fecha_notificacion'),
                     DB::raw('(SELECT COUNT(*) FROM concertacion_extratiempo ce WHERE ce.id_evaluacion = ev.id_evaluacion AND ce.activo = 1) as tiene_extratiempo')
                 )
                 ->orderByDesc('ev.id_evaluacion')

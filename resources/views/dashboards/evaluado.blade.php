@@ -42,6 +42,19 @@
                                         @if(isset($ev->tiene_extratiempo) && $ev->tiene_extratiempo)
                                             <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200">Extratiempo</span>
                                         @endif
+                                        @if($ev->estado === 'CALIFICADA' && !$ev->es_traslado)
+                                            @if($ev->notificacion_firmada)
+                                                <span class="inline-flex items-center gap-1 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-[#EAF2EF] text-[#00594E]" title="Firmaste la notificación de tu calificación">
+                                                    <span class="material-symbols-outlined text-[13px]">verified</span>
+                                                    Notificada
+                                                </span>
+                                            @else
+                                                <span class="inline-flex items-center gap-1 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200" title="Debes firmar la notificación de tu calificación">
+                                                    <span class="material-symbols-outlined text-[13px]">notification_important</span>
+                                                    Pendiente de firma
+                                                </span>
+                                            @endif
+                                        @endif
                                     </div>
                                     @if($ev->es_traslado)
                                         <p class="mt-1 text-[10px] font-semibold text-slate-600">Traslado registrado: esta evaluación es solo de consulta.</p>
@@ -137,6 +150,32 @@
 
                             <div id="resultado-calculo-evaluado" class="hidden mt-6 space-y-3"></div>
 
+                            <!-- Aviso: la notificación de la calificación se firma en la pestaña de Compromisos -->
+                            <div id="aviso-notificacion-evaluado" class="hidden mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] font-semibold text-amber-700 flex items-start gap-2">
+                                <span class="material-symbols-outlined text-base shrink-0">notification_important</span>
+                                <span>Tu calificación ya fue calculada. Aún no has firmado la notificación de la nota: hazlo en la pestaña <b>Compromisos</b> para dejar constancia de que fuiste notificado. Si no estás de acuerdo, luego podrás radicar un recurso con sus soportes.</span>
+                            </div>
+
+                            <!-- Notificación de la calificación (firma de trazabilidad, sin renuencia) -->
+                            <div id="bloque-notificacion-evaluado" class="hidden mt-6 rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+                                <div class="flex flex-wrap items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                            <span class="material-symbols-outlined text-base">notification_important</span>
+                                            Notificación de la calificación
+                                        </h4>
+                                        <p id="notificacion-texto-evaluado" class="text-[11px] text-slate-500 mt-1"></p>
+                                    </div>
+                                    <div class="flex items-center gap-2 shrink-0">
+                                        <span id="notificacion-estado-evaluado" class="text-[10px] font-bold uppercase px-2.5 py-1 rounded-full"></span>
+                                        <button type="button" id="btn-firmar-notificacion-evaluado" onclick="firmarNotificacionEvaluado()" class="hidden bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">
+                                            Firmar notificación
+                                        </button>
+                                    </div>
+                                </div>
+                                <div id="notificacion-mensaje-evaluado" class="hidden text-xs font-semibold"></div>
+                            </div>
+
                             <div id="firma-evaluado-seccion" class="mt-6 pt-4 border-t border-slate-100 space-y-3">
                                 <div id="seccion-firmar-evaluado" class="flex items-center justify-between gap-4">
                                     <div class="text-xs text-slate-500 leading-tight">Podrás firmar cuando el evaluador haya firmado la concertación.</div>
@@ -214,7 +253,7 @@
                                     </h4>
                                     <span id="recursos-contador-evaluado" class="text-[10px] font-bold rounded-full px-2.5 py-1 bg-slate-100 text-slate-500">0</span>
                                 </div>
-                                <p class="text-[10px] text-slate-400 font-semibold">Reposición: revisa el mismo evaluador. Apelación: conoce el superior jerárquico del evaluador.</p>
+                                <p class="text-[10px] text-slate-400 font-semibold">Disponibles para cualquier categoría de calificación, una vez firmada la notificación. Reposición: revisa el mismo evaluador. Apelación: conoce el superior jerárquico del evaluador. Ambos exigen soportes adjuntos.</p>
                                 <form id="form-recurso-evaluado" onsubmit="radicarRecurso(event)" class="grid gap-3 rounded-2xl border border-slate-100 bg-slate-50/50 p-4">
                                     <div class="grid sm:grid-cols-2 gap-3">
                                         <div>

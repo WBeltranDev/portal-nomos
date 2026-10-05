@@ -102,11 +102,10 @@ export function abrirConcertacionEvaluado(card, ev) {
     if (tabBtnEjes) tabBtnEjes.classList.add('hidden');
 
     const tabBtnRecursos = document.getElementById('tabbtn-evaluado-recursos');
+    // Los recursos quedan habilitados para cualquier categoría de calificación,
+    // pero solo después de firmar la notificación de la nota.
     if (tabBtnRecursos) {
-        const esNoSatisfactorio = ev.categoria_final === 'NO_SATISFACTORIO'
-            || (Number.isFinite(Number(ev.calificacion_final)) && Number(ev.calificacion_final) <= 70);
-        const puedeRecursos = ev.estado === 'CALIFICADA' && esNoSatisfactorio;
-        tabBtnRecursos.classList.toggle('hidden', !puedeRecursos);
+        tabBtnRecursos.classList.toggle('hidden', !(ev.estado === 'CALIFICADA' && ev.notificacion_firmada));
     }
 
     const tabBtnCompromisos = document.getElementById('tabbtn-evaluado-compromisos');
@@ -130,9 +129,11 @@ export function abrirConcertacionEvaluado(card, ev) {
 
     cargarCompetenciasEvaluado();
     cargarEjesEvaluado(ev);
-    cargarRecursosEvaluado(ev);
-    cargarPlanMejoramientoEvaluado(ev);
     cargarResultadoEvaluado(ev);
+    cargarNotificacionEvaluado(ev).finally(() => {
+        cargarRecursosEvaluado(ev);
+        cargarPlanMejoramientoEvaluado(ev);
+    });
 
     document.querySelectorAll('.evaluacion-card').forEach(el => el.classList.remove('ring-2', 'ring-[#00594E]'));
     if (card) card.classList.add('ring-2', 'ring-[#00594E]');
@@ -180,6 +181,104 @@ export function cargarResultadoEvaluado(ev) {
         .then(calculo => renderResultado(calculo, 'resultado-calculo-evaluado', 'evaluado', ev.id_evaluacion))
         .catch(() => {
             resultado.innerHTML = '<div class="text-xs text-red-500">Error al cargar el resultado.</div>';
+        });
+}
+
+/**
+ * Bloque de notificación de la calificación.
+ *
+ * El evaluado firma siempre, esté o no de acuerdo con la nota: no hay
+ * renuencia. La firma deja trazabilidad de que fue notificado y es requisito
+ * para radicar recursos o activar el plan de mejoramiento. Si no está de
+ * acuerdo, la vía es el recurso de reposición o apelación con sus soportes.
+ */
+export function cargarNotificacionEvaluado(ev) {
+    const bloque = document.getElementById('bloque-notificacion-evaluado');
+    if (!bloque) return Promise.resolve(null);
+
+    const aviso = document.getElementById('aviso-notificacion-evaluado');
+
+    if (!ev || ev.estado !== 'CALIFICADA' || ev.es_traslado) {
+        bloque.classList.add('hidden');
+        if (aviso) aviso.classList.add('hidden');
+        return Promise.resolve(null);
+    }
+    bloque.classList.remove('hidden');
+
+    return fetchJson(`/evaluaciones/${ev.id_evaluacion}/recursos`)
+        .then(res => res.json())
+        .then(payload => {
+            const firmada = !!payload.notificacion_firmada;
+            ev.notificacion_firmada = firmada;
+
+            if (aviso) {
+                aviso.classList.toggle('hidden', firmada);
+                if (firmada) aviso.classList.remove('flex');
+                else aviso.classList.add('flex');
+            }
+
+            const badge = document.getElementById('notificacion-estado-evaluado');
+            if (badge) {
+                badge.className = `text-[10px] font-bold uppercase px-2.5 py-1 rounded-full ${firmada ? 'bg-[#EAF2EF] text-[#00594E]' : 'bg-amber-50 text-amber-700'}`;
+                badge.innerText = firmada ? 'Notificada' : 'Pendiente de firma';
+            }
+
+            const texto = document.getElementById('notificacion-texto-evaluado');
+            if (texto) {
+                texto.innerText = firmada
+                    ? 'Firmaste la notificación de tu calificación. Si no estás de acuerdo con la nota, puedes radicar un recurso de reposición o apelación con sus soportes.'
+                    : 'Tu nota ya fue calculada. Debes firmar la notificación de la calificación para dejar constancia de que fuiste notificado. Puedes estar de acuerdo o no: si no lo estás, luego radicarás un recurso de reposición o apelación con sus soportes.';
+            }
+
+            const btn = document.getElementById('btn-firmar-notificacion-evaluado');
+            if (btn) btn.classList.toggle('hidden', firmada);
+
+            return firmada;
+        })
+        .catch(() => {
+            bloque.classList.add('hidden');
+            if (aviso) aviso.classList.add('hidden');
+            return null;
+        });
+}
+
+export function firmarNotificacionEvaluado() {
+    if (!selectedEvaluacionId) return;
+    if (!confirm('¿Confirmas firmar la notificación de tu calificación?\n\nEsta firma deja constancia de que fuiste notificado de la nota, sin importar si estás de acuerdo o no. Si no estás de acuerdo, podrás radicar un recurso de reposición o apelación con sus soportes.')) return;
+
+    const mensaje = document.getElementById('notificacion-mensaje-evaluado');
+    const btn = document.getElementById('btn-firmar-notificacion-evaluado');
+    if (btn) btn.disabled = true;
+
+    fetchJson(`/evaluaciones/${selectedEvaluacionId}/firmar-notificacion`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+    })
+        .then(async res => {
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo firmar la notificación.'));
+            if (mensaje) {
+                mensaje.classList.remove('hidden');
+                mensaje.className = 'text-xs font-semibold text-[#00594E]';
+                mensaje.innerText = data.message || 'Notificación firmada.';
+            }
+            return cargarNotificacionEvaluado(selectedEvaluacionData);
+        })
+        .then(() => {
+            if (!selectedEvaluacionData) return;
+            cargarRecursosEvaluado(selectedEvaluacionData);
+            cargarPlanMejoramientoEvaluado(selectedEvaluacionData);
+        })
+        .catch(error => {
+            if (mensaje) {
+                mensaje.classList.remove('hidden');
+                mensaje.className = 'text-xs font-semibold text-red-600';
+                mensaje.innerText = error.message;
+            }
+        })
+        .finally(() => {
+            if (btn) btn.disabled = false;
         });
 }
 
@@ -408,20 +507,24 @@ export function cargarRecursosEvaluado(ev) {
         .then(payload => {
             const recursos = payload.recursos || [];
             const estado = payload.estado;
-            const categoria = payload.categoria_final;
-            const notaFinal = Number(payload.calificacion_final);
-            const categoriaNoSatisfactoria = categoria === 'NO_SATISFACTORIO'
-                || (Number.isFinite(notaFinal) && notaFinal <= 70);
-            const esNoSatisfactorio = estado === 'CALIFICADA'
-                && categoriaNoSatisfactoria;
             const tabBtnRecursos = document.getElementById('tabbtn-evaluado-recursos');
-            if (tabBtnRecursos) tabBtnRecursos.classList.toggle('hidden', !esNoSatisfactorio);
-            if (!esNoSatisfactorio) {
+            // Los recursos son posibles para cualquier categoría de calificación;
+            // el bloqueo real (falta de firma de la notificación) lo aplica el
+            // servidor, y aquí solo se refleja para no mostrar el formulario.
+            const puedeRadicar = estado === 'CALIFICADA' && !!payload.notificacion_firmada;
+            if (tabBtnRecursos) tabBtnRecursos.classList.toggle('hidden', !puedeRadicar);
+            const form = document.getElementById('form-recurso-evaluado');
+            if (form) {
+                form.classList.toggle('hidden', !puedeRadicar);
+                const bloque = document.getElementById('recurso-evidencias-bloque-evaluado');
+                if (bloque) bloque.classList.toggle('hidden', !puedeRadicar);
+            }
+            if (!puedeRadicar) {
                 if (tabBtnRecursos && tabBtnRecursos.classList.contains('active')) cambiarTabEvaluado('compromisos');
                 return;
             }
+
             const tienePendiente = recursos.some(r => r.decision === 'PENDIENTE');
-            const form = document.getElementById('form-recurso-evaluado');
             if (form) form.classList.toggle('hidden', tienePendiente);
             const listaEvidencias = document.getElementById('recurso-evidencias-lista-evaluado');
             if (listaEvidencias && !tienePendiente && listaEvidencias.children.length === 0) {
@@ -713,6 +816,8 @@ window.radicarRecurso = radicarRecurso;
 window.agregarEvidenciaRecurso = agregarEvidenciaRecurso;
 window.eliminarEvidenciaRecurso = eliminarEvidenciaRecurso;
 window.firmarPlanMejoramiento = firmarPlanMejoramiento;
+window.cargarNotificacionEvaluado = cargarNotificacionEvaluado;
+window.firmarNotificacionEvaluado = firmarNotificacionEvaluado;
 window.guardarEvidenciaEvaluado = guardarEvidenciaEvaluado;
 window.confirmarEvidenciasEvaluado = confirmarEvidenciasEvaluado;
 window.firmarConcertacion = firmarConcertacion;

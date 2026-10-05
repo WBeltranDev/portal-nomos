@@ -256,6 +256,37 @@
     </tr>
 </table>
 
+{{-- ============ NOTIFICACIÓN DE LA CALIFICACIÓN ============ --}}
+<table>
+    <tr><th colspan="2" class="cab">Notificación de la Calificación</th></tr>
+    <tr>
+        <td class="info-cell" style="width:45%;"><b>Constancia de notificación</b></td>
+        <td class="info-cell">
+            @if ($info['notificacion_firmada'])
+                Firmada por el evaluado el
+                <span class="resaltado">{{ \Carbon\Carbon::parse($info['fecha_notificacion'])->format('d/m/Y') }}</span>
+                a las {{ \Carbon\Carbon::parse($info['fecha_notificacion'])->format('H:i') }}
+            @else
+                <span style="color:#b91c1c;">Pendiente de firma del evaluado</span>
+            @endif
+        </td>
+    </tr>
+    @if ($info['notificacion_firmada'])
+    <tr>
+        <td class="info-cell"><b>Recursos radicados</b></td>
+        <td class="info-cell">
+            @forelse ($info['recursos'] as $rec)
+                {{ $rec->tipo_recurso === 'REPOSICION' ? 'Reposición' : 'Apelación' }}
+                {{ $rec->numero_radicado ?? '' }}
+                (radicada el {{ \Carbon\Carbon::parse($rec->fecha_recurso)->format('d/m/Y') }}, {{ $rec->decision }})<br />
+            @empty
+                No se radicaron recursos.
+            @endforelse
+        </td>
+    </tr>
+    @endif
+</table>
+
 {{-- ============ PLAN DE MEJORAMIENTO ============ --}}
 @if ($info['requiere_plan'] && $info['plan'])
 <table>
