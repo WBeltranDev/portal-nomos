@@ -606,6 +606,7 @@
             'fecha_fin' => $p->fecha_fin,
         ])->values()),
         ponderacionesConfig: @js($ponderacionesConfig ?? []),
+        escalaCalificacion: @js($escalaCalificacion ?? []),
     };
 </script>
 @vite('resources/js/dashboards/evaluador.js')

@@ -43,8 +43,15 @@ if (!function_exists('escalaCalificacionConfig')) {
     function escalaCalificacionConfig(): array {
         return [
             'minimo' => 1.0, 'maximo' => 5.0, 'decimales' => 1, 'step' => '0.1',
+            // Las cuatro bandas son también las categorías finales. Las dos
+            // primeras exigen plan de mejoramiento: "No satisfactorio" es el peor
+            // resultado y "Susceptible a plan de mejora" lo dice explícitamente.
+            // Bueno y Sobresaliente no lo exigen. Antes este dato estaba
+            // contradictorio (la bandera decía false para No satisfactorio
+            // mientras el flujo sí exigía plan) y provocaba que una nota buena
+            // heredara el umbral numérico de la escala 0-100.
             'bandas' => [
-                ['desde'=>1.0,'hasta'=>3.4,'nivel'=>'NO_SATISFACTORIO','etiqueta'=>'No satisfactorio','aplica_plan_mejoramiento'=>false],
+                ['desde'=>1.0,'hasta'=>3.4,'nivel'=>'NO_SATISFACTORIO','etiqueta'=>'No satisfactorio','aplica_plan_mejoramiento'=>true],
                 ['desde'=>3.5,'hasta'=>4.0,'nivel'=>'APROBADO_MEJORA','etiqueta'=>'Susceptible a plan de mejora','aplica_plan_mejoramiento'=>true],
                 ['desde'=>4.1,'hasta'=>4.5,'nivel'=>'BUENO','etiqueta'=>'Bueno','aplica_plan_mejoramiento'=>false],
                 ['desde'=>4.6,'hasta'=>5.0,'nivel'=>'SOBRESALIENTE','etiqueta'=>'Sobresaliente','aplica_plan_mejoramiento'=>false],
@@ -73,13 +80,40 @@ if (!function_exists('nivelEscalaCalificacion')) {
     }
 }
 
+if (!function_exists('nivelEscalaAplicaPlanMejoramiento')) {
+    /**
+     * Indica si un nivel de la escala institucional exige plan de
+     * mejoramiento. Se deriva de la bandera `aplica_plan_mejoramiento` de las
+     * bandas configuradas, para que cambiar la escala no obligue a tocar
+     * umbrales numéricos escritos a mano.
+     */
+    function nivelEscalaAplicaPlanMejoramiento(string $nivel): bool {
+        foreach (escalaCalificacionConfig()['bandas'] as $banda) {
+            if ($banda['nivel'] === $nivel) {
+                return (bool) $banda['aplica_plan_mejoramiento'];
+            }
+        }
+        return false;
+    }
+}
+
+if (!function_exists('notaEscalaAplicaPlanMejoramiento')) {
+    /**
+     * ¿La nota, en la escala vigente, obliga a concertar plan de mejoramiento?
+     * Solo aplica a las bandas marcadas como tal en la configuración.
+     */
+    function notaEscalaAplicaPlanMejoramiento($valor): bool {
+        return nivelEscalaAplicaPlanMejoramiento(nivelEscalaCalificacion($valor));
+    }
+}
+
 if (!function_exists('escalaCalificacionCatalogo')) {
     function escalaCalificacionCatalogo(): array {
         $escala = escalaCalificacionConfig(); $dec = $escala['decimales'];
         $formato = fn(float $v) => number_format($v, $dec, '.', '');
         $rangos = [];
         foreach ($escala['bandas'] as $i => $banda) {
-            $rangos[] = ['rango'=>$formato($banda['despe']).' a '.$formato($banda['hasta']),'nivel'=>$banda['etiqueta'],'codigo'=>$i+1,'desde'=>$banda['desde'],'hasta'=>$banda['hasta'],'aplica_plan_mejoramiento'=>$banda['aplica_plan_mejoramiento']];
+            $rangos[] = ['rango'=>$formato($banda['desde']).' a '.$formato($banda['hasta']),'nivel'=>$banda['etiqueta'],'codigo'=>$i+1,'desde'=>$banda['desde'],'hasta'=>$banda['hasta'],'aplica_plan_mejoramiento'=>$banda['aplica_plan_mejoramiento']];
         }
         return ['descripcion'=>'Escala de calificación institucional de '.$formato($escala['minimo']).' a '.$formato($escala['maximo']).' con '.($escala['decimales']===1?'un (1) decimal':$escala['decimales'].' decimales').', para compromisos, competencias y ejes misionales de los dos sistemas','minimo'=>$escala['minimo'],'maximo'=>$escala['maximo'],'decimales'=>$escala['decimales'],'step'=>$escala['step'],'rangos'=>$rangos];
     }

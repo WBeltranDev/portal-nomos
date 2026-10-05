@@ -1,7 +1,20 @@
 /**
  * Evaluador Dashboard JS Module
  */
-import { escapeHtml, fetchJson, parseErrorMessage, showInlineMessage, navegarMenu, renderResultado, actualizarFaseLabel } from './common.js';
+import { escapeHtml, fetchJson, parseErrorMessage, showInlineMessage, navegarMenu, renderResultado, actualizarFaseLabel, getEscala } from './common.js';
+
+/**
+ * Atributos min/max/step de los campos de nota, derivados de la escala
+ * institucional publicada por el servidor (1.0 a 5.0 con sus decimales). Evita
+ * dejar los topes de la escala escritos a mano en cada plantilla de entrada.
+ */
+function attrsEscala() {
+    const e = getEscala();
+    const min = e?.minimo ?? 1;
+    const max = e?.maximo ?? 5;
+    const dec = e?.decimales ?? 1;
+    return `min="${min}" max="${max}" step="${e?.step ?? (dec === 1 ? '0.1' : '0.01')}"`;
+}
 
 let selectedEvaluacionId = null;
 let selectedEstadoEvaluacion = null;
@@ -526,8 +539,8 @@ export function cargarCompromisosEvaluador(ev, ejes = {}) {
                 const calificacionControl = ev.concertacion_firmada
                     ? (ev.estado !== 'CALIFICADA'
                         ? `<div class="flex flex-col items-end gap-1">
-                            <label class="text-[10px] font-bold uppercase text-slate-500">Calificación (1.0-5.0)</label>
-                            <input type="number" min="1" max="5" step="0.1" class="compromiso-calificacion-input w-20 text-xs rounded-lg border border-slate-200 p-1.5 bg-white outline-none focus:border-[#00594E]" data-id="${c.id_compromiso}" value="${c.calificacion_definitiva ?? ''}" onblur="clampCalificacion(this)" />
+                            <label class="text-[10px] font-bold uppercase text-slate-500">Calificación (${getEscala()?.minimo ?? 1}-${getEscala()?.maximo ?? 5})</label>
+                            <input type="number" ${attrsEscala()} class="compromiso-calificacion-input w-20 text-xs rounded-lg border border-slate-200 p-1.5 bg-white outline-none focus:border-[#00594E]" data-id="${c.id_compromiso}" value="${c.calificacion_definitiva ?? ''}" onblur="clampCalificacion(this)" />
                         </div>`
                         : `<div class="flex flex-col items-end gap-1">
                             <label class="text-[10px] font-bold uppercase text-slate-500">Calificación</label>
@@ -1148,7 +1161,7 @@ export function cargarCompetenciasEvaluador(ev) {
                         </div>
                         <div class="flex items-center gap-2 shrink-0">
                             <label class="text-[10px] font-bold text-slate-500 uppercase">Nota (1.0-5.0)</label>
-                            <input type="number" min="1" max="5" step="0.1" class="competencia-calificacion-input w-24 text-xs rounded-lg border border-slate-200 p-1.5 disabled:bg-slate-100 disabled:text-slate-500" data-id="${c.id_competencia}" value="${valor}" onblur="clampCalificacion(this)" ${bloqueado ? 'disabled' : ''} />
+                            <input type="number" ${attrsEscala()} class="competencia-calificacion-input w-24 text-xs rounded-lg border border-slate-200 p-1.5 disabled:bg-slate-100 disabled:text-slate-500" data-id="${c.id_competencia}" value="${valor}" onblur="clampCalificacion(this)" ${bloqueado ? 'disabled' : ''} />
                         </div>
                     </div>`;
             }).join('');
@@ -1245,7 +1258,7 @@ export function cargarEjesEvaluador(ev) {
                             </div>
                             <div class="flex items-center gap-2 shrink-0">
                                 <label class="text-[10px] font-bold text-slate-500 uppercase">Nota (1.0-5.0)</label>
-                                <input type="number" min="1" max="5" step="0.1" class="eje-calificacion-input w-24 text-xs rounded-lg border border-slate-200 p-1.5 disabled:bg-slate-100 disabled:text-slate-500" data-eje="${eje}" value="${valor}" onblur="clampCalificacion(this)" ${bloqueado ? 'disabled' : ''} />
+                                <input type="number" ${attrsEscala()} class="eje-calificacion-input w-24 text-xs rounded-lg border border-slate-200 p-1.5 disabled:bg-slate-100 disabled:text-slate-500" data-eje="${eje}" value="${valor}" onblur="clampCalificacion(this)" ${bloqueado ? 'disabled' : ''} />
                             </div>
                         </div>
                         <textarea class="eje-calificacion-observacion w-full text-xs rounded-lg border border-slate-200 p-2 disabled:bg-slate-100 disabled:text-slate-500" rows="2" data-eje="${eje}" placeholder="Observaciones (opcional)" ${bloqueado ? 'disabled' : ''}></textarea>

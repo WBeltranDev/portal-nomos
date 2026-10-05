@@ -1219,6 +1219,7 @@
             'fecha_fin' => $p->fecha_fin,
         ])->values()),
         ponderacionesConfig: @js($ponderacionesConfig ?? []),
+        escalaCalificacion: @js($escalaCalificacion ?? []),
         impedimentos: @js($impedimentos ?? []),
         evaluadores: @js($empleados->filter(fn($e) => $e->es_evaluador && $e->activo)->map(fn($e) => [
             'id_vinculacion' => $e->id_vinculacion,

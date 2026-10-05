@@ -3586,9 +3586,20 @@ if (!function_exists('getEvaluacionConSistema')) {
 }
 
 /**
- * S6 — Plan de mejoramiento CONDICIONADO (1er semestre):
- *   RL: calificación final ∈ [0, 80]  (NO_SATISFACTORIO o APROBADO_MEJORA)
- *   AG: calificación final ∈ [0, 80]  (NO_SATISFACTORIO o APROBADO_MEJORA)
+ * S6 — Plan de mejoramiento CONDICIONADO (1er semestre).
+ *
+ * El criterio NO usa umbrales numéricos: se toma de la escala institucional
+ * vigente (1.0 a 5.0) a través de las bandas configuradas en
+ * `escalaCalificacionConfig()`, usando la bandera `aplica_plan_mejoramiento`:
+ *   1.0 a 3.4: No satisfactorio          → con plan de mejoramiento
+ *   3.5 a 4.0: Susceptible a plan        → con plan de mejoramiento
+ *   4.1 a 4.5: Bueno                     → sin plan de mejoramiento
+ *   4.6 a 5.0: Sobresaliente             → sin plan de mejoramiento
+ *
+ * Antes se comparaba la nota contra el umbral numérico 80 que quedó de la
+ * escala 0-100; con la escala 1.0-5.0 eso era cierto para toda nota y pedía
+ * plan de mejoramiento incluso a evaluaciones Buenas y Sobresalientes.
+ *
  * El bloqueo del flujo del evaluador aplica hasta concertar y firmar el plan.
  */
 if (!function_exists('evaluacionRequierePlanMejoramiento')) {
@@ -3598,13 +3609,21 @@ if (!function_exists('evaluacionRequierePlanMejoramiento')) {
         }
 
         $categoria = strtoupper(trim((string) ($evaluacion->categoria_final ?? '')));
-        if (in_array($categoria, ['NO_SATISFACTORIO', 'APROBADO_MEJORA'])) {
-            return true;
+        if ($categoria !== '') {
+            // La categoría ya fue calculada con las bandas vigentes: es la fuente
+            // de verdad y no se vuelve a reinterpretar por nota.
+            if (nivelEscalaAplicaPlanMejoramiento($categoria)) {
+                return true;
+            }
+            if (in_array($categoria, ['BUENO', 'SOBRESALIENTE'], true)) {
+                return false;
+            }
         }
 
+        // Sin categoría calculada: se resuelve por nota con la misma escala.
         $notaDef = $evaluacion->calificacion_final ?? $evaluacion->calificacion_parcial ?? null;
-        if ($notaDef !== null && (float) $notaDef <= 80.0 && (float) $notaDef > 0) {
-            return true;
+        if ($notaDef !== null && (float) $notaDef > 0) {
+            return notaEscalaAplicaPlanMejoramiento($notaDef);
         }
 
         if (isset($evaluacion->id_evaluacion)) {

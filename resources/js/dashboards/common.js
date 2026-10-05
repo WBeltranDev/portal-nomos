@@ -40,17 +40,47 @@ export function parseErrorMessage(payload, fallback) {
 }
 
 /**
+ /**
+ * Escala institucional vigente que el servidor publica en APP_CONFIG. Toda
+ * etiqueta y todo tope de los campos de nota se derivan de aquí, para que un
+ * cambio de escala no deje números o rótulos desactualizados en pantalla.
+ */
+export function getEscala() {
+    return window.APP_CONFIG?.escalaCalificacion || null;
+}
+
+/**
+ * Etiqueta de una categoría con su rango, tomada de la escala institucional
+ * vigente (1.0 a 5.0 con sus cuatro bandas). Nunca se escriben los rangos a
+ * mano, para que un cambio de escala no deje etiquetas desactualizadas.
+ */
+export function etiquetaCategoria(categoria) {
+    if (!categoria) return '-';
+    const escala = getEscala();
+    const banda = escala?.bandas?.find(b => b.nivel === categoria);
+    if (!banda) return categoria;
+    const dec = escala?.decimales ?? 1;
+    const rango = `${Number(banda.desde).toFixed(dec)} a ${Number(banda.hasta).toFixed(dec)}`;
+    return `${banda.etiqueta} (${rango})`;
+}
+
+/**
  * Acota una calificación a la escala institucional: de 1.0 a 5.0 con un (1)
  * decimal. Se aplica al salir del campo, para que el evaluador nunca pueda
  * dejar una nota fuera de rango o con más decimales de los permitidos.
  */
 export function clampCalificacion(input) {
+    const escala = getEscala();
+    const min = escala?.minimo ?? 1;
+    const max = escala?.maximo ?? 5;
+    const dec = escala?.decimales ?? 1;
+
     if (!input || input.value === '') return;
     let val = parseFloat(input.value);
-    if (isNaN(val)) val = 1;
-    val = Math.round(val * 10) / 10;
-    if (val < 1) val = 1;
-    if (val > 5) val = 5;
+    if (isNaN(val)) val = min;
+    val = Math.round(val * 10 ** dec) / 10 ** dec;
+    if (val < min) val = min;
+    if (val > max) val = max;
     input.value = val;
 }
 
@@ -152,12 +182,7 @@ export function renderResultado(calculo, containerId, contexto = 'evaluador', ev
         </div>
     ` : '');
 
-    const categoriaLabel = {
-        SOBRESALIENTE: 'Sobresaliente (91-100)',
-        BUENO: 'Bueno (81-90)',
-        APROBADO_MEJORA: 'Aprobado - Susceptible a plan de mejora (71-80)',
-        NO_SATISFACTORIO: 'No satisfactorio (0-70)',
-    }[calculo.categoria] || calculo.categoria || '-';
+    const categoriaLabel = etiquetaCategoria(calculo.categoria);
     const categoriaClass = {
         SOBRESALIENTE: 'bg-[#EAF2EF] text-[#00594E]',
         BUENO: 'bg-blue-50 text-blue-700',
@@ -248,6 +273,8 @@ window.togglePasswordVisibility = togglePasswordVisibility;
 window.navegarMenu = navegarMenu;
 window.escapeHtml = escapeHtml;
 window.clampCalificacion = clampCalificacion;
+window.getEscala = getEscala;
+window.etiquetaCategoria = etiquetaCategoria;
 window.showInlineMessage = showInlineMessage;
 window.renderResultado = renderResultado;
 window.formatPendientes = formatPendientes;

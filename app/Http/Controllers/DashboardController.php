@@ -709,6 +709,10 @@ class DashboardController extends Controller
             : null;
         $ponderacionesConfig = $configData;
 
+        // La escala institucional se publica al frontend para que las etiquetas
+        // de categoría y los topes de los campos de nota nunca se hardcodeen.
+        $escalaCalificacion = escalaCalificacionConfig();
+
         // Fetch periodos for JavaScript config if not loaded
         if ($periodos->isEmpty()) {
             $periodos = DB::table('periodo')->orderByDesc('id_periodo')->get();
@@ -719,7 +723,7 @@ class DashboardController extends Controller
             'evaluacionesAdmin',
             'periodos', 'ponderaciones', 'evaluacionesEvaluador', 'evaluacionesEvaluado',
             'informesEvaluador', 'evaluadosDisponibles', 'miVinculacionEvaluador', 'acuerdosRL', 'acuerdosAG',
-            'ponderacionesConfig', 'planesPendientesEvaluador',
+            'ponderacionesConfig', 'planesPendientesEvaluador', 'escalaCalificacion',
             'periodosParciales', 'funcionariosParaPeriodoParcial', 'vinculacionesReemplazo',
             'evaluadoresDelegacion', 'delegadosDisponibles', 'impedimentos',
             'cargosCatalogo', 'dependenciasCatalogo', 'funcionariosNoCalificados', 'evaluacionesExtratiempo', 'historialExtratiempo',
