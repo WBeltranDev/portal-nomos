@@ -23,6 +23,51 @@ class DashboardController extends Controller
         $usuario = session('usuario_autenticado');
         $rolActivo = session('usuario_autenticado.rol_activo');
 
+        // Refrescar roles si la sesión no los trae (p.ej. sesión antigua o cambio manual)
+        if (! isset($usuario['roles']) || ! is_array($usuario['roles']) || empty($usuario['roles'])) {
+            $roles = [];
+
+            // La sesión no guarda la clave 'rol': se consulta desde la tabla usuario.
+            $rolUsuario = DB::table('usuario')
+                ->where('id_usuario', $usuario['id_usuario'] ?? 0)
+                ->value('rol');
+
+            if ($rolUsuario === 'ADMINISTRADOR') {
+                $roles[] = 'admin';
+            }
+
+            if ($usuario['id_funcionario'] ?? null) {
+                $vinculaciones = DB::table('vinculacion')
+                    ->where('id_funcionario', $usuario['id_funcionario'])
+                    ->where('activa', 1)
+                    ->get();
+                if ($vinculaciones->isNotEmpty()) {
+                    $roles[] = 'evaluado';
+                    $vincIds = $vinculaciones->pluck('id_vinculacion')->all();
+                    $esEvaluadorPorVinculacion = $vinculaciones->contains(
+                        fn ($v) => (bool) $v->es_evaluador
+                    );
+                    $esDelegadoActivo = DB::table('delegacion')
+                        ->whereIn('id_vinc_delegado', $vincIds)
+                        ->where('estado', 'ACTIVA')
+                        ->exists();
+                    $tieneAsignacionesEvaluador = DB::table('evaluador_asignacion')
+                        ->whereIn('id_vinc_evaluador', $vincIds)
+                        ->exists();
+                    $esEvaluadorActivo = $rolUsuario === 'EVALUADOR';
+                    if ($esEvaluadorActivo || $esEvaluadorPorVinculacion || $esDelegadoActivo || $tieneAsignacionesEvaluador) {
+                        $roles[] = 'evaluador';
+                    }
+                }
+            }
+            $roles = array_values(array_unique($roles));
+            if (empty($roles)) {
+                $roles[] = 'evaluado';
+            }
+            $usuario['roles'] = $roles;
+            session()->put('usuario_autenticado', $usuario);
+        }
+
         // Default empty collections
         $usuarios = collect();
         $empleados = collect();
