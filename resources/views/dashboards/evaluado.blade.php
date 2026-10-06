@@ -164,7 +164,7 @@
                                             <span class="material-symbols-outlined text-base">notification_important</span>
                                             Notificación de la calificación
                                         </h4>
-                                        <p id="notificacion-texto-evaluado" class="text-[11px] text-slate-500 mt-1"></p>
+                                        <div id="notificacion-texto-evaluado" class="text-[11px] text-slate-500 mt-1 space-y-1.5"></div>
                                     </div>
                                     <div class="flex items-center gap-2 shrink-0">
                                         <span id="notificacion-estado-evaluado" class="text-[10px] font-bold uppercase px-2.5 py-1 rounded-full"></span>

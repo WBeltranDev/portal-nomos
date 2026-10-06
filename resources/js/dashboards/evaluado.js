@@ -225,9 +225,26 @@ export function cargarNotificacionEvaluado(ev) {
 
             const texto = document.getElementById('notificacion-texto-evaluado');
             if (texto) {
-                texto.innerText = firmada
-                    ? 'Firmaste la notificación de tu calificación. Si no estás de acuerdo con la nota, puedes radicar un recurso de reposición o apelación con sus soportes.'
-                    : 'Tu nota ya fue calculada. Debes firmar la notificación de la calificación para dejar constancia de que fuiste notificado. Puedes estar de acuerdo o no: si no lo estás, luego radicarás un recurso de reposición o apelación con sus soportes.';
+                texto.innerHTML = firmada
+                    ? `
+                        <p>Firmaste la notificación de tu calificación en línea. Te queda pendiente completar estos pasos con el documento:</p>
+                        <ol class="list-decimal list-inside space-y-1">
+                            <li>Descarga el documento PDF desde el menú <b>Exportar PDF</b>.</li>
+                            <li>Imprímelo.</li>
+                            <li>Fírmalo en original y radícalo en la Oficina de Talento Humano.</li>
+                        </ol>
+                        <p>Si no estás de acuerdo con la nota, puedes radicar un recurso de reposición o apelación con sus soportes.</p>
+                    `
+                    : `
+                        <p>Tu nota ya fue calculada. Para dejar constancia de que fuiste notificado, completa estos pasos:</p>
+                        <ol class="list-decimal list-inside space-y-1">
+                            <li>Firma digitalmente con el botón <b>Firmar notificación</b>.</li>
+                            <li>Descarga el documento PDF desde el menú <b>Exportar PDF</b>.</li>
+                            <li>Imprímelo.</li>
+                            <li>Fírmalo en original y radícalo en la Oficina de Talento Humano.</li>
+                        </ol>
+                        <p>Puedes estar de acuerdo o no con la nota: si no lo estás, radica un recurso de reposición o apelación con sus soportes.</p>
+                    `;
             }
 
             const btn = document.getElementById('btn-firmar-notificacion-evaluado');
