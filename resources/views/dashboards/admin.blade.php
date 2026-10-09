@@ -134,7 +134,7 @@
                         <div class="panel-card rounded-3xl p-6">
                             <h3 class="text-lg font-bold text-slate-800 mb-1">Registrar Nuevo Funcionario</h3>
                             <p class="text-xs text-slate-500 mb-4">Selecciona el cargo y dependencia desde el catálogo institucional.</p>
-                            <form method="POST" action="{{ route('admin.usuarios.store') }}" class="space-y-3">
+                            <form id="form-registrar-funcionario" method="POST" action="{{ route('admin.usuarios.store') }}" class="space-y-3">
                                 @csrf
                                 <div class="grid grid-cols-2 gap-2">
                                     <div>
