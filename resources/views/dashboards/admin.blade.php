@@ -867,11 +867,11 @@
                             <div>
                                 <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Funcionario a trasladar (Vinculación)</label>
                                 <input type="search" id="buscar-funcionario-traslado" oninput="filtrarOpcionesAsignacion('buscar-funcionario-traslado', 'select-funcionario-traslado')" class="mb-2 w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Buscar funcionario por nombre o cargo" />
-                                <select name="id_vinc_funcionario" id="select-funcionario-traslado" onchange="mostrarEvaluadorActualTraslado()" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
+                                <select name="id_vinc_funcionario" id="select-funcionario-traslado" onchange="mostrarEvaluadorActualTraslado(); mostrarAreaAntiguaTraslado();" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
                                     <option value="">Selecciona un funcionario</option>
                                     @foreach($empleados as $e)
                                         @if($e->id_vinculacion && $e->activo)
-                                            <option value="{{ $e->id_vinculacion }}">{{ $e->nombres }} {{ $e->apellidos }} - {{ $e->nombre_cargo }}</option>
+                                            <option value="{{ $e->id_vinculacion }}" data-area="{{ $e->nombre_area }}">{{ $e->nombres }} {{ $e->apellidos }} - {{ $e->nombre_cargo }}</option>
                                         @endif
                                     @endforeach
                                 </select>
@@ -899,7 +899,11 @@
                                     <p class="text-[9px] text-slate-400 mt-0.5">Solo fecha actual o futura.</p>
                                 </div>
                                 <div>
-                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Nueva Área / Dependencia</label>
+                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Área Antigua (Origen)</label>
+                                    <input type="text" id="area-origen-traslado" readonly class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-slate-50 text-slate-500 cursor-not-allowed" placeholder="Se llena automáticamente al elegir funcionario" />
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Nueva Área (Destino)</label>
                                     <select name="area_nuevo" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white">
                                         <option value="">Conservar área actual o seleccionar nueva</option>
                                         @foreach($dependenciasCatalogo as $dp)
@@ -908,8 +912,8 @@
                                     </select>
                                 </div>
                             </div>
-                            <div>
-                                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Nuevo Cargo (opcional)</label>
+                            <div class="mt-3">
+                                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Nuevo Cargo (Opcional - si cambia de puesto)</label>
                                 <select name="cargo_nuevo" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white">
                                     <option value="">Conservar cargo actual o seleccionar nuevo</option>
                                     @foreach($cargosCatalogo as $cg)
@@ -1460,6 +1464,18 @@
             } else {
                 hiddenVacante.value = "";
                 areaSelect.classList.remove('bg-amber-50', 'border-amber-200');
+            }
+        }
+
+        function mostrarAreaAntiguaTraslado() {
+            const select = document.getElementById("select-funcionario-traslado");
+            const input = document.getElementById("area-origen-traslado");
+            if (!select || !input) return;
+            const opt = select.options[select.selectedIndex];
+            if (opt && opt.value) {
+                input.value = opt.dataset.area || "Sin área";
+            } else {
+                input.value = "";
             }
         }
     </script>
