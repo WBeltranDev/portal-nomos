@@ -1196,6 +1196,62 @@
                     </div>
                 </div>
             </section>
+            <!-- SECTION: MATRIZ DE CALIFICACIONES (Admin Only) -->
+            <section id="section-matriz" class="section-content hidden space-y-6">
+                <div class="panel-card rounded-3xl p-6">
+                    <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                        <div>
+                            <p class="text-xs font-bold uppercase tracking-[0.22em] text-[#00594E]">Reportes</p>
+                            <h1 class="text-2xl sm:text-3xl font-black text-slate-900">Matriz de Calificaciones</h1>
+                            <p class="text-sm text-slate-500 mt-1">Consolidado general de calificaciones semestrales y anuales.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-4">
+                        <input id="buscador-matriz" oninput="filtrarMatriz()" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-[#00594E] focus:ring-2 focus:ring-[#00594E]/10" type="text" placeholder="Buscar por nombre, documento o dependencia">
+                    </div>
+
+                    <div class="mt-6 overflow-x-auto rounded-2xl border border-slate-200">
+                        <table class="w-full text-left text-sm" id="tabla-matriz">
+                            <thead class="bg-slate-50 text-slate-500">
+                                <tr>
+                                    <th class="px-4 py-3 font-semibold uppercase tracking-wider text-[10px]">Funcionario</th>
+                                    <th class="px-4 py-3 font-semibold uppercase tracking-wider text-[10px]">Dependencia</th>
+                                    <th class="px-4 py-3 font-semibold uppercase tracking-wider text-[10px] text-center">Tipo</th>
+                                    <th class="px-4 py-3 font-semibold uppercase tracking-wider text-[10px] text-center">Nota Sem. 1</th>
+                                    <th class="px-4 py-3 font-semibold uppercase tracking-wider text-[10px] text-center">Nota Sem. 2</th>
+                                    <th class="px-4 py-3 font-semibold uppercase tracking-wider text-[10px] text-center">Nota Anual</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100 bg-white">
+                                @foreach($matrizCalificaciones as $fila)
+                                    <tr class="matriz-row hover:bg-slate-50 transition" data-search="{{ strtolower($fila->nombres . ' ' . $fila->apellidos . ' ' . $fila->documento . ' ' . $fila->area) }}">
+                                        <td class="px-4 py-3">
+                                            <p class="font-bold text-slate-900">{{ $fila->nombres }} {{ $fila->apellidos }}</p>
+                                            <p class="text-xs text-slate-500">C.C. {{ $fila->documento }}</p>
+                                        </td>
+                                        <td class="px-4 py-3 text-slate-600">{{ $fila->area }}</td>
+                                        <td class="px-4 py-3 text-center">
+                                            <span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-slate-100 text-slate-600">
+                                                {{ $fila->sistema === 'RENDIMIENTO_LABORAL' ? 'RL' : ($fila->sistema === 'ACUERDO_GESTION' ? 'AG' : $fila->sistema) }}
+                                            </span>
+                                        </td>
+                                        <td class="px-4 py-3 text-center font-semibold {{ $fila->nota_semestre_1 ? 'text-[#00594E]' : 'text-slate-300' }}">
+                                            {{ $fila->nota_semestre_1 ?? '-' }}
+                                        </td>
+                                        <td class="px-4 py-3 text-center font-semibold {{ $fila->nota_semestre_2 ? 'text-[#00594E]' : 'text-slate-300' }}">
+                                            {{ $fila->nota_semestre_2 ?? '-' }}
+                                        </td>
+                                        <td class="px-4 py-3 text-center font-bold {{ $fila->nota_anual ? 'text-[#00594E] bg-[#EAF2EF] rounded-lg' : 'text-slate-300' }}">
+                                            {{ $fila->nota_anual ?? '-' }}
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
         </main>
     </div>
 </div>
@@ -1367,6 +1423,17 @@
 
             const vacio = document.getElementById('evaladmin-vacio');
             if (vacio) vacio.classList.toggle('hidden', visibles > 0);
+        }
+
+        function filtrarMatriz() {
+            const buscar = (document.getElementById('buscador-matriz')?.value || '').toLowerCase();
+            const rows = document.querySelectorAll('.matriz-row');
+            
+            rows.forEach(row => {
+                const searchData = row.dataset.search || '';
+                const match = !buscar || searchData.includes(buscar);
+                row.style.display = match ? '' : 'none';
+            });
         }
     </script>
 @vite('resources/js/dashboards/admin.js')

@@ -57,6 +57,10 @@
             <span class="material-symbols-outlined">edit_note</span>
             Modificaciones Compromisos
         </button>
+        <button type="button" class="sidebar-link w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-slate-700 transition" onclick="navegarMenu(this, 'matriz')">
+            <span class="material-symbols-outlined">table_view</span>
+            Matriz de Calificaciones
+        </button>
         @endif
 
         <button type="button" class="sidebar-link w-full @if($rolActivo !== 'admin') active @endif flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-slate-700 transition" onclick="navegarMenu(this, '{{ $rolActivo === 'evaluador' ? 'evaluaciones-evaluador' : 'evaluaciones' }}')">
