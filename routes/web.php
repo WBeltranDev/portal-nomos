@@ -2615,14 +2615,7 @@ Route::post('/evaluaciones/{id}/firmar', function (Request $request, int $id) {
 
         abort_unless($puedeEvaluado, 403);
 
-        $evaluadorFirmado = DB::table('firma')
-            ->where('id_evaluacion', $id)
-            ->where('tipo_firma', 'CONCERTACION_EVALUADOR')
-            ->exists();
 
-        if (!$evaluadorFirmado) {
-            return back()->withErrors(['firma' => 'El evaluador debe proponer y firmar la concertación antes de que el evaluado pueda revisarla y firmar.']);
-        }
 
         $tipoFirma = 'CONCERTACION_EVALUADO';
         $idVincFirmante = (int) $evaluacion->id_vinc_evaluado;
@@ -3520,6 +3513,23 @@ if (!function_exists('getNotificacionCalificacion')) {
 }
 
 /**
+ * Enlace donde el evaluado almacenó el PDF de la notificación ya firmada en
+ * original y radicada en Talento Humano. Un único enlace por evaluación.
+ * Devuelve la fila {url, descripcion, fecha_inclusion} o null si no cargó nada.
+ */
+if (!function_exists('getDocumentoNotificacion')) {
+    function getDocumentoNotificacion(int $idEvaluacion) {
+        if (! Schema::hasTable('notificacion_documento')) {
+            return null;
+        }
+
+        return DB::table('notificacion_documento')
+            ->where('id_evaluacion', $idEvaluacion)
+            ->first();
+    }
+}
+
+/**
  * ¿El evaluado ya firmó la notificación de la calificación? La firma es la
  * constancia de que fue notificado, esté o no de acuerdo con la nota. No hay
  * renuencia: si no está de acuerdo, radica un recurso de reposición o apelación.
@@ -3746,6 +3756,8 @@ Route::get('/evaluaciones/{id}/recursos', function (int $id) {
         abort_unless($puedeVer, 403);
     }
 
+    $docNotificacion = getDocumentoNotificacion($id);
+
     return response()->json([
         'recursos' => getRecursosEvaluacion($id),
         'estado' => $evaluacion->estado,
@@ -3753,6 +3765,11 @@ Route::get('/evaluaciones/{id}/recursos', function (int $id) {
         'calificacion_final' => $evaluacion->calificacion_final,
         'traslado' => (bool) $evaluacion->es_traslado,
         'notificacion_firmada' => notificacionCalificacionFirmada($id),
+        'documento_notificacion' => $docNotificacion ? [
+            'url' => $docNotificacion->url,
+            'descripcion' => $docNotificacion->descripcion,
+            'fecha_inclusion' => $docNotificacion->fecha_inclusion,
+        ] : null,
     ]);
 })->name('evaluaciones.recursos');
 
@@ -3791,6 +3808,83 @@ Route::post('/evaluaciones/{id}/firmar-notificacion', function (int $id) {
         'message' => 'Notificación de la calificación firmada. Queda registrada tu constancia de que fuiste notificado.',
     ]);
 })->name('evaluaciones.firmar-notificacion');
+
+
+// --- POST: Registrar el enlace del PDF de la notificación firmado (evaluado) ---
+// El trámite se completa fuera del sistema: el evaluado imprime el documento,
+// lo firma en original y lo radica en la Oficina de Talento Humano. Este enlace
+// deja ese PDF cargado en la plataforma, junto con quién lo guardó y cuándo.
+// Solo puede hacerlo el evaluado, y solo una vez firmada la notificación.
+Route::post('/evaluaciones/{id}/documento-notificacion', function (Request $request, int $id) {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'evaluado', 403);
+
+    $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
+    abort_unless($evaluacion, 404);
+    abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
+    abort_unless($evaluacion->estado === 'CALIFICADA', 422, 'El enlace del documento firmado se registra cuando la evaluación ya fue calificada.');
+
+    $auth = session('usuario_autenticado');
+    $esEvaluado = DB::table('vinculacion')
+        ->where('id_vinculacion', $evaluacion->id_vinc_evaluado)
+        ->where('id_funcionario', $auth['id_funcionario'] ?? null)
+        ->exists();
+
+    abort_unless($esEvaluado, 403);
+    abort_unless(notificacionCalificacionFirmada($id), 422, mensajeNotificacionPendiente());
+
+    abort_unless(Schema::hasTable('notificacion_documento'), 500, 'Falta ejecutar la migración del documento de notificación.');
+
+    $url = trim((string) $request->input('url', ''));
+
+    // URL vacía: el evaluado decide quitar el enlace.
+    if ($url === '') {
+        DB::table('notificacion_documento')->where('id_evaluacion', $id)->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Enlace del documento firmado eliminado.',
+            'documento_notificacion' => null,
+        ]);
+    }
+
+    abort_unless(strlen($url) <= 1000 && filter_var($url, FILTER_VALIDATE_URL) !== false, 422, 'Indica un enlace válido del documento firmado, por ejemplo https://... .');
+
+    $esquema = strtolower((string) parse_url($url, PHP_URL_SCHEME));
+    abort_unless(in_array($esquema, ['http', 'https'], true), 422, 'El enlace del documento firmado solo puede empezar por http:// o https://.');
+
+    $descripcion = $request->input('descripcion');
+    $descripcion = is_string($descripcion) ? mb_substr(trim($descripcion), 0, 200) : null;
+    $descripcion = $descripcion === '' ? null : $descripcion;
+
+    $ahora = date('Y-m-d H:i:s');
+    $valores = [
+        'url' => $url,
+        'descripcion' => $descripcion,
+        'id_vinc_registra' => (int) $evaluacion->id_vinc_evaluado,
+        'fecha_actualizacion' => $ahora,
+    ];
+
+    if (DB::table('notificacion_documento')->where('id_evaluacion', $id)->exists()) {
+        DB::table('notificacion_documento')->where('id_evaluacion', $id)->update($valores);
+    } else {
+        DB::table('notificacion_documento')->insert($valores + [
+            'id_evaluacion' => $id,
+            'fecha_inclusion' => $ahora,
+        ]);
+    }
+
+    $doc = getDocumentoNotificacion($id);
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Enlace del documento firmado guardado. Ya queda registrado en la plataforma.',
+        'documento_notificacion' => $doc ? [
+            'url' => $doc->url,
+            'descripcion' => $doc->descripcion,
+            'fecha_inclusion' => $doc->fecha_inclusion,
+        ] : null,
+    ]);
+})->name('evaluaciones.documento-notificacion');
 
 
 // --- POST: Radicar un recurso (solo el evaluado, evaluación calificada) ---
@@ -4359,11 +4453,13 @@ if (!function_exists('prepararInformeSemestral')) {
 
         $calculo = calcularNotaEvaluacion($idEvaluacion);
         $notificacion = getNotificacionCalificacion($idEvaluacion);
+        $documentoFirmado = getDocumentoNotificacion($idEvaluacion);
 
         return [
             'tipo_nombre' => $evaluacion->tipo_evaluacion,
             'notificacion_firmada' => $notificacion !== null,
             'fecha_notificacion' => $notificacion->fecha_firma ?? null,
+            'documento_notificacion' => $documentoFirmado?->url,
             'sistema' => $sistema,
             'periodo' => $periodo,
             'evaluador' => $evaluador,
@@ -4461,6 +4557,7 @@ if (!function_exists('prepararInformeAnual')) {
                 $notificaciones[] = [
                     'semestre' => $sem,
                     'fecha_firma' => $firma->fecha_firma,
+                    'documento' => getDocumentoNotificacion((int) $idEvalSem)?->url,
                 ];
             }
         }
