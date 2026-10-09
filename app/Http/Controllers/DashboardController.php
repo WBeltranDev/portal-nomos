@@ -377,6 +377,10 @@ class DashboardController extends Controller
                     $join->on('f_er.id_evaluacion', '=', 'ev.id_evaluacion')
                         ->where('f_er.tipo_firma', '=', 'CONCERTACION_EVALUADOR');
                 })
+                ->leftJoin('firma as f_no', function ($join) {
+                    $join->on('f_no.id_evaluacion', '=', 'ev.id_evaluacion')
+                        ->where('f_no.tipo_firma', '=', 'NOTIFICACION_EVALUADO');
+                })
                 ->select(
                     'ev.id_evaluacion',
                     'ev.estado',
@@ -692,6 +696,49 @@ class DashboardController extends Controller
 
 
 
+        // --- MATRIZ DE CALIFICACIONES (Solo Admin) ---
+        $matrizCalificaciones = [];
+        if ($rolActivo === 'admin') {
+            $empleadosMatriz = DB::table('vinculacion as v')
+                ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
+                ->where('v.activa', 1)
+                ->select('v.id_vinculacion', 'v.area', 'v.sistema_evaluacion', 'f.nombres', 'f.apellidos', 'f.numero_doc')
+                ->orderBy('f.apellidos')
+                ->get();
+            
+            $anioActual = (int) date('Y');
+            
+            foreach ($empleadosMatriz as $emp) {
+                $sem1Data = function_exists('obtenerNotaSemestreConsolidada') 
+                    ? obtenerNotaSemestreConsolidada((int)$emp->id_vinculacion, $anioActual, $emp->sistema_evaluacion, 1) 
+                    : null;
+                $sem2Data = function_exists('obtenerNotaSemestreConsolidada') 
+                    ? obtenerNotaSemestreConsolidada((int)$emp->id_vinculacion, $anioActual, $emp->sistema_evaluacion, 2) 
+                    : null;
+                
+                $notaSem1 = $sem1Data ? ($sem1Data['nota'] ?? null) : null;
+                $notaSem2 = $sem2Data ? ($sem2Data['nota'] ?? null) : null;
+                
+                $notaAnual = null;
+                if ($notaSem1 !== null && $notaSem2 !== null) {
+                    $notaAnual = function_exists('redondearEscala') ? redondearEscala(($notaSem1 + $notaSem2) / 2) : round(($notaSem1 + $notaSem2) / 2, 1);
+                } elseif ($notaSem1 === null && $notaSem2 !== null) {
+                    $notaAnual = function_exists('redondearEscala') ? redondearEscala($notaSem2) : round($notaSem2, 1);
+                }
+                
+                $matrizCalificaciones[] = (object) [
+                    'nombres' => $emp->nombres,
+                    'apellidos' => $emp->apellidos,
+                    'documento' => $emp->numero_doc,
+                    'area' => $emp->area ?? 'N/A',
+                    'sistema' => $emp->sistema_evaluacion,
+                    'nota_semestre_1' => $notaSem1,
+                    'nota_semestre_2' => $notaSem2,
+                    'nota_anual' => $notaAnual,
+                ];
+            }
+        }
+
         // --- NOTIFICACIONES (Solo Admin) ---
         $notificaciones = collect();
         $notificacionesNoLeidas = 0;
@@ -735,7 +782,7 @@ class DashboardController extends Controller
             'evaluadoresDelegacion', 'delegadosDisponibles', 'impedimentos',
             'cargosCatalogo', 'dependenciasCatalogo', 'funcionariosNoCalificados', 'evaluacionesExtratiempo', 'historialExtratiempo',
             'vinculacionesJerarquia', 'jefesDisponibles',
-            'notificaciones', 'notificacionesNoLeidas'
+            'notificaciones', 'notificacionesNoLeidas', 'matrizCalificaciones'
         );
 
         return match ($rolActivo) {
