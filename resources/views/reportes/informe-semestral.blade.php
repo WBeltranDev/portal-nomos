@@ -273,6 +273,17 @@
     </tr>
     @if ($info['notificacion_firmada'])
     <tr>
+        <td class="info-cell"><b>Documento firmado</b></td>
+        <td class="info-cell">
+            @if (! empty($info['documento_notificacion']))
+                <div><a href="{{ $info['documento_notificacion'] }}" target="_blank">{{ $info['documento_notificacion'] }}</a></div>
+                <span style="font-size:7.5px;color:#64748b;">Enlace registrado por el evaluado a la copia firmada en original y radicada en la Oficina de Talento Humano.</span>
+            @else
+                <span style="font-size:7.5px;">Sin enlace registrado por el evaluado.</span>
+            @endif
+        </td>
+    </tr>
+    <tr>
         <td class="info-cell"><b>Recursos radicados</b></td>
         <td class="info-cell">
             @forelse ($info['recursos'] as $rec)

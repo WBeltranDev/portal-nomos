@@ -174,6 +174,22 @@
                                     </div>
                                 </div>
                                 <div id="notificacion-mensaje-evaluado" class="hidden text-xs font-semibold"></div>
+
+                                <!-- Enlace al PDF firmado: se carga una vez completado el trámite físico -->
+                                <div id="documento-notificacion-evaluado" class="hidden rounded-xl border border-slate-200 bg-slate-50/60 p-3 space-y-2">
+                                    <p class="text-[10px] font-bold uppercase tracking-wide text-slate-500 flex items-center gap-1">
+                                        <span class="material-symbols-outlined text-xs">attachment</span> Documento firmado
+                                    </p>
+                                    <div id="documento-notificacion-form" class="flex flex-wrap items-end gap-2">
+                                        <div class="flex-1 min-w-[240px]">
+                                            <label for="documento-notificacion-url" class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Enlace donde guardaste el PDF firmado</label>
+                                            <input type="url" id="documento-notificacion-url" maxlength="1000" placeholder="https://..." class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" />
+                                        </div>
+                                        <button type="button" onclick="guardarDocumentoNotificacion()" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Guardar enlace</button>
+                                    </div>
+                                    <div id="documento-notificacion-guardado" class="hidden flex items-center justify-between gap-3"></div>
+                                    <div id="documento-notificacion-mensaje" class="hidden text-xs font-semibold"></div>
+                                </div>
                             </div>
 
                             <div id="firma-evaluado-seccion" class="mt-6 pt-4 border-t border-slate-100 space-y-3">

@@ -21,6 +21,7 @@ class NotificacionCalificacionTest extends TestCase
     private int $idUsuario;
     private int $idEvaluado;
     private int $idEvaluador;
+    private int $idVincEvaluado;
     private int $idEvaluacion;
 
     protected function setUp(): void
@@ -47,6 +48,7 @@ class NotificacionCalificacionTest extends TestCase
 
         $vincEvaluado = $this->crearVinculacion($this->idEvaluado, 'PROFESIONAL', 'PROVISIONALIDAD', false);
         $vincEvaluador = $this->crearVinculacion($this->idEvaluador, 'DIRECTIVO', 'LNR', true);
+        $this->idVincEvaluado = $vincEvaluado;
 
         $periodo = DB::table('periodo')->insertGetId([
             'id_usuario_apertura' => $this->idUsuario,
@@ -286,6 +288,128 @@ class NotificacionCalificacionTest extends TestCase
 
         $response->assertOk();
         $this->assertStringContainsString('application/pdf', $response->headers->get('Content-Type'));
+    }
+
+    public function test_el_evaluado_guarda_el_enlace_del_pdf_firmado(): void
+    {
+        $this->postJson("/evaluaciones/{$this->idEvaluacion}/firmar-notificacion")->assertOk();
+
+        $url = 'https://drive.unitropico.edu.co/documento-firmado.pdf';
+
+        $this->postJson("/evaluaciones/{$this->idEvaluacion}/documento-notificacion", ['url' => $url])
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('documento_notificacion.url', $url);
+
+        $guardado = DB::table('notificacion_documento')
+            ->where('id_evaluacion', $this->idEvaluacion)
+            ->first();
+
+        $this->assertNotNull($guardado);
+        $this->assertSame($url, $guardado->url);
+        $this->assertNotNull($guardado->fecha_inclusion);
+        // Queda registrado quién lo cargó: la vinculación del evaluado.
+        $this->assertSame($this->idVincEvaluado, (int) $guardado->id_vinc_registra);
+    }
+
+    public function test_no_se_puede_guardar_el_enlace_antes_de_firmar_la_notificacion(): void
+    {
+        $this->postJson("/evaluaciones/{$this->idEvaluacion}/documento-notificacion", [
+            'url' => 'https://unitropico.edu.co/firmado.pdf',
+        ])->assertStatus(422)->assertJsonPath(
+            'message',
+            'Primero debes firmar la notificación de la calificación para dejar constancia de que fuiste notificado.'
+        );
+
+        $this->assertSame(0, DB::table('notificacion_documento')->where('id_evaluacion', $this->idEvaluacion)->count());
+    }
+
+    public function test_un_enlace_invalido_o_con_protocolo_prohibido_se_rechaza(): void
+    {
+        $this->postJson("/evaluaciones/{$this->idEvaluacion}/firmar-notificacion")->assertOk();
+
+        // Ni una cadena que no es URL.
+        $this->postJson("/evaluaciones/{$this->idEvaluacion}/documento-notificacion", [
+            'url' => 'esto no es un enlace',
+        ])->assertStatus(422);
+
+        // Ni un protocolo distinto de http/https, que podría ejecutar código.
+        $this->postJson("/evaluaciones/{$this->idEvaluacion}/documento-notificacion", [
+            'url' => 'javascript:alert(1)',
+        ])->assertStatus(422);
+
+        $this->assertSame(0, DB::table('notificacion_documento')->where('id_evaluacion', $this->idEvaluacion)->count());
+    }
+
+    public function test_un_funcionario_ajeno_no_guarda_el_enlace_del_documento(): void
+    {
+        $ajeno = $this->crearFuncionario('Tmp', 'Ajeno', 'T' . random_int(10000, 99999));
+        $this->comoEvaluado($ajeno);
+
+        $this->postJson("/evaluaciones/{$this->idEvaluacion}/documento-notificacion", [
+            'url' => 'https://unitropico.edu.co/firmado.pdf',
+        ])->assertStatus(403);
+
+        // Tampoco el evaluador, que no es dueño de la evaluación.
+        session(['usuario_autenticado' => [
+            'id_usuario' => $this->idUsuario,
+            'id_funcionario' => $this->idEvaluador,
+            'rol_activo' => 'evaluador',
+            'roles' => ['evaluador'],
+        ]]);
+
+        $this->postJson("/evaluaciones/{$this->idEvaluacion}/documento-notificacion", [
+            'url' => 'https://unitropico.edu.co/firmado.pdf',
+        ])->assertStatus(403);
+
+        $this->assertSame(0, DB::table('notificacion_documento')->where('id_evaluacion', $this->idEvaluacion)->count());
+    }
+
+    public function test_el_enlace_se_actualiza_y_se_puede_quitar(): void
+    {
+        $this->postJson("/evaluaciones/{$this->idEvaluacion}/firmar-notificacion")->assertOk();
+
+        $this->postJson("/evaluaciones/{$this->idEvaluacion}/documento-notificacion", [
+            'url' => 'https://unitropico.edu.co/primera-copia.pdf',
+        ])->assertOk();
+
+        // Un único enlace por evaluación: la segunda escritura actualiza, no duplica.
+        $this->postJson("/evaluaciones/{$this->idEvaluacion}/documento-notificacion", [
+            'url' => 'https://unitropico.edu.co/segunda-copia.pdf',
+        ])->assertOk();
+
+        $documentos = DB::table('notificacion_documento')
+            ->where('id_evaluacion', $this->idEvaluacion)
+            ->get();
+
+        $this->assertCount(1, $documentos);
+        $this->assertSame('https://unitropico.edu.co/segunda-copia.pdf', $documentos->first()->url);
+
+        // URL vacía: el evaluado quita el enlace y el registro desaparece.
+        $this->postJson("/evaluaciones/{$this->idEvaluacion}/documento-notificacion", ['url' => ''])
+            ->assertOk()
+            ->assertJsonPath('documento_notificacion', null);
+
+        $this->assertSame(0, DB::table('notificacion_documento')->where('id_evaluacion', $this->idEvaluacion)->count());
+    }
+
+    public function test_el_enlace_del_documento_viaja_en_el_payload_de_recursos(): void
+    {
+        $this->getJson("/evaluaciones/{$this->idEvaluacion}/recursos")
+            ->assertOk()
+            ->assertJsonPath('documento_notificacion', null);
+
+        $this->postJson("/evaluaciones/{$this->idEvaluacion}/firmar-notificacion")->assertOk();
+
+        $url = 'https://drive.unitropico.edu.co/notificacion-firmada.pdf';
+        $this->postJson("/evaluaciones/{$this->idEvaluacion}/documento-notificacion", ['url' => $url])->assertOk();
+
+        $this->getJson("/evaluaciones/{$this->idEvaluacion}/recursos")
+            ->assertOk()
+            ->assertJsonPath('documento_notificacion.url', $url)
+            ->assertJsonPath('documento_notificacion.fecha_inclusion', DB::table('notificacion_documento')
+                ->where('id_evaluacion', $this->idEvaluacion)
+                ->value('fecha_inclusion'));
     }
 
     private function payloadRecurso(string $tipo = 'REPOSICION'): array

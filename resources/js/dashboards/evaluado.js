@@ -250,6 +250,8 @@ export function cargarNotificacionEvaluado(ev) {
             const btn = document.getElementById('btn-firmar-notificacion-evaluado');
             if (btn) btn.classList.toggle('hidden', firmada);
 
+            renderDocumentoNotificacion(firmada, payload.documento_notificacion);
+
             return firmada;
         })
         .catch(() => {
@@ -297,6 +299,120 @@ export function firmarNotificacionEvaluado() {
         .finally(() => {
             if (btn) btn.disabled = false;
         });
+}
+
+/**
+ * Bloque del enlace al PDF de la notificación ya firmado en original y
+ * radicado en la Oficina de Talento Humano.
+ *
+ * El trámite de firma en línea deja la constancia en la plataforma, pero la
+ * impresión, la firma manuscrita y el radicado ocurren fuera del sistema. Este
+ * bloque guarda el enlace donde el evaluado almacenó ese documento, para que
+ * también quede cargado y no solo en su historia laboral. Solo aparece una vez
+ * firmada la notificación, y admite un único enlace por evaluación.
+ */
+function renderDocumentoNotificacion(firmada, documento) {
+    const contenedor = document.getElementById('documento-notificacion-evaluado');
+    if (!contenedor) return;
+
+    contenedor.classList.toggle('hidden', !firmada);
+    if (!firmada) return;
+
+    const form = document.getElementById('documento-notificacion-form');
+    const guardado = document.getElementById('documento-notificacion-guardado');
+    const input = document.getElementById('documento-notificacion-url');
+    const mensaje = document.getElementById('documento-notificacion-mensaje');
+
+    if (mensaje) {
+        mensaje.classList.add('hidden');
+        mensaje.innerText = '';
+    }
+
+    if (!documento) {
+        if (form) form.classList.remove('hidden');
+        if (input) input.value = '';
+        if (guardado) {
+            guardado.classList.add('hidden');
+            guardado.classList.remove('flex');
+            guardado.innerHTML = '';
+        }
+        return;
+    }
+
+    if (form) form.classList.add('hidden');
+    if (guardado) {
+        guardado.innerHTML = `
+            <a href="${escapeHtml(documento.url)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 text-xs font-semibold text-[#00594E] hover:underline min-w-0">
+                <span class="material-symbols-outlined text-sm shrink-0">link</span>
+                <span class="truncate">Abrir documento firmado</span>
+            </a>
+            <button type="button" onclick="eliminarDocumentoNotificacion()" class="text-[11px] font-bold text-red-600 hover:underline shrink-0">Quitar</button>
+        `;
+        guardado.classList.remove('hidden');
+        guardado.classList.add('flex');
+    }
+}
+
+function mostrarMensajeDocumento(texto, esError) {
+    const mensaje = document.getElementById('documento-notificacion-mensaje');
+    if (!mensaje) return;
+    mensaje.classList.remove('hidden');
+    mensaje.className = `text-xs font-semibold ${esError ? 'text-red-600' : 'text-[#00594E]'}`;
+    mensaje.innerText = texto;
+}
+
+export function guardarDocumentoNotificacion() {
+    if (!selectedEvaluacionId) return;
+
+    const input = document.getElementById('documento-notificacion-url');
+    const url = (input?.value || '').trim();
+
+    if (!url) {
+        mostrarMensajeDocumento('Indica el enlace donde guardaste el PDF firmado.', true);
+        return;
+    }
+
+    try {
+        const parseada = new URL(url);
+        if (!['http:', 'https:'].includes(parseada.protocol)) throw new Error('protocolo no permitido');
+    } catch (_) {
+        mostrarMensajeDocumento('El enlace debe empezar por http:// o https://, por ejemplo https://ejemplo.com/documento-firmado.pdf.', true);
+        return;
+    }
+
+    mostrarMensajeDocumento('Guardando enlace...', false);
+
+    fetchJson(`/evaluaciones/${selectedEvaluacionId}/documento-notificacion`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+    })
+        .then(async res => {
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo guardar el enlace del documento firmado.'));
+            // Primero se redibuja el bloque (que limpia el mensaje de estado) y
+            // solo después se informa el resultado, o no llegaría a verse.
+            await cargarNotificacionEvaluado(selectedEvaluacionData);
+            mostrarMensajeDocumento(data.message || 'Enlace guardado.', false);
+        })
+        .catch(error => mostrarMensajeDocumento(error.message, true));
+}
+
+export function eliminarDocumentoNotificacion() {
+    if (!selectedEvaluacionId) return;
+    if (!confirm('¿Quitar el enlace al documento firmado?\n\nEl PDF dejará de estar cargado en la plataforma.')) return;
+
+    fetchJson(`/evaluaciones/${selectedEvaluacionId}/documento-notificacion`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: '' }),
+    })
+        .then(async res => {
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo quitar el enlace del documento firmado.'));
+            return cargarNotificacionEvaluado(selectedEvaluacionData);
+        })
+        .catch(error => mostrarMensajeDocumento(error.message, true));
 }
 
 export function cargarCompromisosEvaluado(ev) {
@@ -835,6 +951,8 @@ window.eliminarEvidenciaRecurso = eliminarEvidenciaRecurso;
 window.firmarPlanMejoramiento = firmarPlanMejoramiento;
 window.cargarNotificacionEvaluado = cargarNotificacionEvaluado;
 window.firmarNotificacionEvaluado = firmarNotificacionEvaluado;
+window.guardarDocumentoNotificacion = guardarDocumentoNotificacion;
+window.eliminarDocumentoNotificacion = eliminarDocumentoNotificacion;
 window.guardarEvidenciaEvaluado = guardarEvidenciaEvaluado;
 window.confirmarEvidenciasEvaluado = confirmarEvidenciasEvaluado;
 window.firmarConcertacion = firmarConcertacion;

@@ -130,6 +130,10 @@
             @if ($notifA)
                 Firmada el <span class="resaltado">{{ \Carbon\Carbon::parse($notifA['fecha_firma'])->format('d/m/Y') }}</span>
                 a las {{ \Carbon\Carbon::parse($notifA['fecha_firma'])->format('H:i') }}
+                @if (! empty($notifA['documento']))
+                    <div><a href="{{ $notifA['documento'] }}" target="_blank">{{ $notifA['documento'] }}</a></div>
+                    <span style="font-size:7.5px;color:#64748b;">Enlace registrado por el evaluado a la copia firmada en original y radicada en la Oficina de Talento Humano.</span>
+                @endif
             @else
                 Pendiente de firma del evaluado
             @endif
@@ -142,6 +146,10 @@
             @if ($notifB)
                 Firmada el <span class="resaltado">{{ \Carbon\Carbon::parse($notifB['fecha_firma'])->format('d/m/Y') }}</span>
                 a las {{ \Carbon\Carbon::parse($notifB['fecha_firma'])->format('H:i') }}
+                @if (! empty($notifB['documento']))
+                    <div><a href="{{ $notifB['documento'] }}" target="_blank">{{ $notifB['documento'] }}</a></div>
+                    <span style="font-size:7.5px;color:#64748b;">Enlace registrado por el evaluado a la copia firmada en original y radicada en la Oficina de Talento Humano.</span>
+                @endif
             @else
                 Pendiente de firma del evaluado
             @endif
