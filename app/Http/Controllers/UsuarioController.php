@@ -37,6 +37,8 @@ class UsuarioController extends Controller
         ]);
 
         $defaultPassword = trim($data['numero_doc']);
+        $data['nombres'] = mb_strtoupper($data['nombres'], 'UTF-8');
+        $data['apellidos'] = mb_strtoupper($data['apellidos'], 'UTF-8');
 
         DB::beginTransaction();
         try {
