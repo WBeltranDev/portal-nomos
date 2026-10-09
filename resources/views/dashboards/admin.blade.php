@@ -164,13 +164,23 @@
                                 </div>
                                 <div>
                                     <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Cargo Institucional</label>
-                                    <select name="cargo" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white" required>
+                                    <input type="hidden" name="vacante_id" id="hidden-vacante-id" value="">
+                                    <select name="cargo" id="cargo-select" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white" required onchange="manejarSeleccionCargo()">
                                         <option value="">-- Seleccionar Cargo --</option>
-                                        @foreach($cargosCatalogo as $cg)
-                                            @if($cg->activo ?? true)
-                                                <option value="{{ $cg->nombre }}">{{ $cg->nombre }} ({{ $cg->nivel_jerarquico ?? 'PROFESIONAL' }})</option>
-                                            @endif
-                                        @endforeach
+                                        @if($vacantes->count() > 0)
+                                            <optgroup label="📌 Vacantes Disponibles">
+                                                @foreach($vacantes as $v)
+                                                    <option value="{{ $v->cargo }}" data-vacante="{{ $v->id_vinculacion }}" data-area="{{ $v->area }}">{{ $v->cargo }} (Vacante en {{ $v->area }})</option>
+                                                @endforeach
+                                            </optgroup>
+                                        @endif
+                                        <optgroup label="🏢 Catálogo de Cargos (Nuevo Puesto)">
+                                            @foreach($cargosCatalogo as $cg)
+                                                @if($cg->activo ?? true)
+                                                    <option value="{{ $cg->nombre }}" data-vacante="">{{ $cg->nombre }} ({{ $cg->nivel_jerarquico ?? 'PROFESIONAL' }})</option>
+                                                @endif
+                                            @endforeach
+                                        </optgroup>
                                     </select>
                                 </div>
                                 <div>
@@ -440,7 +450,7 @@
                                         <span class="inline-block px-2 py-0.5 rounded text-[10px] font-bold {{ $vj->activa ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600' }}">
                                             {{ $vj->activa ? ($vj->es_vacante ? 'Vacante' : 'Activo') : 'Inactivo' }}
                                         </span>
-                                        @if(!$vj->es_evaluador)<span class="ml-1 inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-500">No evaluador</span>@endif
+                                        @if(!$vj->es_evaluador)<span class="ml-1 inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-500">Evaluado</span>@endif
                                     </td>
                                     <td class="p-3">
                                         <select id="jefe-superior-{{ $vj->id_vinculacion }}" class="w-full max-w-[240px] text-xs rounded-xl border border-slate-200 p-2 bg-white outline-none focus:border-[#00594E]">
@@ -1434,6 +1444,23 @@
                 const match = !buscar || searchData.includes(buscar);
                 row.style.display = match ? '' : 'none';
             });
+        }
+    </script>
+    <script>
+        function manejarSeleccionCargo() {
+            const sel = document.getElementById("cargo-select");
+            const opt = sel.options[sel.selectedIndex];
+            const hiddenVacante = document.getElementById("hidden-vacante-id");
+            const areaSelect = document.querySelector("select[name=\"area\"]");
+
+            if (opt && opt.dataset.vacante) {
+                hiddenVacante.value = opt.dataset.vacante;
+                areaSelect.value = opt.dataset.area;
+                areaSelect.classList.add('bg-amber-50', 'border-amber-200');
+            } else {
+                hiddenVacante.value = "";
+                areaSelect.classList.remove('bg-amber-50', 'border-amber-200');
+            }
         }
     </script>
 @vite('resources/js/dashboards/admin.js')

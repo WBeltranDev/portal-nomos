@@ -120,6 +120,9 @@ class UsuarioController extends Controller
                 'fecha_ingreso' => date('Y-m-d'),
             ]);
 
+            if ($request->filled("vacante_id")) {
+                DB::table("vinculacion")->where("id_vinculacion", $request->vacante_id)->update(["es_vacante" => 0]);
+            }
             DB::commit();
 
             return back()->with([

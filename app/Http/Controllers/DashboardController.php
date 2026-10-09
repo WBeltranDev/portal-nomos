@@ -772,12 +772,18 @@ class DashboardController extends Controller
             $periodos = DB::table('periodo')->orderByDesc('id_periodo')->get();
         }
 
+        $vacantes = collect();
+        if ($rolActivo === 'admin') {
+            $vacantes = DB::table('vinculacion')->where('es_vacante', 1)->select('id_vinculacion', 'cargo', 'area')->get();
+        }
+
         $viewData = compact(
             'usuario', 'rolActivo', 'usuarios', 'empleados', 'evaluaciones',
             'evaluacionesAdmin',
             'periodos', 'ponderaciones', 'evaluacionesEvaluador', 'evaluacionesEvaluado',
             'informesEvaluador', 'evaluadosDisponibles', 'miVinculacionEvaluador', 'acuerdosRL', 'acuerdosAG',
             'ponderacionesConfig', 'planesPendientesEvaluador', 'escalaCalificacion',
+            'vacantes',
             'periodosParciales', 'funcionariosParaPeriodoParcial', 'vinculacionesReemplazo',
             'evaluadoresDelegacion', 'delegadosDisponibles', 'impedimentos',
             'cargosCatalogo', 'dependenciasCatalogo', 'funcionariosNoCalificados', 'evaluacionesExtratiempo', 'historialExtratiempo',
