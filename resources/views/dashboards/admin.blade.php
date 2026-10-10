@@ -233,7 +233,7 @@
                                     <select name="id_vinc_evaluador" id="select-evaluador-asignacion" onchange="autoMarcarSubalternos()" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
                                         <option value="">Selecciona un evaluador</option>
                                         @foreach($empleados as $e)
-                                            @if($e->id_vinculacion && $e->es_evaluador && $e->activo)
+                                            @if($e->id_vinculacion && $e->activo)
                                                 <option value="{{ $e->id_vinculacion }}">{{ $e->nombres }} {{ $e->apellidos }} - {{ $e->nombre_cargo }}</option>
                                             @endif
                                         @endforeach
@@ -886,7 +886,7 @@
                                 <select name="id_vinc_evaluador_nuevo" id="select-evaluador-traslado" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
                                     <option value="">Selecciona un evaluador</option>
                                     @foreach($empleados as $e)
-                                        @if($e->id_vinculacion && $e->es_evaluador && $e->activo)
+                                        @if($e->id_vinculacion && $e->activo)
                                             <option value="{{ $e->id_vinculacion }}">{{ $e->nombres }} {{ $e->apellidos }} - {{ $e->nombre_cargo }}</option>
                                         @endif
                                     @endforeach
@@ -1295,7 +1295,7 @@
         ponderacionesConfig: @js($ponderacionesConfig ?? []),
         escalaCalificacion: @js($escalaCalificacion ?? []),
         impedimentos: @js($impedimentos ?? []),
-        evaluadores: @js($empleados->filter(fn($e) => $e->es_evaluador && $e->activo)->map(fn($e) => [
+        evaluadores: @js($empleados->filter(fn($e) => $e->activo)->map(fn($e) => [
             'id_vinculacion' => $e->id_vinculacion,
             'nombre_completo' => $e->nombres . ' ' . $e->apellidos,
             'cargo' => $e->nombre_cargo

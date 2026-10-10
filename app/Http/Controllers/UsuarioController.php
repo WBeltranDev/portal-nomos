@@ -211,8 +211,8 @@ class UsuarioController extends Controller
             if (!$jefe) {
                 return response()->json(['message' => 'La vinculación del jefe superior no existe.'], 422);
             }
-            if (!(int) $jefe->activa || (int) $jefe->es_evaluador !== 1) {
-                return response()->json(['message' => 'El jefe superior debe ser una vinculación activa habilitada como evaluador.'], 422);
+            if (!(int) $jefe->activa) {
+                return response()->json(['message' => 'El jefe superior debe ser una vinculación activa.'], 422);
             }
 
             // Evitar ciclos: recorrer la jerarquía desde el posible jefe.

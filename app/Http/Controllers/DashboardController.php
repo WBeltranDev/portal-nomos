@@ -228,7 +228,6 @@ class DashboardController extends Controller
             $jefesDisponibles = DB::table('vinculacion as v')
                 ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
                 ->where('v.activa', 1)
-                ->where('v.es_evaluador', 1)
                 ->select(
                     'v.id_vinculacion',
                     'v.cargo',
