@@ -70,6 +70,14 @@ if (!function_exists('redondearEscala')) {
     }
 }
 
+if (!function_exists('redondearSubtotal')) {
+    function redondearSubtotal($valor): float {
+        $escala = escalaCalificacionConfig(); 
+        // Subtotals are usually rounded to the same or +1 decimal places but NOT clamped
+        return round((float)$valor, $escala['decimales'] + 1);
+    }
+}
+
 if (!function_exists('nivelEscalaCalificacion')) {
     function nivelEscalaCalificacion($valor): string {
         $valor = (float)$valor;
@@ -256,7 +264,7 @@ if (!function_exists('calcularNotaEvaluacion')) {
     $subtotalEjesTotal = 0.0;
     foreach ($pesoEjes as $tipoEje => $pesoEje) {
         $subtotalEje = ($notasPorEje[$tipoEje] ?? 1.0) * ($pesoEje / 100.0);
-        $subtotalesEjes[$tipoEje] = redondearEscala($subtotalEje);
+        $subtotalesEjes[$tipoEje] = redondearSubtotal($subtotalEje);
         $subtotalEjesTotal += $subtotalEje;
     }
 
@@ -355,11 +363,11 @@ if (!function_exists('calcularNotaEvaluacion')) {
         'nota_compromisos_raw'      => redondearEscala($notaCompromisos),
         'nota_comp_comun_raw'       => redondearEscala($notaCompComun),
         'nota_comp_nivel_raw'       => redondearEscala($notaCompNivel),
-        'subtotal_compromisos'      => redondearEscala($subtotalCompromisos),
-        'subtotal_comun'            => redondearEscala($subtotalComun),
-        'subtotal_nivel'            => redondearEscala($subtotalNivel),
+        'subtotal_compromisos'      => redondearSubtotal($subtotalCompromisos),
+        'subtotal_comun'            => redondearSubtotal($subtotalComun),
+        'subtotal_nivel'            => redondearSubtotal($subtotalNivel),
         'subtotales_ejes'           => $subtotalesEjes,
-        'subtotal_ejes_total'       => redondearEscala($subtotalEjesTotal),
+        'subtotal_ejes_total'       => redondearSubtotal($subtotalEjesTotal),
         'nota_final'                => $notaFinal,
         'dias_laborados'            => $evaluacion->dias_laborados,
         'factor_prorrateo'          => $factorProrrateo ? round($factorProrrateo, 6) : null,
