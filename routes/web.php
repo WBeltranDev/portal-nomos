@@ -574,7 +574,11 @@ Route::post('/admin/dependencias/{id}/toggle', [UsuarioController::class, 'toggl
 
 // --- RUTAS DE EVALUADOR / EVALUADO (S9) ---
 Route::post('/evaluacion/{id}/desacuerdo', function (\Illuminate\Http\Request $request, $id) {
-    $data = $request->validate(['desacuerdo' => 'required|string']);
+    $data = $request->validate([
+        'desacuerdo' => 'required|string',
+        'compromisos_desacuerdo' => 'nullable|array',
+        'compromisos_desacuerdo.*' => 'integer'
+    ]);
 
     $auth = session('usuario_autenticado');
     abort_unless($auth && ($auth['rol_activo'] ?? null) === 'evaluado', 403);
@@ -590,9 +594,25 @@ Route::post('/evaluacion/{id}/desacuerdo', function (\Illuminate\Http\Request $r
         ->exists();
     abort_unless($esEvaluado, 403);
 
+    $textoDesacuerdo = trim($data['desacuerdo']);
+    
+    if (!empty($data['compromisos_desacuerdo'])) {
+        $compromisos = \Illuminate\Support\Facades\DB::table('compromiso')
+            ->whereIn('id_compromiso', $data['compromisos_desacuerdo'])
+            ->where('id_evaluacion', $id)
+            ->get();
+            
+        if ($compromisos->isNotEmpty()) {
+            $nombres = $compromisos->map(function($c) {
+                return "#{$c->numero_orden} - " . str()->limit($c->descripcion, 50);
+            })->implode(', ');
+            $textoDesacuerdo = "Compromisos en desacuerdo: " . $nombres . "\n\nMotivo: " . $textoDesacuerdo;
+        }
+    }
+
     \Illuminate\Support\Facades\DB::table('evaluacion')
         ->where('id_evaluacion', $id)
-        ->update(['desacuerdo_evaluado' => trim($data['desacuerdo'])]);
+        ->update(['desacuerdo_evaluado' => $textoDesacuerdo]);
 
     return back()->with('success', 'Su desacuerdo ha sido registrado.');
 })->name('evaluacion.desacuerdo');

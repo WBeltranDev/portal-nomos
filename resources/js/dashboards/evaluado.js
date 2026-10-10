@@ -460,6 +460,20 @@ export function cargarCompromisosEvaluado(ev) {
                 return;
             }
 
+            const desacuerdoLista = document.getElementById('desacuerdo-compromisos-lista');
+            const desacuerdoContainer = document.getElementById('desacuerdo-compromisos-container');
+            if (desacuerdoLista && desacuerdoContainer) {
+                desacuerdoLista.innerHTML = compromisos.map(c => `
+                    <label class="flex items-start gap-2 cursor-pointer group text-xs text-slate-700 hover:text-slate-900">
+                        <input type="checkbox" name="compromisos_desacuerdo[]" value="${c.id_compromiso}" class="mt-0.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500">
+                        <span class="flex-1 truncate group-hover:whitespace-normal group-hover:overflow-visible transition-all duration-300">
+                            <strong>#${c.numero_orden}</strong>: ${c.descripcion}
+                        </span>
+                    </label>
+                `).join('');
+                desacuerdoContainer.classList.remove('hidden');
+            }
+
             const bloqueConfirmar = document.getElementById('confirmar-evidencias-bloque-evaluado');
             if (bloqueConfirmar) {
                 const puedeConfirmar = ev.concertacion_firmada && ev.estado !== 'CALIFICADA' && !ev.es_traslado && Number(ev.fase_actual || 3) === 3;

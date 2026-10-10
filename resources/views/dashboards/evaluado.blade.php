@@ -229,7 +229,11 @@
                                 <form id="form-desacuerdo-evaluacion" method="POST" action="" class="space-y-3">
                                     @csrf
                                     <p class="text-[11px] text-slate-500">Disponible mientras la concertación esté pendiente de firma. Una vez firmada o calificada, podrás usar el trámite de recursos cuando corresponda.</p>
-                                    <textarea name="desacuerdo" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" placeholder="Escribe los motivos de tu desacuerdo con los compromisos propuestos..." required></textarea>
+                                    <div id="desacuerdo-compromisos-container" class="hidden space-y-2 mb-3">
+                                        <label class="text-[10px] font-bold text-slate-700 uppercase block mb-1">Selecciona el/los compromisos en desacuerdo:</label>
+                                        <div id="desacuerdo-compromisos-lista" class="space-y-1.5 max-h-40 overflow-y-auto p-2 bg-slate-50 border border-slate-200 rounded-xl"></div>
+                                    </div>
+                                    <textarea name="desacuerdo" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" placeholder="Escribe los motivos de tu desacuerdo..." required></textarea>
                                     <button type="submit" class="bg-amber-600 text-white px-4 py-2 rounded-xl text-xs font-bold w-full md:w-auto">Enviar desacuerdo al evaluador</button>
                                 </form>
                             </div>
