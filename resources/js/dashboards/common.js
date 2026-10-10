@@ -212,17 +212,7 @@ export function renderResultado(calculo, containerId, contexto = 'evaluador', ev
         </div>
     ` : '';
 
-    const pdfHtml = (contexto === 'evaluado' && calculo.estado === 'CALIFICADA' && evaluacionId) ? `
-        <div class="mt-3 flex flex-wrap gap-2">
-            <a href="/evaluaciones/${evaluacionId}/informe" class="inline-flex items-center gap-2 rounded-xl bg-[#00594E] text-white px-4 py-2 text-xs font-bold hover:brightness-110 transition">
-                <span class="material-symbols-outlined text-sm">picture_as_pdf</span> Descargar PDF semestral
-            </a>
-            ${calculo.informe_anual_disponible ? `
-            <a href="/evaluaciones/${evaluacionId}/informe-anual" class="inline-flex items-center gap-2 rounded-xl bg-[#B5A160] text-white px-4 py-2 text-xs font-bold hover:brightness-110 transition">
-                <span class="material-symbols-outlined text-sm">picture_as_pdf</span> Descargar PDF anual
-            </a>` : ''}
-        </div>
-    ` : '';
+    const pdfHtml = '';
 
     cont.innerHTML = `
         ${bloqueadaHtml}
