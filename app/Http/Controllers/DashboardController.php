@@ -466,7 +466,8 @@ class DashboardController extends Controller
                     'ev.desacuerdo_evaluado',
                     DB::raw('IF(f_ev.id_firma IS NOT NULL, 1, 0) as evaluado_firmado'),
                     DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado'),
-                    DB::raw('(SELECT COUNT(*) FROM concertacion_extratiempo ce WHERE ce.id_evaluacion = ev.id_evaluacion AND ce.activo = 1) as tiene_extratiempo')
+                    DB::raw('(SELECT COUNT(*) FROM concertacion_extratiempo ce WHERE ce.id_evaluacion = ev.id_evaluacion AND ce.activo = 1) as tiene_extratiempo'),
+                    DB::raw('(SELECT estado FROM impedimento_recusacion ir WHERE ir.id_evaluacion = ev.id_evaluacion ORDER BY id_impedimento DESC LIMIT 1) as estado_impedimento')
                 )
                 ->orderByDesc('ev.id_evaluacion')
                 ->get();
@@ -627,7 +628,8 @@ class DashboardController extends Controller
                     DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado'),
                     DB::raw('IF(f_no.id_firma IS NOT NULL, 1, 0) as notificacion_firmada'),
                     DB::raw('f_no.fecha_firma as fecha_notificacion'),
-                    DB::raw('(SELECT COUNT(*) FROM concertacion_extratiempo ce WHERE ce.id_evaluacion = ev.id_evaluacion AND ce.activo = 1) as tiene_extratiempo')
+                    DB::raw('(SELECT COUNT(*) FROM concertacion_extratiempo ce WHERE ce.id_evaluacion = ev.id_evaluacion AND ce.activo = 1) as tiene_extratiempo'),
+                    DB::raw('(SELECT estado FROM impedimento_recusacion ir WHERE ir.id_evaluacion = ev.id_evaluacion ORDER BY id_impedimento DESC LIMIT 1) as estado_impedimento')
                 )
                 ->orderByDesc('ev.id_evaluacion')
                 ->get();

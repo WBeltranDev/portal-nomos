@@ -234,7 +234,7 @@ export function abrirConcertacionEvaluador(card, ev) {
     const puedeDeclararImpedimento = ev.estado === 'EN_PROCESO'
         && !ev.concertacion_firmada
         && Number(ev.fase_actual || 1) <= 2
-        && !ev.es_traslado;
+        && !(ev.es_traslado || ev.bloqueado_por_impedimento);
     if (btnImpedimento) btnImpedimento.classList.toggle('hidden', !puedeDeclararImpedimento);
     if (!puedeDeclararImpedimento && modalImpedimento) modalImpedimento.classList.add('hidden');
 
@@ -242,12 +242,12 @@ export function abrirConcertacionEvaluador(card, ev) {
     // solo visible cuando la concertación ya está firmada y no está calificada.
     const seccionSolMod = document.getElementById('seccion-solicitar-modificacion-evaluador');
     const modalSolMod = document.getElementById('modal-solicitud-modificacion');
-    const puedeSolicitarMod = !!ev.concertacion_firmada && ev.estado !== 'CALIFICADA' && !ev.es_traslado;
+    const puedeSolicitarMod = !!ev.concertacion_firmada && ev.estado !== 'CALIFICADA' && !(ev.es_traslado || ev.bloqueado_por_impedimento);
     if (seccionSolMod) seccionSolMod.classList.toggle('hidden', !puedeSolicitarMod);
     if (!puedeSolicitarMod && modalSolMod) modalSolMod.classList.add('hidden');
 
     const avisoTraslado = document.getElementById('aviso-traslado-evaluador');
-    if (avisoTraslado) avisoTraslado.classList.toggle('hidden', !ev.es_traslado);
+    if (avisoTraslado) avisoTraslado.classList.toggle('hidden', !(ev.es_traslado || ev.bloqueado_por_impedimento));
 
     const avisoDelegacion = document.getElementById('aviso-delegacion-evaluador');
     if (avisoDelegacion) {
@@ -257,11 +257,32 @@ export function abrirConcertacionEvaluador(card, ev) {
         avisoDelegacion.classList.toggle('hidden', !ev.id_vinc_suplente);
     }
     
+
     // Remueve mensaje de desacuerdo anterior si existe
     const oldDesacuerdo = document.getElementById('aviso-desacuerdo-evaluador');
     if (oldDesacuerdo) oldDesacuerdo.remove();
     
+    // Banner Impedimento
+    const oldImpedimento = document.getElementById('aviso-impedimento-evaluador');
+    if (oldImpedimento) oldImpedimento.remove();
+    const impedimentoBloquea = ev.estado_impedimento === 'PENDIENTE' || ev.estado_impedimento === 'APROBADO';
+    ev.bloqueado_por_impedimento = impedimentoBloquea;
+
+    if (impedimentoBloquea && avisoTraslado) {
+        const texto = ev.estado_impedimento === 'PENDIENTE' ? 'Impedimento / Recusación en revisión por Talento Humano.' : 'Impedimento / Recusación aprobado. Esperando reasignación o acciones adicionales.';
+        avisoTraslado.insertAdjacentHTML('beforebegin', `
+            <div id="aviso-impedimento-evaluador" class="mt-4 flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-700">
+                <span class="material-symbols-outlined text-base shrink-0">front_hand</span>
+                <div>
+                    <p class="font-bold uppercase tracking-wider text-[10px] text-amber-500 mb-0.5">Evaluación bloqueada</p>
+                    <p class="whitespace-pre-wrap">${texto} No puedes modificar esta evaluación.</p>
+                </div>
+            </div>
+        `);
+    }
+
     if (ev.desacuerdo_evaluado && avisoTraslado) {
+
         avisoTraslado.insertAdjacentHTML('beforebegin', `
             <div id="aviso-desacuerdo-evaluador" class="mt-4 flex items-start gap-2 rounded-2xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">
                 <span class="material-symbols-outlined text-base shrink-0">gavel</span>
@@ -274,7 +295,7 @@ export function abrirConcertacionEvaluador(card, ev) {
     }
 
     const formNuevoComp = document.getElementById('compromiso-formulario-evaluador-contenedor');
-    if (formNuevoComp) formNuevoComp.classList.toggle('hidden', !!ev.es_traslado || !!ev.concertacion_firmada);
+    if (formNuevoComp) formNuevoComp.classList.toggle('hidden', !!(ev.es_traslado || ev.bloqueado_por_impedimento) || !!ev.concertacion_firmada);
 
     const tabBtnEjes = document.getElementById('tabbtn-evaluador-ejes');
     const vistaEjes = document.getElementById('ejes-misionales-vista-evaluador');
@@ -322,7 +343,7 @@ export function recargarSoloEvidenciasEvaluador() {
             }, {});
 
             const ev = selectedEvaluacionData;
-            const bloqueada = !ev.concertacion_firmada || ev.estado === 'CALIFICADA' || !!ev.es_traslado || Number(ev.fase_actual || 3) < 4;
+            const bloqueada = !ev.concertacion_firmada || ev.estado === 'CALIFICADA' || !!(ev.es_traslado || ev.bloqueado_por_impedimento) || Number(ev.fase_actual || 3) < 4;
             Object.keys(grupos).forEach(compromisoId => {
                 const contenedor = document.getElementById(`evidencias-list-evaluador-${compromisoId}`);
                 if (contenedor) {
@@ -518,14 +539,14 @@ export function cargarCompromisosEvaluador(ev, ejes = {}) {
             const btnFirmar = document.getElementById('btn-firmar-evaluador');
             if (btnFirmar) {
                 const yaFirmado = !!ev.evaluador_firmado;
-                btnFirmar.disabled = !cumpleConcertacion || yaFirmado || !!ev.es_traslado;
+                btnFirmar.disabled = !cumpleConcertacion || yaFirmado || !!(ev.es_traslado || ev.bloqueado_por_impedimento);
                 btnFirmar.classList.toggle('bg-[#00594E]', !yaFirmado);
                 btnFirmar.classList.toggle('bg-emerald-600', yaFirmado);
                 btnFirmar.classList.toggle('cursor-not-allowed', yaFirmado);
                 btnFirmar.innerText = yaFirmado ? 'Firmado' : 'Firmar concertación';
             }
 
-            const puedeCalificar = ev.concertacion_firmada && ev.estado !== 'CALIFICADA' && !ev.es_traslado && Number(ev.fase_actual || 3) >= 4 && evidenciasPendientesCount === 0;
+            const puedeCalificar = ev.concertacion_firmada && ev.estado !== 'CALIFICADA' && !(ev.es_traslado || ev.bloqueado_por_impedimento) && Number(ev.fase_actual || 3) >= 4 && evidenciasPendientesCount === 0;
             const bloqueCalificacion = document.getElementById('compromisos-calificacion-bloque');
             if (bloqueCalificacion) bloqueCalificacion.classList.toggle('hidden', !puedeCalificar);
             sincronizarBloqueosCalificacionEvaluador();
@@ -560,7 +581,7 @@ export function cargarCompromisosEvaluador(ev, ejes = {}) {
                         <div class="flex items-center gap-2 shrink-0" onclick="event.stopPropagation()">
                             ${calificacionControl}
                             <span class="text-xs font-black rounded-xl px-2.5 py-1 bg-[#EAF2EF] text-[#00594E]">${c.porcentaje_peso}%</span>
-                            ${!ev.concertacion_firmada && !ev.es_traslado ? `
+                            ${!ev.concertacion_firmada && !(ev.es_traslado || ev.bloqueado_por_impedimento) ? `
                             <button type="button" onclick="editarCompromisoEvaluador(${c.id_compromiso})" class="text-[#00594E] hover:text-[#00443b] p-1" title="Editar compromiso">
                                 <span class="material-symbols-outlined text-base">edit</span>
                             </button>
@@ -575,11 +596,11 @@ export function cargarCompromisosEvaluador(ev, ejes = {}) {
                         <div class="pt-2 border-t border-slate-100">
                             <p class="text-[10px] font-bold uppercase text-slate-400 mb-1">Evidencias Registradas</p>
                             <div id="evidencias-list-evaluador-${c.id_compromiso}" class="space-y-2">
-                                ${renderEvidenciasEvaluadorAccion(gruposEvidencias[String(c.id_compromiso)] || [], !ev.concertacion_firmada || ev.estado === 'CALIFICADA' || !!ev.es_traslado || Number(ev.fase_actual || 3) < 4)}
+                                ${renderEvidenciasEvaluadorAccion(gruposEvidencias[String(c.id_compromiso)] || [], !ev.concertacion_firmada || ev.estado === 'CALIFICADA' || !!(ev.es_traslado || ev.bloqueado_por_impedimento) || Number(ev.fase_actual || 3) < 4)}
                             </div>
                         </div>
                         <div id="observacion-form-evaluador-${c.id_compromiso}" class="space-y-3">
-                                    ${renderObservacionEvaluador(c, gruposObservaciones[String(c.id_compromiso)], !ev.concertacion_firmada, ev.estado === 'CALIFICADA' || !!ev.es_traslado || Number(ev.fase_actual || 3) >= 5)}
+                                    ${renderObservacionEvaluador(c, gruposObservaciones[String(c.id_compromiso)], !ev.concertacion_firmada, ev.estado === 'CALIFICADA' || !!(ev.es_traslado || ev.bloqueado_por_impedimento) || Number(ev.fase_actual || 3) >= 5)}
                                 </div>
                     </div>
                 </div>
@@ -1133,7 +1154,7 @@ export function cargarCompetenciasEvaluador(ev) {
                 acc[c.id_competencia] = c;
                 return acc;
             }, {});
-            const bloqueado = !ev.concertacion_firmada || ev.estado === 'CALIFICADA' || !!ev.es_traslado || Number(ev.fase_actual || 3) < 4 || evidenciasPendientesCount > 0;
+            const bloqueado = !ev.concertacion_firmada || ev.estado === 'CALIFICADA' || !!(ev.es_traslado || ev.bloqueado_por_impedimento) || Number(ev.fase_actual || 3) < 4 || evidenciasPendientesCount > 0;
             const bloqueadoMsg = document.getElementById('competencias-bloqueado-evaluador');
             if (bloqueadoMsg) {
                 bloqueadoMsg.classList.toggle('hidden', !bloqueado);
@@ -1225,7 +1246,7 @@ export function cargarEjesEvaluador(ev) {
             const ejesActivos = calculo.ejes_activos || [];
             const notas = calculo.notas_ejes_raw || {};
             const pesos = (calculo.pesos && calculo.pesos.ejes) || {};
-            const bloqueado = !ev.concertacion_firmada || ev.estado === 'CALIFICADA' || !!ev.es_traslado || Number(ev.fase_actual || 3) < 4 || evidenciasPendientesCount > 0;
+            const bloqueado = !ev.concertacion_firmada || ev.estado === 'CALIFICADA' || !!(ev.es_traslado || ev.bloqueado_por_impedimento) || Number(ev.fase_actual || 3) < 4 || evidenciasPendientesCount > 0;
             const bloqueadoMsg = document.getElementById('ejes-bloqueado-evaluador');
             if (bloqueadoMsg) {
                 bloqueadoMsg.classList.toggle('hidden', !bloqueado);
@@ -1326,7 +1347,7 @@ function sincronizarBloqueosCalificacionEvaluador() {
     const ev = selectedEvaluacionData;
     if (!ev) return;
     const pendientes = evidenciasPendientesCount > 0;
-    const bloqueoBase = !ev.concertacion_firmada || ev.estado === 'CALIFICADA' || !!ev.es_traslado || Number(ev.fase_actual || 3) < 4;
+    const bloqueoBase = !ev.concertacion_firmada || ev.estado === 'CALIFICADA' || !!(ev.es_traslado || ev.bloqueado_por_impedimento) || Number(ev.fase_actual || 3) < 4;
 
     const puedeCalificarCompromisos = !bloqueoBase && !pendientes;
     const puedeCalificarResto = !bloqueoBase && !pendientes;

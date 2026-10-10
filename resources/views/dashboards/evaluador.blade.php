@@ -289,7 +289,7 @@
 
                                     <div id="compromiso-formulario-evaluador-contenedor" class="bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
                                         <h4 class="text-xs font-bold text-slate-800 uppercase tracking-wide mb-3">Nuevo Compromiso</h4>
-                                        <form id="form-nuevo-compromiso-evaluador" onsubmit="agregarCompromisoEvaluador(event)" class="space-y-3">
+                                        <form id="form-nuevo-compromiso-evaluador" data-no-modal onsubmit="agregarCompromisoEvaluador(event)" class="space-y-3">
                                             <div>
                                                 <label class="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Descripción del Compromiso</label>
                                                 <textarea id="comp-descripcion-evaluador" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" rows="2" placeholder="Describa el compromiso..." required></textarea>
@@ -365,7 +365,7 @@
                             <div id="modal-solicitud-modificacion" class="hidden mt-4 bg-sky-50 p-4 border border-sky-200 rounded-xl">
                                 <h4 class="font-bold text-sky-800 text-sm mb-1">Solicitar Modificación de Compromisos</h4>
                                 <p class="text-[11px] text-sky-600 mb-3">Se usa cuando hay una incapacidad u otra justificación válida y la concertación ya está firmada. Talento Humano la revisará y decidirá.</p>
-                                <form id="form-solicitud-modificacion" onsubmit="enviarSolicitudModificacion(event)" class="space-y-3">
+                                <form id="form-solicitud-modificacion" data-no-modal onsubmit="enviarSolicitudModificacion(event)" class="space-y-3">
                                     <div>
                                         <label class="text-[10px] font-bold text-sky-700 uppercase">Motivo (ej: Incapacidad, comisión...)</label>
                                         <textarea id="solmod-motivo" class="w-full text-xs p-2 rounded border" placeholder="Describa el motivo de la modificación..." required></textarea>
@@ -461,7 +461,7 @@
                                         </h4>
                                         <span id="plan-estado-evaluador" class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-amber-50 text-amber-700 hidden">Pendiente</span>
                                     </div>
-                                    <form id="form-plan-mejoramiento-evaluador" onsubmit="guardarPlanMejoramiento(event)" class="grid gap-3 rounded-2xl border border-slate-100 bg-slate-50/50 p-4">
+                                    <form id="form-plan-mejoramiento-evaluador" data-no-modal onsubmit="guardarPlanMejoramiento(event)" class="grid gap-3 rounded-2xl border border-slate-100 bg-slate-50/50 p-4">
                                         <div>
                                             <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Temas del plan de mejoramiento</label>
                                             <textarea id="plan-temas-evaluador" rows="4" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Describe los temas, acciones, metas y plazos del plan de mejoramiento..." required></textarea>

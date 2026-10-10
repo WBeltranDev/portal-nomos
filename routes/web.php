@@ -586,6 +586,7 @@ Route::post('/evaluacion/{id}/desacuerdo', function (\Illuminate\Http\Request $r
     $evaluacion = \Illuminate\Support\Facades\DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación fue bloqueada por traslado y solo se puede consultar.');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
     abort_if($evaluacion->concertacion_firmada || $evaluacion->estado === 'CALIFICADA', 422, 'El desacuerdo solo puede registrarse antes de firmar la concertación.');
 
     $esEvaluado = \Illuminate\Support\Facades\DB::table('vinculacion')
@@ -1946,6 +1947,7 @@ Route::post('/evaluaciones/{id}/ejes', function (Request $request, int $id) {
     abort_unless($puedeEditar, 403);
 
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
 
     $data = $request->validate([
         'investigacion' => ['required', 'boolean'],
@@ -1986,6 +1988,7 @@ Route::post('/evaluaciones/{id}/observaciones', function (Request $request, int 
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
     abort_unless($evaluacion->concertacion_firmada, 403, 'La concertación debe estar firmada por ambas partes antes de registrar observaciones.');
     abort_if($evaluacion->estado === 'CALIFICADA' || (int) $evaluacion->fase_actual >= 5, 422, 'Ya se calculó la nota final; las observaciones de compromiso quedaron congeladas.');
 
@@ -2037,6 +2040,7 @@ Route::post('/evaluaciones/{id}/evidencias', function (Request $request, int $id
     abort_unless($vinculacionRegistra, 403);
 
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
 
     if (!$evaluacion->concertacion_firmada) {
         return response()->json(['message' => 'Debes esperar a que el evaluador y el evaluado firmen la concertación antes de registrar evidencias.'], 422);
@@ -2103,6 +2107,7 @@ Route::post('/evaluaciones/{id}/confirmar-evidencias', function (Request $reques
 
     abort_unless($vinculacionEvaluado, 403);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado.');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
 
     if (!$evaluacion->concertacion_firmada) {
         return response()->json(['message' => 'La concertación debe estar firmada antes de confirmar evidencias.'], 422);
@@ -2162,6 +2167,7 @@ Route::post('/evaluaciones/{id}/evidencias/{idEvidencia}/aprobar', function (Req
     abort_unless($vinculacionEvaluador, 403);
 
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
 
     abort_if($evaluacion->estado === 'CALIFICADA', 422, 'Esta evaluación ya fue calificada y calculada; las evidencias quedaron congeladas y no se pueden modificar.');
 
@@ -2215,6 +2221,7 @@ Route::post('/evaluaciones/{id}/compromisos', function (Request $request, int $i
     abort_unless($puedeEditarCompromiso, 403);
 
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
 
     if ($evaluacion->concertacion_firmada) {
         return response()->json(['error' => 'La concertación ya está firmada y congelada.'], 422);
@@ -2288,6 +2295,7 @@ Route::delete('/compromisos/{id}', function (int $id) {
     abort_unless($puedeEditarCompromiso, 403);
 
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
 
     if ($evaluacion->concertacion_firmada) {
         return response()->json(['error' => 'La concertación ya está firmada y congelada.'], 422);
@@ -2330,6 +2338,7 @@ Route::put('/compromisos/{id}', function (Request $request, int $id) {
     abort_unless($puedeEditarCompromiso, 403);
 
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
 
     if ($evaluacion->concertacion_firmada) {
         return response()->json(['error' => 'La concertación ya está firmada y congelada.'], 422);
@@ -2383,6 +2392,7 @@ Route::post('/evaluaciones/{id}/compromisos/solicitar-modificacion', function (R
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado.');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
     abort_if($evaluacion->estado === 'CALIFICADA', 422, 'La evaluación ya fue calificada; no se pueden modificar compromisos.');
     abort_if(!$evaluacion->concertacion_firmada, 422, 'La concertación aún no está firmada; use la edición directa de compromisos.');
 
@@ -2592,6 +2602,7 @@ Route::post('/evaluaciones/{id}/firmar', function (Request $request, int $id) {
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
 
     if ($evaluacion->concertacion_firmada) {
         return back()->withErrors(['firma' => 'Esta concertación ya se encuentra firmada.']);
@@ -3204,6 +3215,7 @@ Route::post('/evaluaciones/{id}/calificar-compromisos', function (Request $reque
         ->exists();
     abort_unless($puedeEditar, 403);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
 
     $data = $request->validate([
         'compromisos' => ['required', 'array'],
@@ -3266,6 +3278,7 @@ Route::post('/evaluaciones/{id}/calificar-competencias', function (Request $requ
         ->exists();
     abort_unless($puedeEditar, 403);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
 
     $data = $request->validate([
         'competencias'   => ['required', 'array'],
@@ -3281,11 +3294,16 @@ Route::post('/evaluaciones/{id}/calificar-competencias', function (Request $requ
             ->where('id_competencia', $item['id_competencia'])
             ->first();
 
-        $fields = [
-            'calificacion_sem1'       => $item['calificacion_sem1'] ?? null,
-            'calificacion_sem2'       => $item['calificacion_sem2'] ?? null,
-            'calificacion_definitiva' => $item['calificacion_definitiva'] ?? null,
-        ];
+        $fields = [];
+        if (array_key_exists('calificacion_sem1', $item)) {
+            $fields['calificacion_sem1'] = $item['calificacion_sem1'];
+        }
+        if (array_key_exists('calificacion_sem2', $item)) {
+            $fields['calificacion_sem2'] = $item['calificacion_sem2'];
+        }
+        if (array_key_exists('calificacion_definitiva', $item)) {
+            $fields['calificacion_definitiva'] = $item['calificacion_definitiva'];
+        }
 
         if ($existing) {
             DB::table('competencia_evaluada')
@@ -3311,6 +3329,7 @@ Route::post('/evaluaciones/{id}/calcular-final', function (Request $request, int
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
 
     // Solo admin puede forzar el cálculo; evaluador solo puede calificar sus propias
     if ($rolActivo === 'evaluador') {
@@ -3484,6 +3503,7 @@ Route::post('/evaluaciones/{id}/calificar-ejes', function (Request $request, int
         ->exists();
     abort_unless($puedeEditar, 403);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
 
     // Verificar que el evaluado tiene aplica_eje_misional = 1
     $vinculacionEvaluado = DB::table('vinculacion')
@@ -3651,7 +3671,16 @@ if (!function_exists('getEvaluacionConSistema')) {
  * El bloqueo del flujo del evaluador aplica hasta concertar y firmar el plan.
  */
 if (!function_exists('evaluacionRequierePlanMejoramiento')) {
-    function evaluacionRequierePlanMejoramiento($evaluacion): bool {
+    
+function evaluacionBloqueadaPorImpedimento($id_evaluacion) {
+    if (!\Illuminate\Support\Facades\Schema::hasTable('impedimento_recusacion')) return false;
+    return \Illuminate\Support\Facades\DB::table('impedimento_recusacion')
+        ->where('id_evaluacion', $id_evaluacion)
+        ->whereIn('estado', ['PENDIENTE', 'APROBADO'])
+        ->exists();
+}
+
+function evaluacionRequierePlanMejoramiento($evaluacion): bool {
         if (!$evaluacion) {
             return false;
         }
@@ -3805,6 +3834,7 @@ Route::post('/evaluaciones/{id}/firmar-notificacion', function (int $id) {
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
     abort_unless($evaluacion->estado === 'CALIFICADA', 422, 'La notificación de la calificación se firma cuando la evaluación ya fue calificada.');
 
     $auth = session('usuario_autenticado');
@@ -3841,6 +3871,7 @@ Route::post('/evaluaciones/{id}/documento-notificacion', function (Request $requ
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
     abort_unless($evaluacion->estado === 'CALIFICADA', 422, 'El enlace del documento firmado se registra cuando la evaluación ya fue calificada.');
 
     $auth = session('usuario_autenticado');
@@ -3914,6 +3945,7 @@ Route::post('/evaluaciones/{id}/recursos', function (Request $request, int $id) 
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
     abort_unless($evaluacion->estado === 'CALIFICADA', 422, 'Solo puedes radicar un recurso cuando la evaluación haya sido calificada y calculada.');
     // La firma de la notificación es previa y obligatoria: es la constancia de
     // que el funcionario supo su nota antes de interponer el recurso.
@@ -4002,6 +4034,7 @@ Route::post('/recursos/{id}/decision', function (Request $request, int $id) {
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $recurso->id_evaluacion)->first();
     abort_unless($evaluacion, 404);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
 
     $auth = session('usuario_autenticado');
     $rolActivo = $auth['rol_activo'] ?? null;
@@ -4219,6 +4252,7 @@ Route::post('/evaluaciones/{id}/plan-mejoramiento', function (Request $request, 
     $evaluacion = getEvaluacionConSistema($id);
     abort_unless($evaluacion, 404);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
     abort_unless(evaluacionRequierePlanMejoramiento($evaluacion), 422, 'Esta evaluación no requiere plan de mejoramiento según la calificación obtenida.');
     abort_unless($evaluacion->concertacion_firmada, 422, 'El evaluado debe firmar la concertación antes de habilitar el plan de mejoramiento.');
     abort_unless($evaluacion->estado === 'CALIFICADA', 422, 'El plan de mejoramiento se habilita cuando la evaluación haya sido calificada.');
@@ -4273,6 +4307,7 @@ Route::post('/plan-mejoramiento/{id}/firmar', function (Request $request, int $i
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $plan->id_evaluacion)->first();
     abort_unless($evaluacion, 404);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
     abort_unless($evaluacion->concertacion_firmada, 422, 'El evaluado debe firmar la concertación antes de firmar el plan de mejoramiento.');
     abort_unless($evaluacion->estado === 'CALIFICADA', 422, 'El plan de mejoramiento se habilita cuando la evaluación haya sido calificada.');
     abort_unless(notificacionCalificacionFirmada((int) $evaluacion->id_evaluacion), 422, mensajeNotificacionPendiente());
