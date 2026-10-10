@@ -1221,8 +1221,12 @@
                         </div>
                     </div>
                     
-                    <div class="mt-4">
-                        <input id="buscador-matriz" oninput="filtrarMatriz()" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-[#00594E] focus:ring-2 focus:ring-[#00594E]/10" type="text" placeholder="Buscar por nombre, documento o dependencia">
+                    <div class="mt-4 flex gap-2">
+                        <input id="buscador-matriz" oninput="filtrarMatriz()" class="flex-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-[#00594E] focus:ring-2 focus:ring-[#00594E]/10" type="text" placeholder="Buscar por nombre, documento o dependencia">
+                        <button onclick="exportarMatrizCSV()" class="flex items-center justify-center gap-2 rounded-2xl bg-[#00594E] px-4 py-3 text-sm font-bold text-white shadow-sm hover:bg-[#004a41] transition shrink-0">
+                            <span class="material-symbols-outlined text-base">download</span>
+                            <span class="hidden sm:inline">Exportar a Excel</span>
+                        </button>
                     </div>
 
                     <div class="mt-6 overflow-x-auto rounded-2xl border border-slate-200">
@@ -1477,6 +1481,42 @@
             } else {
                 input.value = "";
             }
+        }
+
+        function exportarMatrizCSV() {
+            const table = document.getElementById("tabla-matriz");
+            if (!table) return;
+
+            let csv = [];
+            const rows = table.querySelectorAll("tr");
+            
+            for (let i = 0; i < rows.length; i++) {
+                // Ignore hidden rows so the user only exports what they searched for
+                if (window.getComputedStyle(rows[i]).display === 'none') continue;
+                
+                let row = [];
+                const cols = rows[i].querySelectorAll("td, th");
+                for (let j = 0; j < cols.length; j++) {
+                    let data = cols[j].innerText.replace(/(\r\n|\n|\r)/gm, " | ").trim();
+                    data = data.replace(/"/g, '""');
+                    row.push('"' + data + '"');
+                }
+                // Use semicolon for Excel in Latin America / Spain
+                csv.push(row.join(";"));
+            }
+            
+            // UTF-8 BOM helps Excel recognize special characters like accents
+            const csvContent = "\uFEFF" + csv.join("\n");
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement("a");
+            a.href = url;
+            const dateStr = new Date().toISOString().split('T')[0];
+            a.download = "Matriz_Calificaciones_" + dateStr + ".csv";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
         }
     </script>
 @vite('resources/js/dashboards/admin.js')
