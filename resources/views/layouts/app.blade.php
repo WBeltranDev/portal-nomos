@@ -33,8 +33,8 @@
         document.addEventListener('submit', function(e) {
             const form = e.target;
             
-            // Allow bypassing this modal via data-no-modal attribute
-            if (form.hasAttribute('data-no-modal')) return;
+            // Si el evento ya fue prevenido (ej. AJAX via JS), no mostramos el modal bloqueante
+            if (e.defaultPrevented || form.hasAttribute('data-no-modal')) return;
 
             const modalProcesando = document.getElementById('modal-procesando');
             if (modalProcesando) {
