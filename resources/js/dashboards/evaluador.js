@@ -976,6 +976,10 @@ export function enviarDecisionRecurso(id, decision, motivacion, id_vinc_nuevo_ev
             const payload = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(parseErrorMessage(payload, 'No se pudo registrar la decisión.'));
             alert(payload.message || 'Decisión registrada.');
+            if (id_vinc_nuevo_evaluador) {
+                window.location.reload();
+                return;
+            }
             if (selectedEvaluacionData) {
                 if (decision === 'APROBADO') {
                     selectedEvaluacionData.estado = 'EN_PROCESO';
