@@ -709,12 +709,28 @@ class DashboardController extends Controller
             
             $anioActual = (int) date('Y');
             
+            // Evaluaciones del año actual y documentos firmados en lote
+            $evaluacionesAnio = DB::table('evaluacion as ev')
+                ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
+                ->where('p.anio', $anioActual)
+                ->where('ev.es_traslado', 0)
+                ->select('ev.id_evaluacion', 'ev.id_vinc_evaluado', 'p.semestre', 'ev.estado', 'ev.tipo_evaluacion')
+                ->get()
+                ->groupBy('id_vinc_evaluado');
+
+            $docsFirmados = Schema::hasTable('notificacion_documento')
+                ? DB::table('notificacion_documento')
+                    ->select('id_evaluacion', 'tipo_documento', 'url')
+                    ->get()
+                : collect();
+            
             foreach ($empleadosMatriz as $emp) {
+                $idVinc = (int) $emp->id_vinculacion;
                 $sem1Data = function_exists('obtenerNotaSemestreConsolidada') 
-                    ? obtenerNotaSemestreConsolidada((int)$emp->id_vinculacion, $anioActual, $emp->sistema_evaluacion, 1) 
+                    ? obtenerNotaSemestreConsolidada($idVinc, $anioActual, $emp->sistema_evaluacion, 1) 
                     : null;
                 $sem2Data = function_exists('obtenerNotaSemestreConsolidada') 
-                    ? obtenerNotaSemestreConsolidada((int)$emp->id_vinculacion, $anioActual, $emp->sistema_evaluacion, 2) 
+                    ? obtenerNotaSemestreConsolidada($idVinc, $anioActual, $emp->sistema_evaluacion, 2) 
                     : null;
                 
                 $notaSem1 = $sem1Data ? ($sem1Data['nota'] ?? null) : null;
@@ -725,7 +741,24 @@ class DashboardController extends Controller
                     $notaAnual = function_exists('redondearEscala') ? redondearEscala(($notaSem1 + $notaSem2) / 2) : round(($notaSem1 + $notaSem2) / 2, 1);
                 } elseif ($notaSem1 === null && $notaSem2 !== null) {
                     $notaAnual = function_exists('redondearEscala') ? redondearEscala($notaSem2) : round($notaSem2, 1);
+                } elseif ($notaSem1 !== null && $notaSem2 === null) {
+                    $notaAnual = function_exists('redondearEscala') ? redondearEscala($notaSem1) : round($notaSem1, 1);
                 }
+
+                // Documentos firmados radicados para Semestre 1, Semestre 2 y Anual
+                $evalsEmp = $evaluacionesAnio->get($idVinc, collect());
+                
+                // Semestre 1 (solo el enlace subido y radicado en Talento Humano)
+                $idEval1 = $sem1Data['id_evaluacion'] ?? $evalsEmp->firstWhere('semestre', 1)?->id_evaluacion;
+                $docSem1 = $idEval1 ? $docsFirmados->first(fn($d) => (int)$d->id_evaluacion === (int)$idEval1 && ($d->tipo_documento ?? 'SEMESTRAL') === 'SEMESTRAL')?->url : null;
+
+                // Semestre 2 (solo el enlace subido y radicado en Talento Humano)
+                $idEval2 = $sem2Data['id_evaluacion'] ?? $evalsEmp->firstWhere('semestre', 2)?->id_evaluacion;
+                $docSem2 = $idEval2 ? $docsFirmados->first(fn($d) => (int)$d->id_evaluacion === (int)$idEval2 && ($d->tipo_documento ?? 'SEMESTRAL') === 'SEMESTRAL')?->url : null;
+
+                // Anual (documento radicado para el cierre anual o del semestre 2 que cierra el ciclo)
+                $idEvalAnual = $idEval2 ?? $idEval1;
+                $docAnual = $idEvalAnual ? $docsFirmados->first(fn($d) => (int)$d->id_evaluacion === (int)$idEvalAnual && ($d->tipo_documento ?? '') === 'ANUAL')?->url : null;
                 
                 $matrizCalificaciones[] = (object) [
                     'nombres' => $emp->nombres,
@@ -736,6 +769,11 @@ class DashboardController extends Controller
                     'nota_semestre_1' => $notaSem1,
                     'nota_semestre_2' => $notaSem2,
                     'nota_anual' => $notaAnual,
+                    'id_evaluacion_sem1' => $idEval1,
+                    'id_evaluacion_sem2' => $idEval2,
+                    'doc_semestre_1' => $docSem1,
+                    'doc_semestre_2' => $docSem2,
+                    'doc_anual' => $docAnual,
                 ];
             }
         }

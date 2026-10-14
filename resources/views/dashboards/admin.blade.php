@@ -1302,6 +1302,7 @@
                                     <th class="px-4 py-3 font-semibold uppercase tracking-wider text-[10px] text-center">Nota Sem. 1</th>
                                     <th class="px-4 py-3 font-semibold uppercase tracking-wider text-[10px] text-center">Nota Sem. 2</th>
                                     <th class="px-4 py-3 font-semibold uppercase tracking-wider text-[10px] text-center">Nota Anual</th>
+                                    <th class="px-4 py-3 font-semibold uppercase tracking-wider text-[10px] text-center" data-csv-header-docs="1">Documentos Firmados</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-100 bg-white">
@@ -1325,6 +1326,51 @@
                                         </td>
                                         <td class="px-4 py-3 text-center font-bold {{ $fila->nota_anual ? 'text-[#00594E] bg-[#EAF2EF] rounded-lg' : 'text-slate-300' }}">
                                             {{ $fila->nota_anual ?? '-' }}
+                                        </td>
+                                        <td class="px-4 py-3 text-center"
+                                            data-csv-sem1="{{ $fila->doc_semestre_1 ?? '-' }}"
+                                            data-csv-sem2="{{ $fila->doc_semestre_2 ?? '-' }}"
+                                            data-csv-anual="{{ $fila->doc_anual ?? '-' }}">
+                                            <div class="inline-flex items-center gap-1.5 flex-wrap justify-center">
+                                                @if($fila->doc_semestre_1)
+                                                    <a href="{{ $fila->doc_semestre_1 }}" target="_blank" rel="noopener noreferrer" 
+                                                       class="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition shadow-sm"
+                                                       title="Ver documento firmado y radicado en Talento Humano (Semestre 1)">
+                                                        <span class="material-symbols-outlined text-[13px]">open_in_new</span>
+                                                        Sem. 1
+                                                    </a>
+                                                @else
+                                                    <span class="text-[10px] text-slate-300 font-semibold px-2 py-1 rounded-xl bg-slate-50 border border-slate-100" title="Sin documento radicado en Semestre 1">
+                                                        Sem. 1: -
+                                                    </span>
+                                                @endif
+
+                                                @if($fila->doc_semestre_2)
+                                                    <a href="{{ $fila->doc_semestre_2 }}" target="_blank" rel="noopener noreferrer" 
+                                                       class="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition shadow-sm"
+                                                       title="Ver documento firmado y radicado en Talento Humano (Semestre 2)">
+                                                        <span class="material-symbols-outlined text-[13px]">open_in_new</span>
+                                                        Sem. 2
+                                                    </a>
+                                                @else
+                                                    <span class="text-[10px] text-slate-300 font-semibold px-2 py-1 rounded-xl bg-slate-50 border border-slate-100" title="Sin documento radicado en Semestre 2">
+                                                        Sem. 2: -
+                                                    </span>
+                                                @endif
+
+                                                @if($fila->doc_anual)
+                                                    <a href="{{ $fila->doc_anual }}" target="_blank" rel="noopener noreferrer" 
+                                                       class="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-bold bg-amber-50 text-amber-800 hover:bg-amber-600 hover:text-white transition border border-amber-200/60 shadow-sm"
+                                                       title="Ver documento firmado y radicado en Talento Humano (Anual)">
+                                                        <span class="material-symbols-outlined text-[13px]">open_in_new</span>
+                                                        Anual
+                                                    </a>
+                                                @else
+                                                    <span class="text-[10px] text-slate-300 font-semibold px-2 py-1 rounded-xl bg-slate-50 border border-slate-100" title="Sin documento radicado en Anual">
+                                                        Anual: -
+                                                    </span>
+                                                @endif
+                                            </div>
                                         </td>
                                     </tr>
                                 @endforeach
@@ -1560,9 +1606,19 @@
                 let row = [];
                 const cols = rows[i].querySelectorAll("td, th");
                 for (let j = 0; j < cols.length; j++) {
-                    let data = cols[j].innerText.replace(/(\r\n|\n|\r)/gm, " | ").trim();
-                    data = data.replace(/"/g, '""');
-                    row.push('"' + data + '"');
+                    if (cols[j].hasAttribute('data-csv-header-docs')) {
+                        row.push('"Doc. Semestre 1"');
+                        row.push('"Doc. Semestre 2"');
+                        row.push('"Doc. Anual"');
+                    } else if (cols[j].hasAttribute('data-csv-sem1')) {
+                        row.push('"' + (cols[j].getAttribute('data-csv-sem1') || '-') + '"');
+                        row.push('"' + (cols[j].getAttribute('data-csv-sem2') || '-') + '"');
+                        row.push('"' + (cols[j].getAttribute('data-csv-anual') || '-') + '"');
+                    } else {
+                        let data = cols[j].innerText.replace(/(\r\n|\n|\r)/gm, " | ").trim();
+                        data = data.replace(/"/g, '""');
+                        row.push('"' + data + '"');
+                    }
                 }
                 // Use semicolon for Excel in Latin America / Spain
                 csv.push(row.join(";"));

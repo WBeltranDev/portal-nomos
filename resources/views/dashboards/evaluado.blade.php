@@ -175,19 +175,46 @@
                                 </div>
                                 <div id="notificacion-mensaje-evaluado" class="hidden text-xs font-semibold"></div>
 
-                                <!-- Enlace al PDF firmado: se carga una vez completado el trámite físico -->
-                                <div id="documento-notificacion-evaluado" class="hidden rounded-xl border border-slate-200 bg-slate-50/60 p-3 space-y-2">
-                                    <p class="text-[10px] font-bold uppercase tracking-wide text-slate-500 flex items-center gap-1">
-                                        <span class="material-symbols-outlined text-xs">attachment</span> Documento firmado
+                                <!-- Enlaces a los PDF firmados: se cargan una vez completado el trámite físico y radicado en Talento Humano -->
+                                <div id="documento-notificacion-evaluado" class="hidden rounded-xl border border-slate-200 bg-slate-50/60 p-4 space-y-4">
+                                    <p class="text-[11px] font-bold uppercase tracking-wide text-slate-700 flex items-center gap-1.5">
+                                        <span class="material-symbols-outlined text-sm text-[#00594E]">attachment</span> Documentos firmados y radicados en Talento Humano
                                     </p>
-                                    <div id="documento-notificacion-form" class="flex flex-wrap items-end gap-2">
-                                        <div class="flex-1 min-w-[240px]">
-                                            <label for="documento-notificacion-url" class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Enlace donde guardaste el PDF firmado</label>
-                                            <input type="url" id="documento-notificacion-url" maxlength="1000" placeholder="https://..." class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" />
+                                    
+                                    <!-- Semestral -->
+                                    <div class="space-y-1.5 bg-white p-3 rounded-xl border border-slate-200/80">
+                                        <div class="flex items-center justify-between">
+                                            <span class="text-xs font-bold text-slate-700">Documento Semestral</span>
+                                            <span class="text-[10px] text-slate-400">PDF firmado y radicado</span>
                                         </div>
-                                        <button type="button" onclick="guardarDocumentoNotificacion()" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Guardar enlace</button>
+                                        <div id="documento-notificacion-form" class="flex flex-wrap items-end gap-2 pt-1">
+                                            <div class="flex-1 min-w-[240px]">
+                                                <label for="documento-notificacion-url" class="block text-[10px] font-medium text-slate-500 mb-1">Enlace del PDF semestral (Drive, OneDrive, etc.)</label>
+                                                <input type="url" id="documento-notificacion-url" maxlength="1000" placeholder="https://..." class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-slate-50/50 outline-none focus:border-[#00594E] focus:bg-white transition" />
+                                            </div>
+                                            <button type="button" onclick="guardarDocumentoNotificacion('SEMESTRAL')" class="bg-[#00594E] text-white px-4 py-2.5 rounded-xl text-xs font-bold hover:brightness-110 transition shrink-0">Guardar enlace</button>
+                                        </div>
+                                        <div id="documento-notificacion-guardado" class="hidden items-center justify-between gap-3 pt-1"></div>
                                     </div>
-                                    <div id="documento-notificacion-guardado" class="hidden flex items-center justify-between gap-3"></div>
+
+                                    <!-- Anual (visible solo si la evaluación tiene consolidado anual) -->
+                                    <div id="documento-notificacion-anual-seccion" class="hidden space-y-1.5 bg-white p-3 rounded-xl border border-slate-200/80">
+                                        <div class="flex items-center justify-between">
+                                            <span class="text-xs font-bold text-amber-800 flex items-center gap-1">
+                                                <span class="material-symbols-outlined text-sm">workspace_premium</span> Documento Anual Consolidado
+                                            </span>
+                                            <span class="text-[10px] text-amber-600/80">PDF consolidado anual radicado</span>
+                                        </div>
+                                        <div id="documento-notificacion-anual-form" class="flex flex-wrap items-end gap-2 pt-1">
+                                            <div class="flex-1 min-w-[240px]">
+                                                <label for="documento-notificacion-anual-url" class="block text-[10px] font-medium text-slate-500 mb-1">Enlace del PDF anual (Drive, OneDrive, etc.)</label>
+                                                <input type="url" id="documento-notificacion-anual-url" maxlength="1000" placeholder="https://..." class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-slate-50/50 outline-none focus:border-[#00594E] focus:bg-white transition" />
+                                            </div>
+                                            <button type="button" onclick="guardarDocumentoNotificacion('ANUAL')" class="bg-[#B5A160] text-white px-4 py-2.5 rounded-xl text-xs font-bold hover:brightness-110 transition shrink-0">Guardar enlace anual</button>
+                                        </div>
+                                        <div id="documento-notificacion-anual-guardado" class="hidden items-center justify-between gap-3 pt-1"></div>
+                                    </div>
+
                                     <div id="documento-notificacion-mensaje" class="hidden text-xs font-semibold"></div>
                                 </div>
                             </div>

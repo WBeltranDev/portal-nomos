@@ -250,7 +250,12 @@ export function cargarNotificacionEvaluado(ev) {
             const btn = document.getElementById('btn-firmar-notificacion-evaluado');
             if (btn) btn.classList.toggle('hidden', firmada);
 
-            renderDocumentoNotificacion(firmada, payload.documento_notificacion);
+            renderDocumentoNotificacion(
+                firmada,
+                payload.documento_notificacion,
+                !!payload.tiene_informe_anual,
+                payload.documento_notificacion_anual
+            );
 
             return firmada;
         })
@@ -311,45 +316,80 @@ export function firmarNotificacionEvaluado() {
  * también quede cargado y no solo en su historia laboral. Solo aparece una vez
  * firmada la notificación, y admite un único enlace por evaluación.
  */
-function renderDocumentoNotificacion(firmada, documento) {
+function renderDocumentoNotificacion(firmada, docSemestral, tieneAnual, docAnual) {
     const contenedor = document.getElementById('documento-notificacion-evaluado');
     if (!contenedor) return;
 
     contenedor.classList.toggle('hidden', !firmada);
     if (!firmada) return;
 
-    const form = document.getElementById('documento-notificacion-form');
-    const guardado = document.getElementById('documento-notificacion-guardado');
-    const input = document.getElementById('documento-notificacion-url');
     const mensaje = document.getElementById('documento-notificacion-mensaje');
-
     if (mensaje) {
         mensaje.classList.add('hidden');
         mensaje.innerText = '';
     }
 
-    if (!documento) {
-        if (form) form.classList.remove('hidden');
-        if (input) input.value = '';
-        if (guardado) {
-            guardado.classList.add('hidden');
-            guardado.classList.remove('flex');
-            guardado.innerHTML = '';
+    // --- Semestral ---
+    const formSem = document.getElementById('documento-notificacion-form');
+    const guardadoSem = document.getElementById('documento-notificacion-guardado');
+    const inputSem = document.getElementById('documento-notificacion-url');
+
+    if (!docSemestral) {
+        if (formSem) formSem.classList.remove('hidden');
+        if (inputSem) inputSem.value = '';
+        if (guardadoSem) {
+            guardadoSem.classList.add('hidden');
+            guardadoSem.classList.remove('flex');
+            guardadoSem.innerHTML = '';
         }
-        return;
+    } else {
+        if (formSem) formSem.classList.add('hidden');
+        if (guardadoSem) {
+            guardadoSem.innerHTML = `
+                <a href="${escapeHtml(docSemestral.url)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 text-xs font-semibold text-[#00594E] hover:underline min-w-0">
+                    <span class="material-symbols-outlined text-sm shrink-0">link</span>
+                    <span class="truncate">Abrir PDF semestral firmado</span>
+                </a>
+                <button type="button" onclick="eliminarDocumentoNotificacion('SEMESTRAL')" class="text-[11px] font-bold text-red-600 hover:underline shrink-0">Quitar</button>
+            `;
+            guardadoSem.classList.remove('hidden');
+            guardadoSem.classList.add('flex');
+        }
     }
 
-    if (form) form.classList.add('hidden');
-    if (guardado) {
-        guardado.innerHTML = `
-            <a href="${escapeHtml(documento.url)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 text-xs font-semibold text-[#00594E] hover:underline min-w-0">
-                <span class="material-symbols-outlined text-sm shrink-0">link</span>
-                <span class="truncate">Abrir documento firmado</span>
-            </a>
-            <button type="button" onclick="eliminarDocumentoNotificacion()" class="text-[11px] font-bold text-red-600 hover:underline shrink-0">Quitar</button>
-        `;
-        guardado.classList.remove('hidden');
-        guardado.classList.add('flex');
+    // --- Anual ---
+    const seccionAnual = document.getElementById('documento-notificacion-anual-seccion');
+    if (seccionAnual) {
+        seccionAnual.classList.toggle('hidden', !tieneAnual);
+    }
+
+    if (tieneAnual) {
+        const formAnual = document.getElementById('documento-notificacion-anual-form');
+        const guardadoAnual = document.getElementById('documento-notificacion-anual-guardado');
+        const inputAnual = document.getElementById('documento-notificacion-anual-url');
+
+        if (!docAnual) {
+            if (formAnual) formAnual.classList.remove('hidden');
+            if (inputAnual) inputAnual.value = '';
+            if (guardadoAnual) {
+                guardadoAnual.classList.add('hidden');
+                guardadoAnual.classList.remove('flex');
+                guardadoAnual.innerHTML = '';
+            }
+        } else {
+            if (formAnual) formAnual.classList.add('hidden');
+            if (guardadoAnual) {
+                guardadoAnual.innerHTML = `
+                    <a href="${escapeHtml(docAnual.url)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 text-xs font-semibold text-amber-800 hover:underline min-w-0">
+                        <span class="material-symbols-outlined text-sm shrink-0">link</span>
+                        <span class="truncate">Abrir PDF anual firmado</span>
+                    </a>
+                    <button type="button" onclick="eliminarDocumentoNotificacion('ANUAL')" class="text-[11px] font-bold text-red-600 hover:underline shrink-0">Quitar</button>
+                `;
+                guardadoAnual.classList.remove('hidden');
+                guardadoAnual.classList.add('flex');
+            }
+        }
     }
 }
 
@@ -361,14 +401,15 @@ function mostrarMensajeDocumento(texto, esError) {
     mensaje.innerText = texto;
 }
 
-export function guardarDocumentoNotificacion() {
+export function guardarDocumentoNotificacion(tipo = 'SEMESTRAL') {
     if (!selectedEvaluacionId) return;
 
-    const input = document.getElementById('documento-notificacion-url');
+    const inputId = tipo === 'ANUAL' ? 'documento-notificacion-anual-url' : 'documento-notificacion-url';
+    const input = document.getElementById(inputId);
     const url = (input?.value || '').trim();
 
     if (!url) {
-        mostrarMensajeDocumento('Indica el enlace donde guardaste el PDF firmado.', true);
+        mostrarMensajeDocumento(`Indica el enlace donde guardaste el PDF ${tipo === 'ANUAL' ? 'anual' : 'semestral'} firmado.`, true);
         return;
     }
 
@@ -385,7 +426,7 @@ export function guardarDocumentoNotificacion() {
     fetchJson(`/evaluaciones/${selectedEvaluacionId}/documento-notificacion`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url, tipo_documento: tipo }),
     })
         .then(async res => {
             const data = await res.json().catch(() => ({}));
@@ -398,14 +439,15 @@ export function guardarDocumentoNotificacion() {
         .catch(error => mostrarMensajeDocumento(error.message, true));
 }
 
-export function eliminarDocumentoNotificacion() {
+export function eliminarDocumentoNotificacion(tipo = 'SEMESTRAL') {
     if (!selectedEvaluacionId) return;
-    if (!confirm('¿Quitar el enlace al documento firmado?\n\nEl PDF dejará de estar cargado en la plataforma.')) return;
+    const etiqueta = tipo === 'ANUAL' ? 'anual' : 'semestral';
+    if (!confirm(`¿Quitar el enlace al documento firmado ${etiqueta}?\n\nEl PDF dejará de estar cargado en la plataforma.`)) return;
 
     fetchJson(`/evaluaciones/${selectedEvaluacionId}/documento-notificacion`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: '' }),
+        body: JSON.stringify({ url: '', tipo_documento: tipo }),
     })
         .then(async res => {
             const data = await res.json().catch(() => ({}));

@@ -3558,14 +3558,25 @@ if (!function_exists('getNotificacionCalificacion')) {
  * Devuelve la fila {url, descripcion, fecha_inclusion} o null si no cargó nada.
  */
 if (!function_exists('getDocumentoNotificacion')) {
-    function getDocumentoNotificacion(int $idEvaluacion) {
+    function getDocumentoNotificacion(int $idEvaluacion, string $tipo = 'SEMESTRAL') {
         if (! Schema::hasTable('notificacion_documento')) {
             return null;
         }
 
-        return DB::table('notificacion_documento')
-            ->where('id_evaluacion', $idEvaluacion)
-            ->first();
+        $query = DB::table('notificacion_documento')
+            ->where('id_evaluacion', $idEvaluacion);
+
+        if (Schema::hasColumn('notificacion_documento', 'tipo_documento')) {
+            if ($tipo === 'SEMESTRAL') {
+                $query->where(function ($q) {
+                    $q->where('tipo_documento', 'SEMESTRAL')->orWhereNull('tipo_documento');
+                });
+            } else {
+                $query->where('tipo_documento', $tipo);
+            }
+        }
+
+        return $query->first();
     }
 }
 
@@ -3805,7 +3816,9 @@ Route::get('/evaluaciones/{id}/recursos', function (int $id) {
         abort_unless($puedeVer, 403);
     }
 
-    $docNotificacion = getDocumentoNotificacion($id);
+    $docNotificacion = getDocumentoNotificacion($id, 'SEMESTRAL');
+    $tieneInformeAnual = function_exists('informeAnualDisponible') && informeAnualDisponible($id);
+    $docNotificacionAnual = $tieneInformeAnual ? getDocumentoNotificacion($id, 'ANUAL') : null;
 
     return response()->json([
         'recursos' => getRecursosEvaluacion($id),
@@ -3814,10 +3827,16 @@ Route::get('/evaluaciones/{id}/recursos', function (int $id) {
         'calificacion_final' => $evaluacion->calificacion_final,
         'traslado' => (bool) $evaluacion->es_traslado,
         'notificacion_firmada' => notificacionCalificacionFirmada($id),
+        'tiene_informe_anual' => $tieneInformeAnual,
         'documento_notificacion' => $docNotificacion ? [
             'url' => $docNotificacion->url,
             'descripcion' => $docNotificacion->descripcion,
             'fecha_inclusion' => $docNotificacion->fecha_inclusion,
+        ] : null,
+        'documento_notificacion_anual' => $docNotificacionAnual ? [
+            'url' => $docNotificacionAnual->url,
+            'descripcion' => $docNotificacionAnual->descripcion,
+            'fecha_inclusion' => $docNotificacionAnual->fecha_inclusion,
         ] : null,
     ]);
 })->name('evaluaciones.recursos');
@@ -3866,7 +3885,8 @@ Route::post('/evaluaciones/{id}/firmar-notificacion', function (int $id) {
 // deja ese PDF cargado en la plataforma, junto con quién lo guardó y cuándo.
 // Solo puede hacerlo el evaluado, y solo una vez firmada la notificación.
 Route::post('/evaluaciones/{id}/documento-notificacion', function (Request $request, int $id) {
-    abort_unless(session('usuario_autenticado.rol_activo') === 'evaluado', 403);
+    $rolActivo = session('usuario_autenticado.rol_activo');
+    abort_unless(in_array($rolActivo, ['evaluado', 'admin']), 403);
 
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
@@ -3875,25 +3895,45 @@ Route::post('/evaluaciones/{id}/documento-notificacion', function (Request $requ
     abort_unless($evaluacion->estado === 'CALIFICADA', 422, 'El enlace del documento firmado se registra cuando la evaluación ya fue calificada.');
 
     $auth = session('usuario_autenticado');
+    $esAdmin = $rolActivo === 'admin';
     $esEvaluado = DB::table('vinculacion')
         ->where('id_vinculacion', $evaluacion->id_vinc_evaluado)
         ->where('id_funcionario', $auth['id_funcionario'] ?? null)
         ->exists();
 
-    abort_unless($esEvaluado, 403);
+    abort_unless($esEvaluado || $esAdmin, 403);
     abort_unless(notificacionCalificacionFirmada($id), 422, mensajeNotificacionPendiente());
 
     abort_unless(Schema::hasTable('notificacion_documento'), 500, 'Falta ejecutar la migración del documento de notificación.');
+
+    $tipoDocumento = strtoupper(trim((string) $request->input('tipo_documento', 'SEMESTRAL')));
+    if (!in_array($tipoDocumento, ['SEMESTRAL', 'ANUAL'], true)) {
+        $tipoDocumento = 'SEMESTRAL';
+    }
+
+    if ($tipoDocumento === 'ANUAL') {
+        abort_unless(
+            function_exists('informeAnualDisponible') && informeAnualDisponible($id),
+            422,
+            'El documento anual solo está disponible cuando se ha consolidado la evaluación anual de ambos semestres.'
+        );
+    }
 
     $url = trim((string) $request->input('url', ''));
 
     // URL vacía: el evaluado decide quitar el enlace.
     if ($url === '') {
-        DB::table('notificacion_documento')->where('id_evaluacion', $id)->delete();
+        DB::table('notificacion_documento')
+            ->where('id_evaluacion', $id)
+            ->where('tipo_documento', $tipoDocumento)
+            ->delete();
 
         return response()->json([
             'success' => true,
-            'message' => 'Enlace del documento firmado eliminado.',
+            'message' => $tipoDocumento === 'ANUAL'
+                ? 'Enlace del documento anual firmado eliminado.'
+                : 'Enlace del documento firmado eliminado.',
+            'tipo_documento' => $tipoDocumento,
             'documento_notificacion' => null,
         ]);
     }
@@ -3915,24 +3955,37 @@ Route::post('/evaluaciones/{id}/documento-notificacion', function (Request $requ
         'fecha_actualizacion' => $ahora,
     ];
 
-    if (DB::table('notificacion_documento')->where('id_evaluacion', $id)->exists()) {
-        DB::table('notificacion_documento')->where('id_evaluacion', $id)->update($valores);
+    $existe = DB::table('notificacion_documento')
+        ->where('id_evaluacion', $id)
+        ->where('tipo_documento', $tipoDocumento)
+        ->exists();
+
+    if ($existe) {
+        DB::table('notificacion_documento')
+            ->where('id_evaluacion', $id)
+            ->where('tipo_documento', $tipoDocumento)
+            ->update($valores);
     } else {
         DB::table('notificacion_documento')->insert($valores + [
             'id_evaluacion' => $id,
+            'tipo_documento' => $tipoDocumento,
             'fecha_inclusion' => $ahora,
         ]);
     }
 
-    $doc = getDocumentoNotificacion($id);
+    $doc = getDocumentoNotificacion($id, $tipoDocumento);
 
     return response()->json([
         'success' => true,
-        'message' => 'Enlace del documento firmado guardado. Ya queda registrado en la plataforma.',
+        'message' => $tipoDocumento === 'ANUAL'
+            ? 'Enlace del documento anual firmado guardado. Ya queda registrado en la plataforma.'
+            : 'Enlace del documento firmado guardado. Ya queda registrado en la plataforma.',
+        'tipo_documento' => $tipoDocumento,
         'documento_notificacion' => $doc ? [
             'url' => $doc->url,
             'descripcion' => $doc->descripcion,
             'fecha_inclusion' => $doc->fecha_inclusion,
+            'tipo_documento' => $doc->tipo_documento ?? $tipoDocumento,
         ] : null,
     ]);
 })->name('evaluaciones.documento-notificacion');
@@ -4129,7 +4182,6 @@ Route::get('/recursos/mios', function () {
     $misVinculaciones = DB::table('vinculacion')
         ->where('id_funcionario', $auth['id_funcionario'] ?? null)
         ->where('activa', 1)
-        ->where('es_evaluador', 1)
         ->pluck('id_vinculacion')
         ->all();
 
