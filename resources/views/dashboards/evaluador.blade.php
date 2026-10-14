@@ -381,8 +381,8 @@
                                             <select id="solmod-compromiso" class="w-full text-xs p-2 rounded border" onchange="cambiarCompromisoSeleccionado()" required></select>
                                         </div>
                                         <div>
-                                            <label class="text-[10px] font-bold text-sky-700 uppercase">Peso del compromiso (máx. 100%)</label>
-                                            <input type="number" id="solmod-peso" min="1" max="100" step="0.1" class="w-full text-xs p-2 rounded border" required>
+                                            <label class="text-[10px] font-bold text-sky-700 uppercase">Peso compromiso</label>
+                                            <input type="number" id="solmod-peso" min="1" max="100" step="0.1" class="w-full text-xs p-2 rounded border bg-slate-100 text-slate-500 cursor-not-allowed pointer-events-none outline-none" readonly tabindex="-1" required>
                                         </div>
                                     </div>
                                     <div>
