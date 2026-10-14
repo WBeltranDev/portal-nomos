@@ -4068,7 +4068,10 @@ Route::post('/recursos/{id}/decision', function (Request $request, int $id) {
     ]);
 
     if ($data['decision'] === 'APROBADO') {
-        $updatePayload = ['estado' => 'EN_PROCESO'];
+        $updatePayload = [
+            'estado' => 'EN_PROCESO',
+            'fase_actual' => 4,
+        ];
         if (!empty($data['id_vinc_nuevo_evaluador'])) {
             $updatePayload['id_vinc_evaluador'] = $data['id_vinc_nuevo_evaluador'];
         }

@@ -979,6 +979,8 @@ export function enviarDecisionRecurso(id, decision, motivacion, id_vinc_nuevo_ev
             if (selectedEvaluacionData) {
                 if (decision === 'APROBADO') {
                     selectedEvaluacionData.estado = 'EN_PROCESO';
+                    selectedEvaluacionData.fase_actual = 4;
+                    actualizarFaseLabel(selectedEvaluacionId, 4, 'evaluador');
                     abrirConcertacionEvaluador(null, selectedEvaluacionData);
                 } else {
                     cargarRecursosEvaluador(selectedEvaluacionData);
