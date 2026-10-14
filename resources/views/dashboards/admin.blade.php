@@ -412,13 +412,44 @@
             <!-- SECTION: JERARQUÍA / JEFES SUPERIORES (S10) -->
             <section id="section-jerarquia" class="section-content hidden space-y-6">
                 <div class="panel-card rounded-3xl p-6">
-                    <div class="mb-5">
-                        <p class="text-xs font-bold uppercase tracking-[0.22em] text-[#00594E]">Superior Jerárquico</p>
-                        <h2 class="text-2xl font-black text-slate-900">Jefaturas</h2>
-                        <p class="text-xs text-slate-500 mt-1">Define el jefe superior de cada vinculación. Cuando un evaluado apela (segunda instancia), la apelación llega al jefe del cargo del evaluador, quien pasa a evaluarlo.</p>
+                    <div class="mb-5 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+                        <div>
+                            <p class="text-xs font-bold uppercase tracking-[0.22em] text-[#00594E]">Superior Jerárquico</p>
+                            <h2 class="text-2xl font-black text-slate-900">Jefaturas</h2>
+                            <p class="text-xs text-slate-500 mt-1">Define el jefe superior de cada vinculación. Cuando un evaluado apela (segunda instancia), la apelación llega al jefe del cargo del evaluador, quien pasa a evaluarlo.</p>
+                        </div>
+                        <span id="contador-jefaturas-visibles" class="text-xs font-bold bg-[#EAF2EF] text-[#00594E] px-3.5 py-1.5 rounded-full shrink-0 self-start sm:self-end">
+                            {{ $vinculacionesJerarquia->where('activa', 1)->count() }} activos
+                        </span>
                     </div>
 
-                    <input id="buscador-jefaturas" oninput="filtrarJefaturas()" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-[#00594E] focus:ring-2 focus:ring-[#00594E]/10 mb-4" type="text" placeholder="Buscar por funcionario, cargo o área...">
+                    <!-- Barra de filtros -->
+                    <div class="flex flex-col md:flex-row gap-3 items-stretch md:items-center mb-4">
+                        <div class="relative flex-1">
+                            <span class="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-base">search</span>
+                            <input id="buscador-jefaturas" oninput="filtrarJefaturas()" class="w-full rounded-2xl border border-slate-200 bg-white pl-10 pr-4 py-2.5 text-xs shadow-sm outline-none focus:border-[#00594E] focus:ring-2 focus:ring-[#00594E]/10" type="text" placeholder="Buscar por funcionario, cargo o área...">
+                        </div>
+
+                        <!-- Filtro de estado: Activos (por defecto) / Inactivos / Todos -->
+                        <div class="flex items-center gap-1 shrink-0 bg-slate-100 p-1 rounded-2xl text-xs font-semibold">
+                            <button type="button" onclick="cambiarFiltroEstadoJefaturas('activo', this)" class="filtro-jefatura-estado px-3 py-1.5 rounded-xl transition bg-white text-[#00594E] shadow-sm font-bold" data-filtro="activo">
+                                Activos
+                            </button>
+                            <button type="button" onclick="cambiarFiltroEstadoJefaturas('inactivo', this)" class="filtro-jefatura-estado px-3 py-1.5 rounded-xl transition text-slate-600 hover:text-slate-900" data-filtro="inactivo">
+                                Inactivos
+                            </button>
+                            <button type="button" onclick="cambiarFiltroEstadoJefaturas('todos', this)" class="filtro-jefatura-estado px-3 py-1.5 rounded-xl transition text-slate-600 hover:text-slate-900" data-filtro="todos">
+                                Todos
+                            </button>
+                        </div>
+
+                        <!-- Filtro de asignación de jefe -->
+                        <select id="filtro-jefaturas-asignacion" onchange="filtrarJefaturas()" class="rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-700 shadow-sm outline-none focus:border-[#00594E]">
+                            <option value="todos">Cualquier asignación</option>
+                            <option value="sin_jefe">Sin jefe asignado</option>
+                            <option value="con_jefe">Con jefe asignado</option>
+                        </select>
+                    </div>
 
                     <div class="overflow-x-auto">
                         <table class="w-full text-left text-xs">
@@ -434,11 +465,18 @@
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-100">
+                                @php $contadorActivosRender = 0; @endphp
                                 @foreach($vinculacionesJerarquia as $vj)
-                                <tr class="jefatura-fila hover:bg-slate-50"
+                                @php
+                                    $esInicialVisible = $vj->activa && $contadorActivosRender < 15;
+                                    if ($vj->activa) { $contadorActivosRender++; }
+                                @endphp
+                                <tr class="jefatura-fila hover:bg-slate-50 @if(!$esInicialVisible) hidden @endif"
                                     data-nombre="{{ strtolower($vj->nombres . ' ' . $vj->apellidos) }}"
                                     data-cargo="{{ strtolower($vj->cargo ?? '') }}"
-                                    data-area="{{ strtolower($vj->area ?? '') }}">
+                                    data-area="{{ strtolower($vj->area ?? '') }}"
+                                    data-estado="{{ $vj->activa ? 'activo' : 'inactivo' }}"
+                                    data-tiene-jefe="{{ !empty($vj->id_vinc_jefe) ? '1' : '0' }}">
                                     <td class="p-3 font-semibold text-slate-800">{{ $vj->nombres }} {{ $vj->apellidos }}</td>
                                     <td class="p-3 text-slate-500">
                                         {{ $vj->cargo ?? '-' }}
@@ -469,8 +507,33 @@
                                     </td>
                                 </tr>
                                 @endforeach
+                                <tr id="sin-resultados-jefaturas" class="hidden">
+                                    <td colspan="7" class="p-8 text-center text-slate-400 text-xs">
+                                        No se encontraron vinculaciones con los filtros seleccionados.
+                                    </td>
+                                </tr>
                             </tbody>
                         </table>
+                    </div>
+
+                    <!-- Paginación de Jefaturas -->
+                    <div id="paginacion-jefaturas-contenedor" class="mt-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500 pt-3 border-t border-slate-100">
+                        <div id="info-paginacion-jefaturas" class="font-medium text-slate-600">
+                            Mostrando 1 - {{ min(15, $vinculacionesJerarquia->where('activa', 1)->count()) }} de {{ $vinculacionesJerarquia->where('activa', 1)->count() }}
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button type="button" id="btn-jefaturas-anterior" onclick="cambiarPaginaJefaturas(-1)" class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-1 shadow-sm" disabled>
+                                <span class="material-symbols-outlined text-sm">chevron_left</span>
+                                Anterior
+                            </button>
+                            <span id="texto-pagina-jefaturas" class="px-3 py-1 font-bold text-slate-800 bg-slate-100 rounded-xl">
+                                1 / {{ max(1, (int) ceil($vinculacionesJerarquia->where('activa', 1)->count() / 15)) }}
+                            </span>
+                            <button type="button" id="btn-jefaturas-siguiente" onclick="cambiarPaginaJefaturas(1)" class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-1 shadow-sm" @if($vinculacionesJerarquia->where('activa', 1)->count() <= 15) disabled @endif>
+                                Siguiente
+                                <span class="material-symbols-outlined text-sm">chevron_right</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </section>

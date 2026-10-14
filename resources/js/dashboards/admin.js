@@ -25,15 +25,114 @@ export function filtrarUsuarios() {
     });
 }
 
-export function filtrarJefaturas() {
+let filtroEstadoJefaturasActual = 'activo';
+let paginaActualJefaturas = 1;
+const ITEMS_POR_PAGINA_JEFATURAS = 15;
+
+export function cambiarFiltroEstadoJefaturas(estado, btn) {
+    filtroEstadoJefaturasActual = estado;
+    document.querySelectorAll('.filtro-jefatura-estado').forEach(b => {
+        b.classList.remove('bg-white', 'text-[#00594E]', 'shadow-sm', 'font-bold');
+        b.classList.add('text-slate-600');
+    });
+    if (btn) {
+        btn.classList.add('bg-white', 'text-[#00594E]', 'shadow-sm', 'font-bold');
+        btn.classList.remove('text-slate-600');
+    }
+    paginaActualJefaturas = 1;
+    filtrarJefaturas();
+}
+
+export function cambiarPaginaJefaturas(delta) {
+    paginaActualJefaturas += delta;
+    filtrarJefaturas(false);
+}
+
+export function filtrarJefaturas(resetPagina = true) {
+    if (resetPagina) {
+        paginaActualJefaturas = 1;
+    }
+
     const texto = (document.getElementById('buscador-jefaturas')?.value || '').trim().toLowerCase();
-    document.querySelectorAll('.jefatura-fila').forEach(fila => {
+    const filtroAsignacion = document.getElementById('filtro-jefaturas-asignacion')?.value || 'todos';
+
+    const todasLasFilas = Array.from(document.querySelectorAll('.jefatura-fila'));
+    const coincidentes = [];
+
+    todasLasFilas.forEach(fila => {
         const nombre = fila.dataset.nombre || '';
         const cargo = fila.dataset.cargo || '';
         const area = fila.dataset.area || '';
-        const match = !texto || nombre.includes(texto) || cargo.includes(texto) || area.includes(texto);
-        fila.classList.toggle('hidden', !match);
+        const estado = fila.dataset.estado || '';
+        const tieneJefe = fila.dataset.tieneJefe === '1';
+
+        const matchTexto = !texto || nombre.includes(texto) || cargo.includes(texto) || area.includes(texto);
+        const matchEstado = filtroEstadoJefaturasActual === 'todos' || estado === filtroEstadoJefaturasActual;
+        const matchAsignacion = filtroAsignacion === 'todos'
+            || (filtroAsignacion === 'sin_jefe' && !tieneJefe)
+            || (filtroAsignacion === 'con_jefe' && tieneJefe);
+
+        if (matchTexto && matchEstado && matchAsignacion) {
+            coincidentes.push(fila);
+        } else {
+            fila.classList.add('hidden');
+        }
     });
+
+    const totalCoincidentes = coincidentes.length;
+    const totalPaginas = Math.max(1, Math.ceil(totalCoincidentes / ITEMS_POR_PAGINA_JEFATURAS));
+
+    if (paginaActualJefaturas < 1) paginaActualJefaturas = 1;
+    if (paginaActualJefaturas > totalPaginas) paginaActualJefaturas = totalPaginas;
+
+    const inicioIdx = (paginaActualJefaturas - 1) * ITEMS_POR_PAGINA_JEFATURAS;
+    const finIdx = inicioIdx + ITEMS_POR_PAGINA_JEFATURAS;
+
+    coincidentes.forEach((fila, idx) => {
+        if (idx >= inicioIdx && idx < finIdx) {
+            fila.classList.remove('hidden');
+        } else {
+            fila.classList.add('hidden');
+        }
+    });
+
+    // Contador del encabezado
+    const contadorEl = document.getElementById('contador-jefaturas-visibles');
+    if (contadorEl) {
+        const labelEstado = filtroEstadoJefaturasActual === 'activo' ? 'activos' : (filtroEstadoJefaturasActual === 'inactivo' ? 'inactivos' : 'totales');
+        contadorEl.innerText = `${totalCoincidentes} ${labelEstado}`;
+    }
+
+    // Mensaje de sin resultados
+    const sinResultados = document.getElementById('sin-resultados-jefaturas');
+    if (sinResultados) {
+        sinResultados.classList.toggle('hidden', totalCoincidentes > 0);
+    }
+
+    // Paginación UI
+    const paginacionContenedor = document.getElementById('paginacion-jefaturas-contenedor');
+    const infoPaginacion = document.getElementById('info-paginacion-jefaturas');
+    const textoPagina = document.getElementById('texto-pagina-jefaturas');
+    const btnAnterior = document.getElementById('btn-jefaturas-anterior');
+    const btnSiguiente = document.getElementById('btn-jefaturas-siguiente');
+
+    if (paginacionContenedor) {
+        paginacionContenedor.classList.toggle('hidden', totalCoincidentes === 0);
+    }
+    if (infoPaginacion && totalCoincidentes > 0) {
+        const desde = inicioIdx + 1;
+        const hasta = Math.min(finIdx, totalCoincidentes);
+        infoPaginacion.innerText = `Mostrando ${desde} - ${hasta} de ${totalCoincidentes}`;
+    }
+    if (textoPagina) {
+        textoPagina.innerText = `${paginaActualJefaturas} / ${totalPaginas}`;
+    }
+    if (btnAnterior) {
+        btnAnterior.disabled = paginaActualJefaturas <= 1;
+    }
+    if (btnSiguiente) {
+        btnSiguiente.disabled = paginaActualJefaturas >= totalPaginas;
+    }
 }
 
 export function guardarJefeSuperior(id) {
@@ -54,7 +153,10 @@ export function guardarJefeSuperior(id) {
         .then(async res => {
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo asignar el jefe superior.'));
+            const fila = select?.closest('.jefatura-fila');
+            if (fila) fila.dataset.tieneJefe = valor ? '1' : '0';
             alert(data.message || 'Jefe superior asignado.');
+            filtrarJefaturas();
         })
         .catch(error => alert(error.message));
 }
@@ -885,6 +987,8 @@ export function cargarDelegacionesAdmin() {
 window.filtrarEmpleados = filtrarEmpleados;
 window.filtrarUsuarios = filtrarUsuarios;
 window.filtrarJefaturas = filtrarJefaturas;
+window.cambiarFiltroEstadoJefaturas = cambiarFiltroEstadoJefaturas;
+window.cambiarPaginaJefaturas = cambiarPaginaJefaturas;
 window.guardarJefeSuperior = guardarJefeSuperior;
 window.seleccionarEmpleado = seleccionarEmpleado;
 window.filtrarOpcionesAsignacion = filtrarOpcionesAsignacion;
@@ -1090,7 +1194,7 @@ export function cargarSolicitudesModificacion() {
                         <p class="text-[10px] font-bold uppercase text-slate-500">Cambios propuestos</p>
                         <p class="text-slate-700"><b>Compromiso:</b> ${escapeHtml(s.compromiso_actual_desc || detalle.descripcion || '')}</p>
                         <p class="text-slate-700"><b>Nueva descripción:</b> ${escapeHtml(detalle.descripcion || '')}</p>
-                        <p class="text-slate-700"><b>Nuevo peso:</b> ${detalle.porcentaje_peso || ''}%</p>
+                        <p class="text-slate-700"><b>Peso compromiso:</b> ${detalle.porcentaje_peso || ''}%</p>
                         <p class="text-slate-700"><b>Nuevas metas:</b> ${escapeHtml(metasNuevas)}</p>
                         ${s.evidencia_url ? `<p class="text-slate-700"><b>Evidencia:</b> <a href="${escapeHtml(s.evidencia_url)}" target="_blank" rel="noopener" class="text-[#00594E] underline break-all">${escapeHtml(s.evidencia_url)}</a></p>` : ''}
                     </div>
