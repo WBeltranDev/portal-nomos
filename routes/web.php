@@ -4779,3 +4779,65 @@ Route::post('/admin/notificaciones/marcar-leidas', function () {
 
     return response()->json(['ok' => true]);
 })->name('admin.notificaciones.marcar leidas');
+
+// ============================================================================
+// CONFIGURACIÓN DEL SISTEMA / ENCUESTA DE CAPACITACIÓN
+// ============================================================================
+if (!function_exists('getConfiguracion')) {
+    function getConfiguracion(string $clave, $default = null) {
+        if (!Schema::hasTable('configuracion_sistema')) {
+            return $default;
+        }
+        return DB::table('configuracion_sistema')->where('clave', $clave)->value('valor') ?? $default;
+    }
+}
+
+if (!function_exists('setConfiguracion')) {
+    function setConfiguracion(string $clave, ?string $valor, ?string $descripcion = null): void {
+        if (!Schema::hasTable('configuracion_sistema')) {
+            return;
+        }
+        DB::table('configuracion_sistema')->updateOrInsert(
+            ['clave' => $clave],
+            [
+                'valor' => $valor,
+                'descripcion' => $descripcion,
+                'updated_at' => now(),
+            ]
+        );
+    }
+}
+
+Route::post('/admin/configuracion/encuesta-capacitacion', function (Request $request) {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
+
+    $url = trim((string) $request->input('url', ''));
+    $activa = $request->boolean('activa', true) ? '1' : '0';
+
+    if ($url !== '') {
+        abort_unless(
+            strlen($url) <= 1000 && filter_var($url, FILTER_VALIDATE_URL) !== false,
+            422,
+            'Indica un enlace válido para la encuesta (por ejemplo https://forms.google.com/...).'
+        );
+        $esquema = strtolower((string) parse_url($url, PHP_URL_SCHEME));
+        abort_unless(
+            in_array($esquema, ['http', 'https'], true),
+            422,
+            'El enlace de la encuesta debe empezar por http:// o https://.'
+        );
+    }
+
+    setConfiguracion('encuesta_capacitacion_url', $url !== '' ? $url : null, 'Enlace a la encuesta externa de necesidades de capacitación');
+    setConfiguracion('encuesta_capacitacion_activa', $activa, 'Indica si la encuesta de capacitación está habilitada para los evaluados');
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Configuración de la encuesta de capacitación guardada exitosamente.',
+        'encuesta' => [
+            'url' => $url !== '' ? $url : null,
+            'activa' => $activa === '1',
+        ],
+    ]);
+})->name('admin.configuracion.encuesta-capacitacion');
+

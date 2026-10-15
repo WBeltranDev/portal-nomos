@@ -1379,6 +1379,89 @@
                     </div>
                 </div>
             </section>
+
+            <!-- SECTION: ENCUESTA DE CAPACITACIÓN (Admin Only) -->
+            <section id="section-encuesta" class="section-content hidden space-y-6">
+                <div class="panel-card rounded-3xl p-6">
+                    <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                        <div>
+                            <p class="text-xs font-bold uppercase tracking-[0.22em] text-[#00594E]">Configuración</p>
+                            <h1 class="text-2xl sm:text-3xl font-black text-slate-900">Encuesta de Capacitación</h1>
+                            <p class="text-sm text-slate-500 mt-1">Configura el hipervínculo para la detección de necesidades de capacitación de los funcionarios.</p>
+                        </div>
+                    </div>
+
+                    <div class="mt-6 max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-5">
+                        <div class="flex items-start gap-4">
+                            <div class="w-12 h-12 rounded-2xl bg-[#EAF2EF] text-[#00594E] flex items-center justify-center shrink-0">
+                                <span class="material-symbols-outlined text-2xl">quiz</span>
+                            </div>
+                            <div class="space-y-1">
+                                <h3 class="text-base font-bold text-slate-900">Enlace de la Encuesta (Google Forms, Microsoft Forms u otro)</h3>
+                                <p class="text-xs text-slate-500 leading-relaxed">
+                                    Una vez que el evaluado suba sus evidencias y termine ese proceso, se le habilitará automáticamente una cajita con este hipervínculo para participar en la encuesta institucional de capacitaciones. Puedes actualizar este enlace en cualquier momento.
+                                </p>
+                            </div>
+                        </div>
+
+                        <form id="form-config-encuesta" onsubmit="guardarConfigEncuesta(event)" class="space-y-4 pt-2">
+                            <div>
+                                <label for="input-encuesta-url" class="block text-xs font-bold text-slate-700 uppercase mb-1.5">
+                                    Enlace / URL del Formulario
+                                </label>
+                                <div class="relative">
+                                    <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                                        <span class="material-symbols-outlined text-lg">link</span>
+                                    </span>
+                                    <input 
+                                        type="url" 
+                                        id="input-encuesta-url" 
+                                        name="url" 
+                                        value="{{ $encuestaCapacitacion['url'] ?? '' }}" 
+                                        placeholder="https://docs.google.com/forms/d/e/.../viewform" 
+                                        class="w-full text-xs rounded-xl border border-slate-200 pl-10 pr-4 py-3 bg-slate-50/50 outline-none focus:border-[#00594E] focus:bg-white focus:ring-2 focus:ring-[#00594E]/10 transition"
+                                    />
+                                </div>
+                                <p class="text-[11px] text-slate-400 mt-1">Si dejas el campo vacío, la tarjeta no se mostrará a los evaluados.</p>
+                            </div>
+
+                            <div class="flex items-center gap-3 pt-1">
+                                <input 
+                                    type="checkbox" 
+                                    id="input-encuesta-activa" 
+                                    name="activa" 
+                                    value="1" 
+                                    {{ !empty($encuestaCapacitacion['activa']) ? 'checked' : '' }} 
+                                    class="w-4 h-4 text-[#00594E] rounded border-slate-300 focus:ring-[#00594E]"
+                                />
+                                <label for="input-encuesta-activa" class="text-xs font-semibold text-slate-700 cursor-pointer">
+                                    Habilitar la encuesta para los evaluados
+                                </label>
+                            </div>
+
+                            <div id="mensaje-config-encuesta" class="hidden text-xs font-semibold p-3 rounded-xl"></div>
+
+                            <div class="flex flex-wrap items-center gap-3 pt-2">
+                                <button type="submit" id="btn-guardar-config-encuesta" class="inline-flex items-center gap-2 bg-[#00594E] hover:bg-[#004a41] text-white px-5 py-2.5 rounded-xl text-xs font-bold transition shadow-sm">
+                                    <span class="material-symbols-outlined text-sm">save</span>
+                                    <span>Guardar configuración</span>
+                                </button>
+                                
+                                <a 
+                                    id="btn-probar-encuesta" 
+                                    href="{{ $encuestaCapacitacion['url'] ?? '#' }}" 
+                                    target="_blank" 
+                                    rel="noopener noreferrer" 
+                                    class="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition {{ empty($encuestaCapacitacion['url']) ? 'hidden' : '' }}"
+                                >
+                                    <span class="material-symbols-outlined text-sm">open_in_new</span>
+                                    <span>Probar enlace</span>
+                                </a>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </section>
         </main>
     </div>
 </div>
@@ -1637,6 +1720,60 @@
             a.click();
             document.body.removeChild(a);
         }
+
+        function guardarConfigEncuesta(e) {
+            e.preventDefault();
+            const urlInput = document.getElementById('input-encuesta-url');
+            const activaInput = document.getElementById('input-encuesta-activa');
+            const mensaje = document.getElementById('mensaje-config-encuesta');
+            const btnGuardar = document.getElementById('btn-guardar-config-encuesta');
+            const btnProbar = document.getElementById('btn-probar-encuesta');
+
+            const url = (urlInput?.value || '').trim();
+            const activa = !!activaInput?.checked;
+
+            if (btnGuardar) btnGuardar.disabled = true;
+            if (mensaje) {
+                mensaje.className = 'text-xs font-semibold p-3 rounded-xl bg-slate-100 text-slate-600';
+                mensaje.innerText = 'Guardando configuración...';
+                mensaje.classList.remove('hidden');
+            }
+
+            fetch('/admin/configuracion/encuesta-capacitacion', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': window.APP_CONFIG?.csrfToken || document.querySelector('meta[name="csrf-token"]')?.content
+                },
+                body: JSON.stringify({ url, activa })
+            })
+            .then(async res => {
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.message || 'Error al guardar la configuración');
+                if (mensaje) {
+                    mensaje.className = 'text-xs font-semibold p-3 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200';
+                    mensaje.innerText = data.message || 'Configuración guardada exitosamente.';
+                }
+                if (btnProbar) {
+                    if (url) {
+                        btnProbar.href = url;
+                        btnProbar.classList.remove('hidden');
+                    } else {
+                        btnProbar.classList.add('hidden');
+                    }
+                }
+            })
+            .catch(err => {
+                if (mensaje) {
+                    mensaje.className = 'text-xs font-semibold p-3 rounded-xl bg-red-50 text-red-800 border border-red-200';
+                    mensaje.innerText = err.message;
+                }
+            })
+            .finally(() => {
+                if (btnGuardar) btnGuardar.disabled = false;
+            });
+        }
+        window.guardarConfigEncuesta = guardarConfigEncuesta;
     </script>
 @vite('resources/js/dashboards/admin.js')
 @endsection

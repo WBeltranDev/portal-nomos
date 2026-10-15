@@ -148,6 +148,26 @@
                                 <button type="button" id="btn-confirmar-evidencias-evaluado" onclick="confirmarEvidenciasEvaluado()" class="bg-[#00594E] text-white px-4 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">Confirmar evidencias</button>
                             </div>
 
+                            <!-- Cajita de Encuesta de Capacitación (Habilitada una vez sube evidencias / termina el proceso) -->
+                            <div id="caja-encuesta-capacitacion-evaluado" class="hidden mt-6 rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50 via-teal-50/40 to-emerald-50 p-5 shadow-sm space-y-3">
+                                <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                                    <div class="flex items-start gap-3.5">
+                                        <div class="w-10 h-10 rounded-2xl bg-[#00594E] text-white flex items-center justify-center shrink-0 shadow-sm mt-0.5 sm:mt-0">
+                                            <span class="material-symbols-outlined text-xl">school</span>
+                                        </div>
+                                        <div>
+                                            <span class="text-[10px] font-bold uppercase tracking-wider text-[#00594E] bg-emerald-100/80 px-2.5 py-0.5 rounded-full">Encuesta Institucional</span>
+                                            <h4 class="text-sm font-bold text-slate-900 mt-1">¿Deseas participar en la encuesta de posibles capacitaciones?</h4>
+                                            <p class="text-xs text-slate-600 mt-0.5">Tu opinión nos ayuda a identificar las necesidades y programas de formación que la institución debe priorizar.</p>
+                                        </div>
+                                    </div>
+                                    <a id="btn-encuesta-capacitacion-evaluado" href="#" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 bg-[#00594E] hover:bg-[#004a41] text-white px-5 py-2.5 rounded-xl text-xs font-bold transition shadow-sm shrink-0">
+                                        <span>Responder Encuesta</span>
+                                        <span class="material-symbols-outlined text-sm">open_in_new</span>
+                                    </a>
+                                </div>
+                            </div>
+
                             <div id="resultado-calculo-evaluado" class="hidden mt-6 space-y-3"></div>
 
                             <!-- Aviso: la notificación de la calificación se firma en la pestaña de Compromisos -->
@@ -447,6 +467,7 @@
         ])->values()),
         ponderacionesConfig: @js($ponderacionesConfig ?? []),
         escalaCalificacion: @js($escalaCalificacion ?? []),
+        encuestaCapacitacion: @js($encuestaCapacitacion ?? null),
     };
 </script>
 @vite('resources/js/dashboards/evaluado.js')

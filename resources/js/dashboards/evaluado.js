@@ -134,6 +134,7 @@ export function abrirConcertacionEvaluado(card, ev) {
         cargarRecursosEvaluado(ev);
         cargarPlanMejoramientoEvaluado(ev);
     });
+    actualizarCajaEncuestaEvaluado(ev);
 
     document.querySelectorAll('.evaluacion-card').forEach(el => el.classList.remove('ring-2', 'ring-[#00594E]'));
     if (card) card.classList.add('ring-2', 'ring-[#00594E]');
@@ -957,6 +958,7 @@ export function confirmarEvidenciasEvaluado() {
             if (selectedEvaluacionData) {
                 selectedEvaluacionData = { ...selectedEvaluacionData, fase_actual: 4 };
                 actualizarFaseLabel(selectedEvaluacionId, 4, 'evaluado');
+                actualizarCajaEncuestaEvaluado(selectedEvaluacionData);
             }
             const bloqueConfirmar = document.getElementById('confirmar-evidencias-bloque-evaluado');
             if (bloqueConfirmar) bloqueConfirmar.classList.add('hidden');
@@ -976,6 +978,26 @@ export function confirmarEvidenciasEvaluado() {
             if (btn) btn.disabled = false;
             showInlineMessage(mensajeId, error.message, true);
         });
+}
+
+export function actualizarCajaEncuestaEvaluado(ev) {
+    const caja = document.getElementById('caja-encuesta-capacitacion-evaluado');
+    const btn = document.getElementById('btn-encuesta-capacitacion-evaluado');
+    if (!caja || !btn) return;
+
+    const config = window.APP_CONFIG?.encuestaCapacitacion;
+    const url = config?.url ? String(config.url).trim() : '';
+    const activa = !!config?.activa;
+
+    // Se muestra si el admin configuró un link activo y el evaluado ya subió evidencias (fase 4 en adelante) o la evaluación ya está calificada
+    const evidenciasTerminadas = ev && (parseInt(ev.fase_actual, 10) >= 4 || ev.estado === 'CALIFICADA');
+
+    if (url && activa && evidenciasTerminadas) {
+        btn.href = url;
+        caja.classList.remove('hidden');
+    } else {
+        caja.classList.add('hidden');
+    }
 }
 
 function formatearFechaHora(valor) {
@@ -1014,6 +1036,7 @@ window.confirmarEvidenciasEvaluado = confirmarEvidenciasEvaluado;
 window.firmarConcertacion = firmarConcertacion;
 window.mostrarModalRecusacion = mostrarModalRecusacion;
 window.toggleCompromisoColapsadoEvaluado = toggleCompromisoColapsadoEvaluado;
+window.actualizarCajaEncuestaEvaluado = actualizarCajaEncuestaEvaluado;
 
 window.addEventListener('DOMContentLoaded', () => {
     navegarMenu(null, 'evaluaciones');

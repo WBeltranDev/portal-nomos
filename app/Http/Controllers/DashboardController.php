@@ -816,6 +816,11 @@ class DashboardController extends Controller
             $vacantes = DB::table('vinculacion')->where('es_vacante', 1)->select('id_vinculacion', 'cargo', 'area')->get();
         }
 
+        $encuestaCapacitacion = [
+            'url' => function_exists('getConfiguracion') ? getConfiguracion('encuesta_capacitacion_url') : null,
+            'activa' => function_exists('getConfiguracion') ? ((string) getConfiguracion('encuesta_capacitacion_activa', '1') === '1') : true,
+        ];
+
         $viewData = compact(
             'usuario', 'rolActivo', 'usuarios', 'empleados', 'evaluaciones',
             'evaluacionesAdmin',
@@ -827,7 +832,8 @@ class DashboardController extends Controller
             'evaluadoresDelegacion', 'delegadosDisponibles', 'impedimentos',
             'cargosCatalogo', 'dependenciasCatalogo', 'funcionariosNoCalificados', 'evaluacionesExtratiempo', 'historialExtratiempo',
             'vinculacionesJerarquia', 'jefesDisponibles',
-            'notificaciones', 'notificacionesNoLeidas', 'matrizCalificaciones'
+            'notificaciones', 'notificacionesNoLeidas', 'matrizCalificaciones',
+            'encuestaCapacitacion'
         );
 
         return match ($rolActivo) {
