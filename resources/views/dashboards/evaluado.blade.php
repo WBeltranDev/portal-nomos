@@ -13,6 +13,54 @@
             @include('partials.alerts')
 
             <section id="section-evaluaciones" class="section-content space-y-6">
+                {{-- S14 (regla 9): quién fue responsable de cada tramo del periodo --}}
+                @if(!empty($tramosEvaluado))
+                    <div class="panel-card rounded-3xl p-6">
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="material-symbols-outlined text-[#00594E]">timeline</span>
+                            <h2 class="text-xl font-black text-slate-900">Mis tramos de evaluación</h2>
+                        </div>
+                        <p class="text-xs text-slate-500 mb-4">Cuando cambias de evaluador por traslado o delegación, cada tramo se califica por separado y la nota del semestre es el promedio ponderado por los días de cada tramo.</p>
+                        <div class="space-y-4">
+                            @foreach($tramosEvaluado as $periodoTramos)
+                                <div class="rounded-2xl border border-slate-100 bg-slate-50/50 p-4">
+                                    <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                                        <p class="text-sm font-black text-slate-800">{{ $periodoTramos['titulo'] }}</p>
+                                        @if($periodoTramos['nota_semestre'] !== null)
+                                            <span class="whitespace-nowrap text-[11px] font-bold rounded-full px-3 py-1 bg-[#EAF2EF] text-[#00594E]">Nota del semestre: {{ number_format((float) $periodoTramos['nota_semestre'], 1) }}</span>
+                                        @else
+                                            <span class="whitespace-nowrap text-[11px] font-bold rounded-full px-3 py-1 bg-amber-50 text-amber-700">Nota del semestre pendiente</span>
+                                        @endif
+                                    </div>
+                                    <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                                        @foreach($periodoTramos['tramos'] as $tramo)
+                                            <div class="rounded-xl border border-slate-200 bg-white p-3 space-y-1">
+                                                <div class="flex items-start justify-between gap-2">
+                                                    <p class="min-w-0 text-xs font-bold text-slate-800 break-words">{{ $tramo['evaluador'] ?: 'Sin evaluador' }}</p>
+                                                    <span class="shrink-0 whitespace-nowrap text-[10px] font-bold uppercase rounded-full px-2 py-0.5 bg-slate-100 text-slate-600">{{ $tramo['motivo'] }}</span>
+                                                </div>
+                                                <p class="text-[11px] text-slate-500">
+                                                    {{ \Carbon\Carbon::parse($tramo['desde'])->format('d/m/Y') }} → {{ \Carbon\Carbon::parse($tramo['hasta'])->format('d/m/Y') }}
+                                                    @if($tramo['dias']) · {{ $tramo['dias'] }} días @endif
+                                                </p>
+                                                <p class="text-[11px] font-semibold {{ $tramo['nota'] !== null ? 'text-[#00594E]' : 'text-amber-700' }}">
+                                                    {{ $tramo['nota'] !== null ? 'Nota: ' . number_format((float) $tramo['nota'], 1) : 'Sin calificar' }}
+                                                </p>
+                                                @if($tramo['cambio_programado'])
+                                                    <p class="text-[10px] font-semibold text-sky-700">Cambio de evaluador programado al cierre de este tramo.</p>
+                                                @endif
+                                                @if($tramo['reasignada'])
+                                                    <p class="text-[10px] font-semibold text-slate-500">Reasignada por impedimento o recusación.</p>
+                                                @endif
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                @endif
+
                 <div class="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
                     <div class="panel-card rounded-3xl p-6 h-fit">
                         <h2 class="text-xl font-black text-slate-900 mb-4">Mis evaluaciones</h2>
@@ -74,6 +122,9 @@
                                         <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#EAF2EF] text-[#00594E]">
                                             {{ $ev->sistema === 'RENDIMIENTO_LABORAL' ? 'RL' : 'AG' }}
                                         </span>
+                                        <button type="button" onclick="event.stopPropagation(); verBitacora({{ $ev->id_evaluacion }})" class="inline-flex items-center gap-1 text-[10px] font-bold text-slate-500 hover:text-[#00594E]" title="Ver la bitácora de esta evaluación">
+                                            <span class="material-symbols-outlined text-[14px]">history</span> Bitácora
+                                        </button>
                                         <span id="fase-label-evaluado-{{ $ev->id_evaluacion }}" class="text-[9px] uppercase tracking-wide font-bold text-slate-400">Fase {{ $ev->fase_actual }}: {{ match($ev->fase_actual) { 1 => 'Concertación Pendiente', 2 => 'Concertación Parcial', 3 => 'Subir Evidencias', 4 => 'Calificación', 5 => 'Nota Final', default => '' } }}</span>
                                     </div>
                                 </div>
@@ -245,10 +296,14 @@
                                     <form id="form-firmar-evaluado" method="POST" action="" onsubmit="firmarConcertacion(event, 'evaluado')" class="shrink-0">
                                         @csrf
                                         <button type="submit" id="btn-firmar-evaluado" class="bg-[#00594E] text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:brightness-110 transition disabled:opacity-50" disabled>Firmar Concertación</button>
-                                        <button type="button" id="btn-recusacion-evaluado" onclick="mostrarModalRecusacion()" class="bg-red-600 text-white px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-red-700 transition ml-2 hidden">Declarar Recusación</button>
                                     </form>
                                 </div>
                                 <div id="firmas-concertacion-evaluado" class="mt-3 hidden"></div>
+                            </div>
+
+                            {{-- Fuera de la sección de firma: la recusación sigue disponible hasta antes de calificar --}}
+                            <div class="mt-3 flex justify-end">
+                                <button type="button" id="btn-recusacion-evaluado" onclick="mostrarModalRecusacion()" class="bg-red-600 text-white px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-red-700 transition hidden">Declarar Recusación</button>
                             </div>
                             
                             <!-- Modal: Recusación -->

@@ -33,3 +33,6 @@ database/seeders/PruebasRealesSemanas6y8Seeder.php
 tests/Feature/Sprint8E2ETest.php
 phpunit.xml
 bootstrap/app.php
+
+# Configuración local de Docker (cada entorno mantiene la suya)
+docker-compose.yml

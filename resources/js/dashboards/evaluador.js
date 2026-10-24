@@ -227,13 +227,12 @@ export function abrirConcertacionEvaluador(card, ev) {
     const formFirmar = document.getElementById('form-firmar-evaluacion');
     if (formFirmar) formFirmar.action = `/evaluaciones/${ev.id_evaluacion}/firmar`;
 
-    // El impedimento solo procede antes de cerrar la concertación. Nunca debe
-    // estar disponible durante seguimiento, evidencias o calificación.
+    // El impedimento procede desde la concertación hasta antes de calificar
+    // (incluye seguimiento y evidencias). Calificada, la vía son los recursos.
     const btnImpedimento = document.getElementById('btn-impedimento-evaluador');
     const modalImpedimento = document.getElementById('modal-impedimento');
     const puedeDeclararImpedimento = ev.estado === 'EN_PROCESO'
-        && !ev.concertacion_firmada
-        && Number(ev.fase_actual || 1) <= 2
+        && Number(ev.fase_actual || 1) < 5
         && !(ev.es_traslado || ev.bloqueado_por_impedimento);
     if (btnImpedimento) btnImpedimento.classList.toggle('hidden', !puedeDeclararImpedimento);
     if (!puedeDeclararImpedimento && modalImpedimento) modalImpedimento.classList.add('hidden');
@@ -265,17 +264,35 @@ export function abrirConcertacionEvaluador(card, ev) {
     // Banner Impedimento
     const oldImpedimento = document.getElementById('aviso-impedimento-evaluador');
     if (oldImpedimento) oldImpedimento.remove();
-    const impedimentoBloquea = ev.estado_impedimento === 'PENDIENTE' || ev.estado_impedimento === 'APROBADO';
+    // Solo una solicitud PENDIENTE bloquea: al aprobarla la evaluación ya queda reasignada.
+    const impedimentoBloquea = ev.estado_impedimento === 'PENDIENTE';
     ev.bloqueado_por_impedimento = impedimentoBloquea;
 
     if (impedimentoBloquea && avisoTraslado) {
-        const texto = ev.estado_impedimento === 'PENDIENTE' ? 'Impedimento / Recusación en revisión por Talento Humano.' : 'Impedimento / Recusación aprobado. Esperando reasignación o acciones adicionales.';
+        const texto = 'Impedimento / Recusación en revisión por Talento Humano.';
         avisoTraslado.insertAdjacentHTML('beforebegin', `
             <div id="aviso-impedimento-evaluador" class="mt-4 flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-700">
                 <span class="material-symbols-outlined text-base shrink-0">front_hand</span>
                 <div>
                     <p class="font-bold uppercase tracking-wider text-[10px] text-amber-500 mb-0.5">Evaluación bloqueada</p>
                     <p class="whitespace-pre-wrap">${texto} No puedes modificar esta evaluación.</p>
+                </div>
+            </div>
+        `);
+    }
+
+    // Cambio de evaluador programado (traslado o delegación): Talento Humano lo
+    // confirma cuando este tramo tenga nota.
+    const oldTrasladoProgramado = document.getElementById('aviso-traslado-programado');
+    if (oldTrasladoProgramado) oldTrasladoProgramado.remove();
+    if (ev.traslado_programado_fecha && ev.estado === 'EN_PROCESO' && avisoTraslado) {
+        const diasTramo = ev.traslado_programado_dias ? ` (${escapeHtml(String(ev.traslado_programado_dias))} días)` : '';
+        avisoTraslado.insertAdjacentHTML('beforebegin', `
+            <div id="aviso-traslado-programado" class="mt-4 flex items-start gap-2 rounded-2xl border border-sky-200 bg-sky-50 p-3 text-xs font-semibold text-sky-800">
+                <span class="material-symbols-outlined text-base shrink-0">swap_horiz</span>
+                <div>
+                    <p class="font-bold uppercase tracking-wider text-[10px] text-sky-600 mb-0.5">Cambio de evaluador programado · ${escapeHtml(ev.traslado_programado_fecha)}</p>
+                    <p>Por un traslado o una delegación, este funcionario cambiará de evaluador. Concierta y califica esta evaluación por el tramo laborado${diasTramo} para que Talento Humano pueda confirmar el cambio.</p>
                 </div>
             </div>
         `);
@@ -575,6 +592,7 @@ export function cargarCompromisosEvaluador(ev, ejes = {}) {
                             <span id="icon-chevron-evaluador-${c.id_compromiso}" class="material-symbols-outlined text-[#00594E] text-base transition-transform duration-200">expand_more</span>
                             <div>
                                 <span class="text-[10px] font-black uppercase text-[#00594E] tracking-wide">Compromiso #${idx + 1}</span>
+                                ${c.es_copia ? `<span class="ml-1 whitespace-nowrap rounded-full bg-sky-50 px-2 py-0.5 text-[9px] font-bold uppercase text-sky-700" title="Copiado como borrador de los compromisos de un tramo anterior">Copiado de un tramo anterior${c.copia_ajustada ? ' (ajustado)' : ''}</span>` : ''}
                                 <p class="text-xs font-semibold text-slate-800 mt-0.5">${escapeHtml(c.descripcion)}</p>
                             </div>
                         </div>

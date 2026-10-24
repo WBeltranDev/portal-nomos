@@ -146,6 +146,66 @@ class NotificacionCalificacionTest extends TestCase
         $this->assertNotNull($firma->fecha_firma);
     }
 
+    private function radicarApelacion(): object
+    {
+        $this->postJson("/evaluaciones/{$this->idEvaluacion}/firmar-notificacion")->assertOk();
+        $this->postJson("/evaluaciones/{$this->idEvaluacion}/recursos", $this->payloadRecurso('APELACION'))->assertOk();
+
+        return DB::table('recurso')->where('id_evaluacion', $this->idEvaluacion)->where('tipo_recurso', 'APELACION')->first();
+    }
+
+    private function asignarJefeAlEvaluador(bool $activo): int
+    {
+        $jefe = $this->crearVinculacion($this->crearFuncionario('Tmp', 'Jefe', 'T' . random_int(10000, 99999)), 'DIRECTIVO', 'LNR', true);
+        DB::table('vinculacion')->where('id_vinculacion', $jefe)->update(['activa' => $activo ? 1 : 0]);
+        $idEvaluador = DB::table('evaluacion')->where('id_evaluacion', $this->idEvaluacion)->value('id_vinc_evaluador');
+        DB::table('vinculacion')->where('id_vinculacion', $idEvaluador)->update(['id_vinc_jefe' => $jefe]);
+
+        return $jefe;
+    }
+
+    public function test_la_apelacion_la_recibe_el_superior_activo_del_evaluador(): void
+    {
+        $jefe = $this->asignarJefeAlEvaluador(true);
+
+        $this->assertSame($jefe, (int) $this->radicarApelacion()->id_vinc_receptor);
+    }
+
+    public function test_sin_superior_activo_la_apelacion_la_recibe_talento_humano_y_no_el_evaluador(): void
+    {
+        $this->asignarJefeAlEvaluador(false);
+
+        $recurso = $this->radicarApelacion();
+        $this->assertNull($recurso->id_vinc_receptor, 'Receptor vacío = Talento Humano.');
+
+        // Talento Humano la ve y la decide.
+        session(['usuario_autenticado' => ['id_usuario' => $this->idUsuario, 'rol_activo' => 'admin', 'roles' => ['admin']]]);
+        $this->getJson('/recursos')->assertOk()->assertJsonFragment(['id_recurso' => $recurso->id_recurso]);
+        $this->postJson("/recursos/{$recurso->id_recurso}/decision", ['decision' => 'NEGADO', 'motivacion' => 'Decisión de Talento Humano.'])->assertOk();
+    }
+
+    public function test_sin_superior_registrado_la_apelacion_tambien_va_a_talento_humano(): void
+    {
+        $this->assertNull($this->radicarApelacion()->id_vinc_receptor);
+    }
+
+    public function test_la_bitacora_registra_la_firma_de_la_notificacion_y_el_recurso(): void
+    {
+        $this->postJson("/evaluaciones/{$this->idEvaluacion}/firmar-notificacion")->assertOk();
+        $this->postJson("/evaluaciones/{$this->idEvaluacion}/recursos", $this->payloadRecurso())->assertOk();
+
+        $eventos = DB::table('evaluacion_evento')->where('id_evaluacion', $this->idEvaluacion)->orderBy('id_evento')->get();
+        $this->assertSame(['NOTIFICACION_FIRMADA', 'RECURSO_RADICADO'], $eventos->pluck('tipo_evento')->all());
+        $this->assertSame('evaluado', $eventos[0]->rol_actor);
+        $this->assertSame($this->idUsuario, (int) $eventos[0]->id_usuario_actor);
+
+        // El evaluado consulta la bitácora de su evaluación.
+        $this->getJson("/evaluaciones/{$this->idEvaluacion}/bitacora")
+            ->assertOk()
+            ->assertJsonCount(2, 'eventos')
+            ->assertJsonPath('eventos.1.datos.tipo_recurso', $this->payloadRecurso()['tipo_recurso']);
+    }
+
     public function test_la_firma_es_idempotente_y_no_admite_renuencia(): void
     {
         $this->postJson("/evaluaciones/{$this->idEvaluacion}/firmar-notificacion")->assertOk();

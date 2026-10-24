@@ -435,6 +435,51 @@ export function cargarPlanesAdmin() {
         .catch(() => {});
 }
 
+function badgeEstadoTraslado(estado) {
+    if (estado === 'PROGRAMADO') return '<span class="whitespace-nowrap text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-amber-50 text-amber-700">Programado</span>';
+    if (estado === 'CANCELADO') return '<span class="whitespace-nowrap text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-slate-100 text-slate-500">Cancelado</span>';
+    return '<span class="whitespace-nowrap text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-emerald-50 text-emerald-700">Confirmado</span>';
+}
+
+// S14: el traslado se confirma cuando el tramo de origen ya tiene nota.
+function accionesTrasladoProgramado(t) {
+    const conNota = ['CALIFICADA', 'APELACION', 'CERRADA'].includes(t.origen_estado);
+    const estadoOrigen = conNota
+        ? `Tramo de origen calificado${t.origen_calificacion ? ` (${escapeHtml(String(t.origen_calificacion))})` : ''}. Ya puedes confirmar.`
+        : 'Esperando que el evaluador de origen concierte y califique el tramo.';
+    return `
+        <div class="rounded-xl border ${conNota ? 'border-emerald-100 bg-emerald-50/60 text-emerald-800' : 'border-amber-100 bg-amber-50/60 text-amber-800'} p-3 space-y-2">
+            <p class="text-[11px] font-semibold">${estadoOrigen}</p>
+            <div class="flex gap-2">
+                <button type="button" onclick="confirmarTrasladoAdmin(${t.id_traslado})" class="flex-1 rounded-xl bg-[#00594E] py-2 text-xs font-bold text-white hover:brightness-110 transition">Confirmar traslado</button>
+                ${conNota ? '' : `<button type="button" onclick="cancelarTrasladoAdmin(${t.id_traslado})" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 transition">Cancelar</button>`}
+            </div>
+        </div>`;
+}
+
+function resolverTrasladoAdmin(id, accion, confirmacion) {
+    if (!confirm(confirmacion)) return;
+    fetchJson(`/admin/traslados/${id}/${accion}`, { method: 'POST' })
+        .then(async res => {
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo actualizar el traslado.'));
+            alert(data.message || 'Traslado actualizado.');
+            cargarTrasladosAdmin();
+        })
+        .catch(err => alert(err.message));
+}
+
+export function confirmarTrasladoAdmin(id) {
+    resolverTrasladoAdmin(id, 'confirmar', '¿Confirmar el traslado? Se abrirá la evaluación en el cargo nuevo y se reasignará el evaluador.');
+}
+
+export function cancelarTrasladoAdmin(id) {
+    resolverTrasladoAdmin(id, 'cancelar', '¿Cancelar el traslado programado? El funcionario seguirá en su cargo actual.');
+}
+
+window.confirmarTrasladoAdmin = confirmarTrasladoAdmin;
+window.cancelarTrasladoAdmin = cancelarTrasladoAdmin;
+
 export function cargarTrasladosAdmin() {
     const lista = document.getElementById('traslados-admin-lista');
     const contador = document.getElementById('traslados-admin-contador');
@@ -455,8 +500,13 @@ export function cargarTrasladosAdmin() {
                             <p class="text-xs font-black text-slate-800 truncate">${escapeHtml(t.funcionario_nombres || '')} ${escapeHtml(t.funcionario_apellidos || '')}</p>
                             <p class="text-[10px] text-slate-400">Fecha: ${escapeHtml(t.fecha_traslado || '')}${t.resolucion ? ` · ${escapeHtml(t.resolucion)}` : ''}</p>
                         </div>
-                        <span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-[#EAF2EF] text-[#00594E]">${t.dias_laborados ? t.dias_laborados + ' días' : 'Sin parcial'}</span>
+                        <div class="flex shrink-0 flex-col items-end gap-1">
+                            ${badgeEstadoTraslado(t.estado)}
+                            <span class="whitespace-nowrap text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-[#EAF2EF] text-[#00594E]">${t.dias_laborados ? t.dias_laborados + ' días origen' : 'Sin tramo'}</span>
+                        </div>
                     </div>
+                    ${t.estado === 'PROGRAMADO' && t.id_delegacion ? `<p class="rounded-xl border border-amber-100 bg-amber-50/60 p-2.5 text-[11px] font-semibold text-amber-800">${t.tipo === 'PAUSA' ? 'Cierre del tramo del titular' : t.tipo === 'REANUDACION' ? 'Regreso del titular' : 'Cambio de evaluador'} de la delegación #${t.id_delegacion}: se confirma desde Delegaciones.</p>` : ''}
+                    ${t.estado === 'PROGRAMADO' && !t.id_delegacion ? accionesTrasladoProgramado(t) : ''}
                     <div class="grid grid-cols-2 gap-2 rounded-xl border border-slate-100 bg-slate-50/50 p-3">
                         <div>
                             <p class="text-[9px] font-bold uppercase text-slate-400">Origen</p>
@@ -685,17 +735,105 @@ export function guardarEdicionDelegacion(event) {
         });
 }
 
+// S14: vinculaciones activas para elegir sucesor y evaluador de regreso al finalizar.
+let evaluadoresDelegacionCache = null;
+
+function cargarEvaluadoresDelegacion() {
+    if (evaluadoresDelegacionCache) return Promise.resolve(evaluadoresDelegacionCache);
+    return fetchJson('/admin/delegaciones/evaluadores')
+        .then(res => res.json())
+        .then(items => (evaluadoresDelegacionCache = Array.isArray(items) ? items : []));
+}
+
+function opcionesVinculacion(seleccionado, placeholder) {
+    return `<option value="">${escapeHtml(placeholder)}</option>` + (evaluadoresDelegacionCache || []).map(v => `
+        <option value="${v.id_vinculacion}" ${String(v.id_vinculacion) === String(seleccionado ?? '') ? 'selected' : ''}>${escapeHtml(`${v.nombres || ''} ${v.apellidos || ''} - ${v.cargo || ''}`)}</option>`).join('');
+}
+
+// El fin de la delegación pasa el trabajo al sucesor: por defecto el titular, y
+// obligatorio elegirlo cuando el titular ya no está activo.
 export function finalizarDelegacion(id) {
-    if (!confirm('¿Finalizar esta delegación? El titular (delegante) retomará sus evaluaciones pendientes y la responsabilidad de la firma final.')) return;
-    fetchJson(`/admin/delegaciones/${id}/finalizar`, { method: 'POST' })
+    const panel = document.getElementById(`finalizar-delegacion-${id}`);
+    const d = delegacionesCache.find(item => Number(item.id_delegacion) === Number(id));
+    if (!panel || !d) return;
+    if (!panel.classList.contains('hidden')) {
+        panel.classList.add('hidden');
+        return;
+    }
+
+    cargarEvaluadoresDelegacion().then(() => {
+        const fechaRegreso = d.fecha_fin ? new Date(new Date(`${d.fecha_fin}T00:00:00`).getTime() + 86400000).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+        panel.innerHTML = `
+            <p class="text-[11px] font-semibold text-slate-700">${d.titular_activo ? 'Por defecto el trabajo vuelve al titular; puedes elegir a otra persona.' : '<span class="text-rose-700">El titular ya no está activo: elige quién asume sus evaluaciones.</span>'}</p>
+            <div>
+                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Quién asume las personas a cargo</label>
+                <select id="sucesor-delegacion-${id}" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white">${opcionesVinculacion(d.titular_activo ? d.id_vinc_delegante : null, 'Selecciona el sucesor')}</select>
+            </div>
+            ${Number(d.es_larga) ? `
+                <div class="grid gap-2 sm:grid-cols-2">
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Fecha de regreso</label>
+                        <input type="date" id="regreso-delegacion-${id}" value="${fechaRegreso}" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white" />
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Evaluador del delegado al regresar</label>
+                        <select id="evaluador-regreso-delegacion-${id}" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white">${opcionesVinculacion(d.id_vinc_evaluador_original_delegado, 'Su evaluador original')}</select>
+                    </div>
+                </div>
+                <p class="text-[10px] text-slate-500">El delegado debe calificar el tramo de cada persona a cargo y el superior el del delegado; con todas las notas confirmas el fin.</p>
+            ` : ''}
+            <button type="button" onclick="enviarFinDelegacion(${id})" class="w-full rounded-xl bg-red-600 py-2 text-xs font-bold text-white hover:bg-red-700 transition">${Number(d.es_larga) ? 'Programar fin' : 'Finalizar delegación'}</button>`;
+        panel.classList.remove('hidden');
+    }).catch(() => alert('No se pudo cargar la lista de funcionarios.'));
+}
+
+export function enviarFinDelegacion(id) {
+    const valor = idNodo => document.getElementById(idNodo)?.value || null;
+    const body = {
+        id_vinc_sucesor: valor(`sucesor-delegacion-${id}`),
+        fecha_regreso: valor(`regreso-delegacion-${id}`),
+        id_vinc_evaluador_regreso: valor(`evaluador-regreso-delegacion-${id}`),
+    };
+    Object.keys(body).forEach(k => body[k] === null && delete body[k]);
+    resolverDelegacionAdmin(id, 'finalizar', '¿Confirmas el fin de la delegación con estos datos?', body);
+}
+
+function resolverDelegacionAdmin(id, accion, confirmacion, body = null) {
+    if (!confirm(confirmacion)) return;
+    fetchJson(`/admin/delegaciones/${id}/${accion}`, {
+        method: 'POST',
+        ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}),
+    })
         .then(async res => {
-            if (!res.ok) {
-                const payload = await res.json().catch(() => ({}));
-                throw new Error(parseErrorMessage(payload, 'No se pudo finalizar la delegación.'));
-            }
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo actualizar la delegación.'));
+            alert(data.message || 'Delegación actualizada.');
             cargarDelegacionesAdmin();
         })
         .catch(error => alert(error.message));
+}
+
+export function confirmarDelegacion(id) {
+    resolverDelegacionAdmin(id, 'confirmar', '¿Confirmar los cambios de evaluador de esta delegación? Se abrirán las nuevas evaluaciones para concertar.');
+}
+
+export function cancelarDelegacion(id) {
+    resolverDelegacionAdmin(id, 'cancelar', '¿Cancelar los cambios programados de esta delegación?');
+}
+
+function infoTramosDelegacion(d) {
+    const filas = [];
+    if (d.superior_nombre) filas.push(`<p class="text-[10px] text-slate-500"><span class="font-bold text-slate-600">Evalúa al delegado:</span> ${escapeHtml(d.superior_nombre)}</p>`);
+    if (d.sucesor_nombre) filas.push(`<p class="text-[10px] text-slate-500"><span class="font-bold text-slate-600">Asume al terminar:</span> ${escapeHtml(d.sucesor_nombre)}</p>`);
+
+    if (d.estado === 'PROGRAMADA' || d.estado === 'POR_FINALIZAR') {
+        const pendientes = Array.isArray(d.tramos_pendientes) ? d.tramos_pendientes : [];
+        filas.push(pendientes.length
+            ? `<div class="rounded-xl border border-amber-100 bg-amber-50/60 p-2.5 text-[11px] text-amber-800"><b>Faltan ${pendientes.length} tramo(s) por calificar:</b> ${pendientes.map(escapeHtml).join(', ')}</div>`
+            : '<div class="rounded-xl border border-emerald-100 bg-emerald-50/60 p-2.5 text-[11px] font-semibold text-emerald-800">Todos los tramos tienen nota: ya puedes confirmar.</div>');
+    }
+
+    return filas.join('');
 }
 
 export function renderNotificacionesDelegaciones(items) {
@@ -906,6 +1044,11 @@ export function cargarDelegacionesAdmin() {
                 let borderCls = 'border-slate-100 bg-white';
                 if (d.estado === 'FINALIZADA') {
                     badgeEstado = '<span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-slate-100 text-slate-500">FINALIZADA</span>';
+                } else if (d.estado === 'CANCELADA') {
+                    badgeEstado = '<span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-slate-100 text-slate-500">CANCELADA</span>';
+                } else if (d.estado === 'PROGRAMADA' || d.estado === 'POR_FINALIZAR') {
+                    borderCls = 'border-amber-200 bg-amber-50/20';
+                    badgeEstado = `<span class="whitespace-nowrap text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-amber-50 text-amber-700">${d.estado === 'PROGRAMADA' ? 'Programada' : 'Por finalizar'}</span>`;
                 } else if (es1Dia) {
                     borderCls = 'border-amber-300 bg-amber-50/30 ring-2 ring-amber-200/60 shadow-sm';
                     badgeEstado = '<span class="text-[10px] font-extrabold uppercase rounded-full px-2.5 py-1 bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1"><span class="material-symbols-outlined text-xs">alarm</span> Vence en 1 día</span>';
@@ -964,6 +1107,7 @@ export function cargarDelegacionesAdmin() {
                         </div>
                         ${d.motivo ? `<p class="text-[10px] text-slate-500 italic bg-slate-50 p-2 rounded-lg"><span class="font-bold not-italic text-slate-600">Motivo:</span> "${escapeHtml(d.motivo)}"</p>` : ''}
                         ${actoHtml}
+                        ${infoTramosDelegacion(d)}
                         ${d.estado === 'ACTIVA' ? `
                             <div class="grid grid-cols-2 gap-2 pt-1">
                                 <button type="button" onclick="abrirModalEditarDelegacion(${d.id_delegacion})" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl py-2 text-xs font-bold transition flex items-center justify-center gap-1">
@@ -972,6 +1116,13 @@ export function cargarDelegacionesAdmin() {
                                 <button type="button" onclick="finalizarDelegacion(${d.id_delegacion})" class="w-full ${es1Dia ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-sm' : 'bg-red-50 text-red-700 border border-red-100 hover:bg-red-100'} rounded-xl py-2 text-xs font-bold transition">
                                     Finalizar
                                 </button>
+                            </div>
+                            <div id="finalizar-delegacion-${d.id_delegacion}" class="hidden rounded-xl border border-red-100 bg-red-50/40 p-3 space-y-2"></div>
+                        ` : ''}
+                        ${d.estado === 'PROGRAMADA' || d.estado === 'POR_FINALIZAR' ? `
+                            <div class="grid grid-cols-2 gap-2 pt-1">
+                                <button type="button" onclick="confirmarDelegacion(${d.id_delegacion})" class="w-full rounded-xl bg-[#00594E] py-2 text-xs font-bold text-white hover:brightness-110 transition">${d.estado === 'PROGRAMADA' ? 'Confirmar inicio' : 'Confirmar fin'}</button>
+                                <button type="button" onclick="cancelarDelegacion(${d.id_delegacion})" class="w-full rounded-xl border border-slate-200 bg-white py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 transition">${d.estado === 'PROGRAMADA' ? 'Cancelar' : 'Cancelar fin'}</button>
                             </div>
                         ` : ''}
                     </div>
@@ -982,6 +1133,152 @@ export function cargarDelegacionesAdmin() {
             if (contador) contador.innerText = 'Error';
         });
 }
+
+// --- S14: CATÁLOGO DE PLAZAS (modelo de puestos, fases A-B) ---
+let plazasCache = [];
+
+export function cargarPlazasAdmin() {
+    const lista = document.getElementById('plazas-lista');
+    if (!lista) return;
+    fetchJson('/admin/plazas')
+        .then(res => res.json())
+        .then(data => {
+            plazasCache = Array.isArray(data.plazas) ? data.plazas : [];
+            const r = data.resumen || {};
+            const chip = (texto, clases) => `<span class="rounded-full px-3 py-1 ${clases}">${texto}</span>`;
+            const resumen = document.getElementById('plazas-resumen');
+            if (resumen) {
+                resumen.innerHTML = chip(`${r.total ?? 0} plazas`, 'bg-slate-100 text-slate-700')
+                    + chip(`${r.por_revisar ?? 0} por revisar`, 'bg-amber-50 text-amber-700')
+                    + chip(`${r.borrador ?? 0} en borrador`, 'bg-sky-50 text-sky-700')
+                    + chip(`${r.validadas ?? 0} validadas`, 'bg-emerald-50 text-emerald-700')
+                    + (r.vinculaciones_sin_plaza ? chip(`${r.vinculaciones_sin_plaza} vinculación(es) sin plaza`, 'bg-rose-50 text-rose-700') : '');
+            }
+            renderPlazasAdmin();
+        })
+        .catch(() => { lista.innerHTML = '<div class="py-10 text-center text-xs text-red-500">No se pudo cargar el catálogo de plazas.</div>'; });
+}
+
+export function renderPlazasAdmin() {
+    const lista = document.getElementById('plazas-lista');
+    if (!lista) return;
+    const texto = (document.getElementById('plazas-buscar')?.value || '').toLowerCase().trim();
+    const filtro = document.getElementById('plazas-filtro')?.value || '';
+
+    const visibles = plazasCache.filter(p => {
+        if (filtro === 'revisar' && !(p.estado === 'BORRADOR' && Number(p.requiere_revision))) return false;
+        if ((filtro === 'BORRADOR' || filtro === 'VALIDADA') && p.estado !== filtro) return false;
+        return !texto || [p.codigo_plaza, p.dependencia, p.cargo, p.ocupante].join(' ').toLowerCase().includes(texto);
+    });
+
+    if (!plazasCache.length) {
+        lista.innerHTML = '<div class="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-xs text-slate-500 text-center">Aún no hay plazas. Usa “Generar borrador” para crearlas desde las vinculaciones activas.</div>';
+        return;
+    }
+    if (!visibles.length) {
+        lista.innerHTML = '<div class="py-8 text-center text-xs text-slate-400">No hay plazas con ese filtro.</div>';
+        return;
+    }
+
+    lista.innerHTML = visibles.map(p => {
+        const porRevisar = p.estado === 'BORRADOR' && Number(p.requiere_revision);
+        const estado = p.estado === 'VALIDADA'
+            ? '<span class="whitespace-nowrap rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold uppercase text-emerald-700">Validada</span>'
+            : `<span class="whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${porRevisar ? 'bg-amber-50 text-amber-700' : 'bg-sky-50 text-sky-700'}">${porRevisar ? 'Por revisar' : 'Borrador'}</span>`;
+        const desde = p.vigente_desde ? `desde ${escapeHtml(p.vigente_desde)}${Number(p.fecha_estimada) ? ' (estimada)' : ''}` : 'sin fecha de ingreso';
+        return `
+            <div class="rounded-2xl border ${porRevisar ? 'border-amber-200' : 'border-slate-100'} bg-white p-4 space-y-2">
+                <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                        <p class="text-sm font-black text-slate-800">${escapeHtml(p.codigo_plaza)}</p>
+                        <p class="text-[11px] text-slate-500 break-words">${escapeHtml(p.dependencia)} · ${escapeHtml(p.cargo)} (${escapeHtml(String(p.codigo_cargo ?? ''))}-${escapeHtml(String(p.grado ?? ''))})</p>
+                    </div>
+                    ${estado}
+                </div>
+                <div class="grid gap-1 text-[11px] text-slate-600 sm:grid-cols-2">
+                    <p><span class="font-semibold text-slate-700">Ocupante:</span> ${escapeHtml(p.ocupante || 'Sin ocupante')} ${p.tipo_ocupacion ? `· ${escapeHtml(p.tipo_ocupacion)}` : ''} · ${desde}</p>
+                    <p><span class="font-semibold text-slate-700">Superior:</span> ${escapeHtml(p.superior_codigo || 'Sin superior')}</p>
+                </div>
+                ${porRevisar ? '<p class="text-[11px] text-amber-700">Comparte dependencia, cargo y grado con otra plaza: confirma que es un puesto distinto y no la misma plaza con dos ocupantes.</p>' : ''}
+                <div class="flex flex-wrap gap-2 pt-1">
+                    <button type="button" onclick="editarPlaza(${p.id_puesto})" class="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50 transition">Editar</button>
+                    ${p.estado === 'BORRADOR' ? `<button type="button" onclick="validarPlaza(${p.id_puesto})" class="rounded-xl bg-[#00594E] px-3 py-1.5 text-xs font-bold text-white hover:brightness-110 transition">${porRevisar ? 'Confirmar plaza distinta' : 'Validar'}</button>` : ''}
+                </div>
+                <div id="editar-plaza-${p.id_puesto}" class="hidden"></div>
+            </div>`;
+    }).join('');
+}
+
+function accionPlazas(url, confirmacion, body = null) {
+    if (confirmacion && !confirm(confirmacion)) return;
+    fetchJson(url, {
+        method: 'POST',
+        ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}),
+    })
+        .then(async res => {
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo actualizar el catálogo de plazas.'));
+            alert(data.message || 'Catálogo actualizado.');
+            cargarPlazasAdmin();
+        })
+        .catch(err => alert(err.message));
+}
+
+export function generarBorradorPlazas() {
+    accionPlazas('/admin/plazas/generar', '¿Generar el borrador? Se crea una plaza por cada vinculación activa que aún no tenga plaza; las existentes no cambian.');
+}
+
+export function validarPlazasMasivo() {
+    accionPlazas('/admin/plazas/validar-masivo', '¿Validar en bloque todas las plazas del borrador que no requieren revisión?');
+}
+
+export function validarPlaza(id) {
+    const plaza = plazasCache.find(p => Number(p.id_puesto) === Number(id));
+    const porRevisar = plaza && Number(plaza.requiere_revision);
+    accionPlazas(`/admin/plazas/${id}/validar`, porRevisar ? '¿Confirmas que es una plaza distinta de las que comparten su dependencia, cargo y grado?' : '¿Validar esta plaza?');
+}
+
+export function editarPlaza(id) {
+    const panel = document.getElementById(`editar-plaza-${id}`);
+    const plaza = plazasCache.find(p => Number(p.id_puesto) === Number(id));
+    if (!panel || !plaza) return;
+    if (!panel.classList.contains('hidden')) {
+        panel.classList.add('hidden');
+        return;
+    }
+    const opciones = plazasCache
+        .filter(p => Number(p.id_puesto) !== Number(id))
+        .map(p => `<option value="${p.id_puesto}" ${Number(p.id_puesto) === Number(plaza.id_puesto_superior) ? 'selected' : ''}>${escapeHtml(`${p.codigo_plaza} — ${p.cargo}${p.ocupante ? ' (' + p.ocupante + ')' : ''}`)}</option>`)
+        .join('');
+    panel.innerHTML = `
+        <div class="grid gap-2 rounded-xl border border-slate-100 bg-slate-50/60 p-3 sm:grid-cols-[1fr_2fr_auto] sm:items-end">
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-600 mb-1">Código de plaza</label>
+                <input id="plaza-codigo-${id}" value="${escapeHtml(plaza.codigo_plaza)}" maxlength="40" class="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs">
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-600 mb-1">Plaza superior</label>
+                <select id="plaza-superior-${id}" class="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs"><option value="">Sin superior</option>${opciones}</select>
+            </div>
+            <button type="button" onclick="guardarPlaza(${id})" class="rounded-xl bg-[#00594E] px-4 py-2 text-xs font-bold text-white hover:brightness-110 transition">Guardar</button>
+        </div>`;
+    panel.classList.remove('hidden');
+}
+
+export function guardarPlaza(id) {
+    accionPlazas(`/admin/plazas/${id}`, null, {
+        codigo_plaza: document.getElementById(`plaza-codigo-${id}`)?.value || '',
+        id_puesto_superior: document.getElementById(`plaza-superior-${id}`)?.value || null,
+    });
+}
+
+window.cargarPlazasAdmin = cargarPlazasAdmin;
+window.renderPlazasAdmin = renderPlazasAdmin;
+window.generarBorradorPlazas = generarBorradorPlazas;
+window.validarPlazasMasivo = validarPlazasMasivo;
+window.validarPlaza = validarPlaza;
+window.editarPlaza = editarPlaza;
+window.guardarPlaza = guardarPlaza;
 
 // Global window exposure
 window.filtrarEmpleados = filtrarEmpleados;
@@ -1001,6 +1298,9 @@ window.abrirEditarPeriodo = abrirEditarPeriodo;
 window.cerrarEditarPeriodo = cerrarEditarPeriodo;
 window.verAuditoriaPeriodo = verAuditoriaPeriodo;
 window.finalizarDelegacion = finalizarDelegacion;
+window.enviarFinDelegacion = enviarFinDelegacion;
+window.confirmarDelegacion = confirmarDelegacion;
+window.cancelarDelegacion = cancelarDelegacion;
 window.cargarDelegacionesAdmin = cargarDelegacionesAdmin;
 window.abrirModalEditarDelegacion = abrirModalEditarDelegacion;
 window.cerrarModalEditarDelegacion = cerrarModalEditarDelegacion;

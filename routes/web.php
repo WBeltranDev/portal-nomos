@@ -160,11 +160,75 @@ function nombreFuncionarioVinc(int $idVinc): string {
 }
 }
 
+if (!function_exists('notificarVinculacion')) {
+/** S14 - Aviso personal en la plataforma para el usuario de una vinculación. */
+function notificarVinculacion(int $idVinc, string $tipo, string $titulo, string $mensaje, string $seccion): void {
+    if (! Schema::hasColumn('notificacion', 'id_usuario_destino')) {
+        return;
+    }
+
+    $idUsuario = DB::table('vinculacion as v')
+        ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
+        ->where('v.id_vinculacion', $idVinc)
+        ->value('f.id_usuario');
+
+    if (! $idUsuario) {
+        return;
+    }
+
+    DB::table('notificacion')->insert([
+        'tipo' => $tipo,
+        'titulo' => mb_substr($titulo, 0, 255),
+        'mensaje' => $mensaje,
+        'seccion' => $seccion,
+        'id_usuario_destino' => $idUsuario,
+        'leida' => 0,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+}
+}
+
+if (!function_exists('registrarEventoEvaluacion')) {
+/**
+ * S14 (regla 11) - Agrega un evento a la bitácora de la evaluación. El actor es
+ * el usuario de la sesión. $datos guarda solo valores clave (ids, estados,
+ * notas, decisiones), nunca textos completos.
+ */
+function registrarEventoEvaluacion(int $idEvaluacion, string $tipo, array $datos = [], ?string $estadoAnterior = null, ?string $estadoNuevo = null): void {
+    static $soportado = null;
+    $soportado ??= Schema::hasTable('evaluacion_evento');
+
+    if (! $soportado) {
+        return;
+    }
+
+    DB::table('evaluacion_evento')->insert([
+        'id_evaluacion' => $idEvaluacion,
+        'tipo_evento' => $tipo,
+        'id_usuario_actor' => session('usuario_autenticado.id_usuario'),
+        'rol_actor' => session('usuario_autenticado.rol_activo'),
+        'estado_anterior' => $estadoAnterior,
+        'estado_nuevo' => $estadoNuevo,
+        'datos' => $datos ? json_encode($datos, JSON_UNESCAPED_UNICODE) : null,
+        'created_at' => now(),
+    ]);
+}
+}
+
+if (!function_exists('notificacionesTalentoHumano')) {
+/** Notificaciones de Talento Humano: las que no tienen destinatario personal. */
+function notificacionesTalentoHumano() {
+    return DB::table('notificacion')
+        ->when(Schema::hasColumn('notificacion', 'id_usuario_destino'), fn ($q) => $q->whereNull('id_usuario_destino'));
+}
+}
+
 if (!function_exists('delegacionActivaTraslapada')) {
 function delegacionActivaTraslapada(int $idDelegante, string $fechaInicio, ?string $fechaFin = null, int $exceptId = 0): bool {
     $query = DB::table('delegacion')
         ->where('id_vinc_delegante', $idDelegante)
-        ->where('estado', 'ACTIVA')
+        ->whereIn('estado', ['PROGRAMADA', 'ACTIVA', 'POR_FINALIZAR'])
         ->where('id_delegacion', '!=', $exceptId);
 
     if (empty($fechaFin)) {
@@ -211,77 +275,33 @@ function activarDelegacion($delegacion): void {
         ]);
     }
 
-    // 2) Las evaluaciones activas del delegante pasan al delegado durante la
-    //    vigencia; se marca al titular en id_vinc_suplente para la devolución.
-    DB::table('evaluacion')
+    // 2) Delegación corta (30 días o menos): no hay tramos. Las evaluaciones
+    //    abiertas del delegante las atiende el delegado durante la vigencia; se
+    //    marca al titular en id_vinc_suplente para la devolución.
+    $evaluacionesDelegadas = DB::table('evaluacion')
         ->where('id_vinc_evaluador', $idDelegante)
-        ->where('estado', '!=', 'CALIFICADA')
+        ->where('estado', 'EN_PROCESO')
+        ->pluck('id_evaluacion');
+
+    DB::table('evaluacion')
+        ->whereIn('id_evaluacion', $evaluacionesDelegadas)
         ->update([
             'id_vinc_evaluador' => $idDelegado,
             'id_vinc_suplente' => $idDelegante,
         ]);
 
-    // 3) Periodo parcial por cada evaluado transferido (tramo de la delegación),
-    //    para que el delegado pueda abrir una PARCIAL prorrateada por su tramo.
-    $referenciaBase = 'Delegación de ' . nombreFuncionarioVinc($idDelegante)
-        . (!empty($delegacion->motivo) ? ' - ' . $delegacion->motivo : '');
-    $periodoParcialIds = [];
-
-    foreach ($transferidos as $idEvaluado) {
-        $sistema = DB::table('vinculacion')->where('id_vinculacion', $idEvaluado)->value('sistema_evaluacion')
-            ?: DB::table('vinculacion')->where('id_vinculacion', $idDelegante)->value('sistema_evaluacion');
-        $periodoBase = null;
-        if ($sistema) {
-            $periodoBase = DB::table('periodo')
-                ->whereRaw('UPPER(TRIM(sistema)) = ?', [strtoupper(trim((string) $sistema))])
-                ->where('estado', 'ABIERTO')
-                ->whereDate('fecha_inicio', '<=', $delegacion->fecha_inicio)
-                ->where(function ($q) use ($delegacion) {
-                    $q->whereDate('fecha_fin', '>=', $delegacion->fecha_inicio);
-                })
-                ->orderByDesc('id_periodo')
-                ->first();
-            if (! $periodoBase) {
-                $periodoBase = DB::table('periodo')
-                    ->whereRaw('UPPER(TRIM(sistema)) = ?', [strtoupper(trim((string) $sistema))])
-                    ->where('estado', 'ABIERTO')
-                    ->orderByDesc('id_periodo')
-                    ->first();
-            }
-        }
-
-        if ($periodoBase) {
-            if (DB::table('periodo_parcial')->where('id_vinc_funcionario', $idEvaluado)->where('estado', 'ABIERTO')->exists()) {
-                continue;
-            }
-
-            $fechaI = max((string) $delegacion->fecha_inicio, (string) $periodoBase->fecha_inicio);
-            $fechaF = !empty($delegacion->fecha_fin)
-                ? min((string) $delegacion->fecha_fin, (string) $periodoBase->fecha_fin)
-                : (string) $periodoBase->fecha_fin;
-
-            $diasTramo = \Carbon\Carbon::parse($fechaI)->diffInDays(\Carbon\Carbon::parse($fechaF)) + 1;
-            if ($diasTramo < 90) {
-                continue;
-            }
-
-            $ppId = DB::table('periodo_parcial')->insertGetId([
-                'id_periodo' => $periodoBase->id_periodo,
-                'id_vinc_funcionario' => $idEvaluado,
-                'fecha_inicio' => $fechaI,
-                'fecha_fin' => $fechaF,
-                'referencia' => substr($referenciaBase, 0, 200),
-                'estado' => 'ABIERTO',
-                'id_usuario_apertura' => session('usuario_autenticado.id_usuario') ?? null,
-            ]);
-            $periodoParcialIds[] = $ppId;
-        }
+    foreach ($evaluacionesDelegadas as $idEvaluacion) {
+        registrarEventoEvaluacion((int) $idEvaluacion, 'CAMBIO_EVALUADOR', [
+            'origen' => 'DELEGACION_CORTA',
+            'id_delegacion' => (int) $delegacion->id_delegacion,
+            'id_vinc_evaluador_anterior' => $idDelegante,
+            'id_vinc_evaluador_nuevo' => $idDelegado,
+        ]);
     }
 
     DB::table('delegacion')->where('id_delegacion', $delegacion->id_delegacion)->update([
         'detalle_transferencia' => json_encode([
             'evaluados_transferidos' => $transferidos,
-            'periodo_parcial_ids' => $periodoParcialIds,
         ]),
         'updated_at' => now(),
     ]);
@@ -289,22 +309,41 @@ function activarDelegacion($delegacion): void {
 }
 
 if (!function_exists('revertirDelegacion')) {
-function revertirDelegacion($delegacion): void {
+/**
+ * Fin de una delegación corta. Las evaluaciones que siguen abiertas pasan al
+ * sucesor que eligió Talento Humano (por defecto el titular). Si el sucesor no
+ * es el titular, también recibe sus asignaciones: no se devuelve trabajo a
+ * quien ya no ocupa el cargo.
+ */
+function revertirDelegacion($delegacion, ?int $idSucesor = null): void {
     $detalle = $delegacion->detalle_transferencia ? json_decode($delegacion->detalle_transferencia, true) : [];
     $evaluados = $detalle['evaluados_transferidos'] ?? [];
     $periodoParcialIds = $detalle['periodo_parcial_ids'] ?? [];
+    $idSucesor ??= (int) $delegacion->id_vinc_delegante;
 
-    // 1) Las evaluaciones que siguen abiertas vuelven al titular (delegante);
-    //    este conserva la responsabilidad de la firma final. Las ya calificadas
-    //    o las PARCIALes propias del delegado quedan a su nombre.
-    DB::table('evaluacion')
+    // 1) Las evaluaciones abiertas pasan al sucesor. Las calificadas quedan con
+    //    quien las calificó.
+    $evaluacionesDevueltas = DB::table('evaluacion')
         ->where('id_vinc_evaluador', $delegacion->id_vinc_delegado)
         ->where('id_vinc_suplente', $delegacion->id_vinc_delegante)
-        ->where('estado', '!=', 'CALIFICADA')
+        ->where('estado', 'EN_PROCESO')
+        ->pluck('id_evaluacion');
+
+    DB::table('evaluacion')
+        ->whereIn('id_evaluacion', $evaluacionesDevueltas)
         ->update([
-            'id_vinc_evaluador' => $delegacion->id_vinc_delegante,
+            'id_vinc_evaluador' => $idSucesor,
             'id_vinc_suplente' => null,
         ]);
+
+    foreach ($evaluacionesDevueltas as $idEvaluacion) {
+        registrarEventoEvaluacion((int) $idEvaluacion, 'CAMBIO_EVALUADOR', [
+            'origen' => 'FIN_DELEGACION_CORTA',
+            'id_delegacion' => (int) $delegacion->id_delegacion,
+            'id_vinc_evaluador_anterior' => (int) $delegacion->id_vinc_delegado,
+            'id_vinc_evaluador_nuevo' => $idSucesor,
+        ]);
+    }
 
     // 2) Se eliminan las asignaciones creadas por la delegación.
     if ($evaluados) {
@@ -314,10 +353,152 @@ function revertirDelegacion($delegacion): void {
             ->delete();
     }
 
-    // 3) Se cierran los periodos parciales del tramo delegado.
+    // 3) Si el sucesor no es el titular, recibe las asignaciones del titular.
+    if ($idSucesor !== (int) $delegacion->id_vinc_delegante) {
+        $yaAsignados = DB::table('evaluador_asignacion')->where('id_vinc_evaluador', $idSucesor)->pluck('id_vinc_evaluado')->all();
+        DB::table('evaluador_asignacion')
+            ->where('id_vinc_evaluador', $delegacion->id_vinc_delegante)
+            ->whereIn('id_vinc_evaluado', $yaAsignados)
+            ->delete();
+        DB::table('evaluador_asignacion')
+            ->where('id_vinc_evaluador', $delegacion->id_vinc_delegante)
+            ->update(['id_vinc_evaluador' => $idSucesor, 'fecha_asignacion' => now()]);
+    }
+
+    // 4) Delegaciones anteriores a S14: se cierran los periodos parciales que abrieron.
     foreach ($periodoParcialIds as $ppId) {
         DB::table('periodo_parcial')->where('id_periodo_parcial', $ppId)->update(['estado' => 'CERRADO']);
     }
+}
+}
+
+if (!function_exists('delegacionEsLarga')) {
+/** S14 - Una delegación de más de 30 días, o sin fecha final, se maneja por tramos. */
+function delegacionEsLarga(string $fechaInicio, ?string $fechaFin): bool {
+    if (empty($fechaFin)) {
+        return true;
+    }
+
+    return \Carbon\Carbon::parse($fechaInicio)->diffInDays(\Carbon\Carbon::parse($fechaFin)) + 1 > 30;
+}
+}
+
+if (!function_exists('resolverSucesorDelegacion')) {
+/**
+ * S14 - Quién recibe el trabajo al terminar una delegación: el que elija
+ * Talento Humano o, por defecto, el titular si sigue activo. Si el titular ya
+ * no está activo, la elección es obligatoria. Retorna el id o un mensaje.
+ */
+function resolverSucesorDelegacion($delegacion, ?int $idSucesor): int|string {
+    $idSucesor ??= DB::table('vinculacion')->where('id_vinculacion', $delegacion->id_vinc_delegante)->where('activa', 1)->exists()
+        ? (int) $delegacion->id_vinc_delegante
+        : null;
+
+    if (! $idSucesor) {
+        return 'El titular ya no está activo: selecciona quién asume sus evaluaciones.';
+    }
+    if ($idSucesor === (int) $delegacion->id_vinc_delegado) {
+        return 'El sucesor no puede ser el mismo delegado.';
+    }
+    if (! DB::table('vinculacion')->where('id_vinculacion', $idSucesor)->where('activa', 1)->exists()) {
+        return 'El sucesor debe tener una vinculación activa.';
+    }
+
+    return $idSucesor;
+}
+}
+
+if (!function_exists('programarCambiosDelegacion')) {
+/**
+ * S14 - Programa, como traslados ligados a la delegación, los cambios de
+ * evaluador de una delegación larga: cada persona a cargo pasa de $idVincOrigen
+ * a $idVincNuevo y el delegado pasa a $idVincEvaluadorDelegado. Todo o nada:
+ * ante el primer error se lanza la excepción y la transacción del llamador se
+ * revierte.
+ */
+function programarCambiosDelegacion($delegacion, array $evaluados, int $idVincOrigen, int $idVincNuevo, int $idVincEvaluadorDelegado, string $fecha): void {
+    $motivo = 'Delegación #' . $delegacion->id_delegacion . (!empty($delegacion->motivo) ? ' - ' . $delegacion->motivo : '');
+
+    foreach ($evaluados as $idEvaluado) {
+        $res = programarTraslado([
+            'id_vinc_funcionario' => $idEvaluado,
+            'id_vinc_evaluador_nuevo' => $idVincNuevo,
+            'fecha_traslado' => $fecha,
+            'motivo' => substr($motivo, 0, 500),
+        ], $idVincOrigen, (int) $delegacion->id_delegacion, false);
+
+        if (isset($res['error'])) {
+            throw new \RuntimeException($res['error']);
+        }
+    }
+
+    $res = programarTraslado([
+        'id_vinc_funcionario' => (int) $delegacion->id_vinc_delegado,
+        'id_vinc_evaluador_nuevo' => $idVincEvaluadorDelegado,
+        'fecha_traslado' => $fecha,
+        'motivo' => substr($motivo, 0, 500),
+    ], null, (int) $delegacion->id_delegacion);
+
+    if (isset($res['error'])) {
+        throw new \RuntimeException($res['error']);
+    }
+}
+}
+
+if (!function_exists('pendientesDelegacion')) {
+/** S14 - Funcionarios cuyo tramo aún no tiene nota en los cambios programados de la delegación. */
+function pendientesDelegacion(int $idDelegacion): array {
+    return DB::table('traslado')
+        ->where('id_delegacion', $idDelegacion)
+        ->where('estado', 'PROGRAMADO')
+        ->get()
+        ->filter(function ($t) {
+            if ((int) $t->dias_laborados === 0 || ! $t->id_periodo) {
+                return false;
+            }
+            $origen = $t->id_evaluacion_origen
+                ? DB::table('evaluacion')->where('id_evaluacion', $t->id_evaluacion_origen)->first()
+                : buscarEvaluacionVigenteTraslado((int) $t->id_periodo, (int) $t->id_vinc_funcionario, (int) $t->id_vinc_evaluador_origen);
+
+            return ! $origen || ! evaluacionTieneNota($origen);
+        })
+        ->map(fn ($t) => nombreFuncionarioVinc((int) $t->id_vinc_funcionario))
+        ->values()
+        ->all();
+}
+}
+
+if (!function_exists('confirmarCambiosDelegacion')) {
+/**
+ * S14 - Confirma juntos todos los cambios programados de la delegación (todo o
+ * nada) y la deja en $estadoFinal. Retorna null o el motivo que lo impide.
+ */
+function confirmarCambiosDelegacion(int $idDelegacion, string $estadoFinal): ?string {
+    $pendientes = pendientesDelegacion($idDelegacion);
+    if ($pendientes) {
+        return 'Faltan ' . count($pendientes) . ' tramo(s) por calificar: ' . implode(', ', $pendientes) . '.';
+    }
+
+    try {
+        DB::transaction(function () use ($idDelegacion, $estadoFinal) {
+            $ids = DB::table('traslado')->where('id_delegacion', $idDelegacion)->where('estado', 'PROGRAMADO')->pluck('id_traslado');
+            foreach ($ids as $idTraslado) {
+                $error = confirmarTraslado((int) $idTraslado);
+                if ($error) {
+                    throw new \RuntimeException($error);
+                }
+            }
+
+            DB::table('delegacion')->where('id_delegacion', $idDelegacion)->update([
+                'estado' => $estadoFinal,
+                'updated_at' => now(),
+            ]);
+        });
+    } catch (\RuntimeException $e) {
+        return $e->getMessage();
+    }
+
+    return null;
 }
 }
 
@@ -559,6 +740,7 @@ Route::post('/seleccionar-rol', function (Request $request) {
 
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\UsuarioController;
+use App\Http\Controllers\PlazaController;
 
 Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
@@ -571,6 +753,13 @@ Route::post('/admin/cargos', [UsuarioController::class, 'storeCargo'])->name('ad
 Route::post('/admin/cargos/{id}/toggle', [UsuarioController::class, 'toggleCargo'])->name('admin.cargos.toggle');
 Route::post('/admin/dependencias', [UsuarioController::class, 'storeDependencia'])->name('admin.dependencias.store');
 Route::post('/admin/dependencias/{id}/toggle', [UsuarioController::class, 'toggleDependencia'])->name('admin.dependencias.toggle');
+
+// --- Catálogo de plazas (S14, modelo de puestos fases A-B) ---
+Route::get('/admin/plazas', [PlazaController::class, 'index'])->name('admin.plazas.index');
+Route::post('/admin/plazas/generar', [PlazaController::class, 'generar'])->name('admin.plazas.generar');
+Route::post('/admin/plazas/validar-masivo', [PlazaController::class, 'validarMasivo'])->name('admin.plazas.validar-masivo');
+Route::post('/admin/plazas/{id}/validar', [PlazaController::class, 'validar'])->whereNumber('id')->name('admin.plazas.validar');
+Route::post('/admin/plazas/{id}', [PlazaController::class, 'actualizar'])->whereNumber('id')->name('admin.plazas.actualizar');
 
 // --- RUTAS DE EVALUADOR / EVALUADO (S9) ---
 Route::post('/evaluacion/{id}/desacuerdo', function (\Illuminate\Http\Request $request, $id) {
@@ -586,7 +775,7 @@ Route::post('/evaluacion/{id}/desacuerdo', function (\Illuminate\Http\Request $r
     $evaluacion = \Illuminate\Support\Facades\DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación fue bloqueada por traslado y solo se puede consultar.');
-    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación pendiente.');
     abort_if($evaluacion->concertacion_firmada || $evaluacion->estado === 'CALIFICADA', 422, 'El desacuerdo solo puede registrarse antes de firmar la concertación.');
 
     $esEvaluado = \Illuminate\Support\Facades\DB::table('vinculacion')
@@ -615,6 +804,10 @@ Route::post('/evaluacion/{id}/desacuerdo', function (\Illuminate\Http\Request $r
         ->where('id_evaluacion', $id)
         ->update(['desacuerdo_evaluado' => $textoDesacuerdo]);
 
+    registrarEventoEvaluacion((int) $id, 'DESACUERDO_REGISTRADO', [
+        'compromisos' => array_values(array_map('intval', $data['compromisos_desacuerdo'] ?? [])),
+    ]);
+
     return back()->with('success', 'Su desacuerdo ha sido registrado.');
 })->name('evaluacion.desacuerdo');
 
@@ -628,14 +821,17 @@ Route::post('/evaluacion/{id}/impedimento', function (\Illuminate\Http\Request $
         ->where('id_funcionario', $auth['id_funcionario'] ?? null)
         ->exists();
     abort_unless($esParticipante, 403);
+    // Se puede declarar desde la concertación hasta antes de calificar
+    // (seguimiento y evidencias incluidos). Calificada, la vía son los recursos.
     abort_unless(
         $evaluacion
         && $evaluacion->estado === 'EN_PROCESO'
-        && ! $evaluacion->concertacion_firmada
-        && (int) $evaluacion->fase_actual <= 2,
+        && (int) $evaluacion->fase_actual < 5,
         422,
-        'El impedimento o la recusación solo puede declararse durante la concertación de compromisos.'
+        'El impedimento o la recusación solo puede declararse antes de calificar la evaluación. Una vez calificada, procede el recurso.'
     );
+    abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Ya hay un impedimento o recusación pendiente para esta evaluación.');
 
     $data = $request->validate([
         'tipo' => 'required|in:IMPEDIMENTO,RECUSACION',
@@ -646,13 +842,17 @@ Route::post('/evaluacion/{id}/impedimento', function (\Illuminate\Http\Request $
     $vinc = \Illuminate\Support\Facades\DB::table('vinculacion')->where('id_funcionario', $auth['id_funcionario'] ?? null)->where('activa', 1)->first();
     abort_unless($vinc, 403);
 
-    \App\Models\ImpedimentoRecusacion::create([
+    $solicitud = \App\Models\ImpedimentoRecusacion::create([
         'id_evaluacion' => $id,
         'id_vinc_solicitante' => $vinc->id_vinculacion,
         'tipo' => $data['tipo'],
         'motivo' => $data['motivo'],
         'evidencia_url' => trim($data['evidencia_url'] ?? '') ?: null,
         'estado' => 'PENDIENTE'
+    ]);
+    registrarEventoEvaluacion((int) $id, 'IMPEDIMENTO_SOLICITADO', [
+        'id_impedimento' => $solicitud->getKey(),
+        'tipo' => $data['tipo'],
     ]);
     return back()->with('success', 'Solicitud registrada correctamente. Queda en espera de revisión por Talento Humano.');
 })->name('evaluacion.impedimento');
@@ -769,6 +969,19 @@ Route::post('/evaluador/asignaciones', function (Request $request) {
         return back()->withErrors(['asignaciones' => 'Ya existe una evaluacion para este funcionario en este perodo y ciclo.']);
     }
 
+    // Nunca dos evaluaciones abiertas a la vez: la vigente del funcionario en
+    // el periodo debe calificarse antes de abrir otra.
+    $tieneAbierta = DB::table('evaluacion')
+        ->where('id_periodo', $periodo->id_periodo)
+        ->where('id_vinc_evaluado', $data['id_vinc_evaluado'])
+        ->where('es_traslado', 0)
+        ->where('estado', 'EN_PROCESO')
+        ->exists();
+
+    if ($tieneAbierta) {
+        return back()->withErrors(['asignaciones' => 'El funcionario ya tiene una evaluación abierta en este periodo. Debe calificarse antes de abrir otra.']);
+    }
+
     // S6 — Bloqueo del flujo del evaluador: no se abre un nuevo ciclo si el
     // evaluado tiene un plan de mejoramiento pendiente por concertar y firmar.
     if (evaluadoTienePlanMejoramientoPendiente((int) $data['id_vinc_evaluado'], (int) $periodo->id_periodo)) {
@@ -816,10 +1029,6 @@ Route::post('/evaluador/asignaciones', function (Request $request) {
             return back()->withErrors(['asignaciones' => 'No se pudo calcular los días laborados del tramo parcial. Verifica que el periodo parcial tenga fecha de inicio y de fin.']);
         }
 
-        if ($diasLaborados < 90) {
-            return back()->withErrors(['asignaciones' => 'No se puede concertar ni crear una evaluación parcial con un período evaluable inferior a 90 días (duración calculada: ' . $diasLaborados . ' días). La normativa institucional exige un mínimo de 90 días de servicio para ser evaluable.']);
-        }
-
         if ($diasTramo !== null && $diasLaborados > $diasTramo) {
             return back()->withErrors(['asignaciones' => 'Los días laborados (' . $diasLaborados . ') no pueden superar la duración total del tramo parcial (' . $diasTramo . ' días según sus fechas).']);
         }
@@ -847,6 +1056,12 @@ Route::post('/evaluador/asignaciones', function (Request $request) {
     if (strtoupper(trim((string) $periodo->sistema)) === 'ACUERDO_GESTION' && $evaluadoVinc->aplica_eje_misional) {
         guardarEvaluacionEjes((int) $evaluacionId, (bool) ($data['investigacion'] ?? false), (bool) ($data['proyeccion_social'] ?? false));
     }
+
+    registrarEventoEvaluacion((int) $evaluacionId, 'EVALUACION_ABIERTA', [
+        'tipo_evaluacion' => $data['tipo_evaluacion'],
+        'id_vinc_evaluador' => (int) $miVinc->id_vinculacion,
+        'dias_laborados' => $diasLaborados,
+    ], null, 'EN_PROCESO');
 
     return back()->with('success_asignacion', 'evaluacion creada para iniciar la concertacin.');
 })->name('evaluador.asignaciones.store');
@@ -1037,10 +1252,6 @@ Route::post('/admin/periodos-parciales', function (Request $request) {
         return back()->withErrors(['periodo_parcial' => 'Las fechas del período parcial deben estar dentro de la vigencia del período base seleccionado.']);
     }
 
-    $diasPeriodoParcial = \Carbon\Carbon::parse($data['fecha_inicio'])->diffInDays(\Carbon\Carbon::parse($data['fecha_fin'])) + 1;
-    if ($diasPeriodoParcial < 90) {
-        return back()->withErrors(['periodo_parcial' => "El período parcial debe tener una duración mínima de 90 días evaluables (duración ingresada: {$diasPeriodoParcial} días). Según la regla funcional, no se permiten evaluaciones parciales inferiores a 90 días."]);
-    }
 
     $existe = DB::table('periodo_parcial')
         ->where('id_periodo', $data['id_periodo'])
@@ -1166,11 +1377,10 @@ Route::post('/admin/asignaciones', function (Request $request) {
 })->name('admin.asignaciones.store');
 
 // --- S6: GESTIÓN DE TRASLADOS ---
-// Registra el traslado de un funcionario: bloquea la SEMESTRE (solo lectura),
-// genera una evaluación PARCIAL prorrateada por los días laborados en la
-// dependencia origen (con los compromisos de la SEMESTRE cerrada) y otra PARCIAL
-// para el nuevo evaluador con los días en el nuevo cargo (con los compromisos
-// del evaluado anterior del puesto).
+// Copia los compromisos de una evaluación a otra como borrador por concertar
+// (p. ej. los del funcionario al que reemplaza un trasladado). Cada copia
+// conserva la referencia a su compromiso de origen (plan 3.4); las evidencias
+// no se copian: quedan en la evaluación original.
 if (!function_exists('copiarCompromisosEvaluacion')) {
     function copiarCompromisosEvaluacion(int $idEvaluacionOrigen, int $idEvaluacionDestino): void
     {
@@ -1181,13 +1391,18 @@ if (!function_exists('copiarCompromisosEvaluacion')) {
             ->orderBy('numero_orden')
             ->get();
 
+        $conReferencia = Schema::hasColumn('compromiso', 'id_compromiso_origen');
+
         foreach ($compromisos as $compromiso) {
             $nuevoCompromisoId = DB::table('compromiso')->insertGetId([
                 'id_evaluacion' => $idEvaluacionDestino,
                 'numero_orden' => $compromiso->numero_orden,
                 'descripcion' => $compromiso->descripcion,
                 'porcentaje_peso' => $compromiso->porcentaje_peso,
-            ]);
+            ] + ($conReferencia ? [
+                'id_compromiso_origen' => $compromiso->id_compromiso,
+                'es_copia' => 1,
+            ] : []));
 
             $metas = DB::table('compromiso_meta')
                 ->where('id_compromiso', $compromiso->id_compromiso)
@@ -1199,6 +1414,14 @@ if (!function_exists('copiarCompromisosEvaluacion')) {
                     'meta' => $meta,
                 ]);
             }
+        }
+
+        if ($compromisos->isNotEmpty()) {
+            registrarEventoEvaluacion($idEvaluacionDestino, 'COMPROMISOS_COPIADOS', [
+                'cantidad' => $compromisos->count(),
+                'id_evaluacion_origen' => $idEvaluacionOrigen,
+                'id_vinc_funcionario_origen' => (int) DB::table('evaluacion')->where('id_evaluacion', $idEvaluacionOrigen)->value('id_vinc_evaluado'),
+            ]);
         }
     }
 }
@@ -1234,6 +1457,448 @@ if (!function_exists('evaluacionAnteriorEvaluadoPuesto')) {
     }
 }
 
+if (!function_exists('evaluacionTieneNota')) {
+    /** Una evaluación tiene nota cuando fue calificada, aunque luego esté en apelación o cerrada. */
+    function evaluacionTieneNota(object $evaluacion): bool
+    {
+        return in_array($evaluacion->estado, ['CALIFICADA', 'APELACION', 'CERRADA'], true);
+    }
+}
+
+if (!function_exists('buscarEvaluacionVigenteTraslado')) {
+    /** Evaluación vigente del funcionario con el evaluador de origen en el periodo del traslado. */
+    function buscarEvaluacionVigenteTraslado(int $idPeriodo, int $idVincFuncionario, int $idVincEvaluador): ?object
+    {
+        return DB::table('evaluacion')
+            ->where('id_periodo', $idPeriodo)
+            ->where('id_vinc_evaluado', $idVincFuncionario)
+            ->where('id_vinc_evaluador', $idVincEvaluador)
+            ->whereIn('tipo_evaluacion', ['SEMESTRE_1', 'SEMESTRE_2', 'PARCIAL'])
+            ->where('es_traslado', 0)
+            ->orderByDesc('id_evaluacion')
+            ->first();
+    }
+}
+
+if (!function_exists('confirmarTraslado')) {
+    /**
+     * S14 - Paso 2 del traslado: exige la evaluación del tramo de origen con
+     * nota, abre la evaluación PARCIAL del cargo nuevo (a concertar de nuevo) y
+     * reasigna al funcionario. Retorna null si se confirmó, o el motivo por el
+     * que todavía no se puede confirmar.
+     */
+    function confirmarTraslado(int $idTraslado): ?string
+    {
+        return DB::transaction(function () use ($idTraslado) {
+            $traslado = DB::table('traslado')->where('id_traslado', $idTraslado)->lockForUpdate()->first();
+
+            if (! $traslado || $traslado->estado !== 'PROGRAMADO') {
+                return 'El traslado no existe o ya fue resuelto.';
+            }
+
+            $periodo = $traslado->id_periodo ? DB::table('periodo')->where('id_periodo', $traslado->id_periodo)->first() : null;
+            $evaluado = DB::table('vinculacion')->where('id_vinculacion', $traslado->id_vinc_funcionario)->first();
+            // CAMBIO: cambia el evaluador. PAUSA: cierra el tramo del titular que
+            // se ausenta, sin evaluación nueva. REANUDACION: abre la evaluación
+            // al regresar, con el mismo evaluador.
+            $tipo = $traslado->tipo ?? 'CAMBIO';
+            $origen = null;
+            $diasDestino = 0;
+
+            if ($periodo) {
+                // Sin excepción: el tramo laborado en origen se concierta y califica.
+                if ((int) $traslado->dias_laborados > 0) {
+                    $origen = $traslado->id_evaluacion_origen
+                        ? DB::table('evaluacion')->where('id_evaluacion', $traslado->id_evaluacion_origen)->first()
+                        : buscarEvaluacionVigenteTraslado((int) $periodo->id_periodo, (int) $traslado->id_vinc_funcionario, (int) $traslado->id_vinc_evaluador_origen);
+
+                    if (! $origen || ! evaluacionTieneNota($origen)) {
+                        return 'El evaluador de origen debe concertar y calificar la evaluación del tramo antes de confirmar el traslado.';
+                    }
+                }
+
+                $fechaTraslado = new \DateTime($traslado->fecha_traslado);
+                $fechaFin = new \DateTime($periodo->fecha_fin);
+                $diasDestino = $tipo === 'PAUSA' || $fechaTraslado > $fechaFin ? 0 : $fechaTraslado->diff($fechaFin)->days + 1;
+
+                $duplicada = $diasDestino > 0 && DB::table('evaluacion')
+                    ->where('id_periodo', $periodo->id_periodo)
+                    ->where('id_vinc_evaluado', $traslado->id_vinc_funcionario)
+                    ->where('id_vinc_evaluador', $traslado->id_vinc_evaluador_nuevo)
+                    ->where('tipo_evaluacion', 'PARCIAL')
+                    ->exists();
+
+                if ($duplicada) {
+                    return 'El funcionario ya tiene una evaluación parcial con el evaluador de destino en este periodo.';
+                }
+            }
+
+            // La evaluación de origen creada después de programar se vincula ahora.
+            if ($origen && ! $traslado->id_evaluacion_origen) {
+                DB::table('traslado')->where('id_traslado', $idTraslado)->update([
+                    'id_evaluacion_origen' => $origen->id_evaluacion,
+                    'dias_origen_previos' => $origen->dias_laborados,
+                ]);
+                DB::table('evaluacion')
+                    ->where('id_evaluacion', $origen->id_evaluacion)
+                    ->update(['dias_laborados' => $traslado->dias_laborados]);
+            }
+
+            $idEvaluacionDestino = null;
+            if ($periodo && $diasDestino > 0) {
+                $idEvaluacionDestino = DB::table('evaluacion')->insertGetId([
+                    'id_periodo' => $periodo->id_periodo,
+                    'id_vinc_evaluado' => $traslado->id_vinc_funcionario,
+                    'id_vinc_evaluador' => $traslado->id_vinc_evaluador_nuevo,
+                    'tipo_evaluacion' => 'PARCIAL',
+                    'fase_actual' => 1,
+                    'concertacion_firmada' => 0,
+                    'estado' => 'EN_PROCESO',
+                    'es_parcial' => 1,
+                    'dias_laborados' => $diasDestino,
+                    'referencia' => $traslado->referencia,
+                ]);
+
+                // Si reemplaza a alguien del mismo sistema, sus compromisos se copian
+                // como borrador: igual se conciertan y firman de nuevo.
+                $sistemaEvaluado = strtoupper(trim((string) ($evaluado->sistema_evaluacion ?? 'RENDIMIENTO_LABORAL')));
+                $vincReemplazado = $traslado->id_vinc_reemplazado
+                    ? DB::table('vinculacion')->where('id_vinculacion', $traslado->id_vinc_reemplazado)->first()
+                    : null;
+
+                if ($vincReemplazado && strtoupper(trim((string) ($vincReemplazado->sistema_evaluacion ?? ''))) === $sistemaEvaluado) {
+                    $anteriorDelPuesto = DB::table('evaluacion')
+                        ->where('id_periodo', $periodo->id_periodo)
+                        ->where('id_vinc_evaluado', $vincReemplazado->id_vinculacion)
+                        ->whereIn('tipo_evaluacion', ['SEMESTRE_1', 'SEMESTRE_2', 'PARCIAL'])
+                        ->orderByDesc('id_evaluacion')
+                        ->first();
+
+                    if ($anteriorDelPuesto) {
+                        copiarCompromisosEvaluacion($anteriorDelPuesto->id_evaluacion, $idEvaluacionDestino);
+                    }
+                }
+
+                // Al regresar, el titular parte de los compromisos de su tramo
+                // previo a la ausencia (como borrador a concertar de nuevo).
+                if ($tipo === 'REANUDACION') {
+                    $tramoPrevio = DB::table('traslado')
+                        ->where('id_vinc_funcionario', $traslado->id_vinc_funcionario)
+                        ->where('tipo', 'PAUSA')
+                        ->where('estado', 'CONFIRMADO')
+                        ->whereNotNull('id_evaluacion_origen')
+                        ->orderByDesc('id_traslado')
+                        ->value('id_evaluacion_origen');
+
+                    if ($tramoPrevio) {
+                        copiarCompromisosEvaluacion((int) $tramoPrevio, $idEvaluacionDestino);
+                    }
+                }
+            }
+
+            // Pausa y reanudación conservan el evaluador, la dependencia y el cargo.
+            if ($tipo === 'CAMBIO') {
+                // Reasignar el funcionario al nuevo evaluador
+                DB::table('evaluador_asignacion')
+                    ->where('id_vinc_evaluado', $traslado->id_vinc_funcionario)
+                    ->delete();
+
+                DB::table('evaluador_asignacion')->insert([
+                    'id_vinc_evaluador' => $traslado->id_vinc_evaluador_nuevo,
+                    'id_vinc_evaluado' => $traslado->id_vinc_funcionario,
+                    'fecha_asignacion' => now(),
+                ]);
+
+                // Actualizar dependencia/cargo en la vinculación activa
+                $vinculacionUpdate = [];
+                if (! empty($traslado->area_nuevo)) {
+                    $vinculacionUpdate['area'] = trim($traslado->area_nuevo);
+                }
+                if (! empty($traslado->cargo_nuevo)) {
+                    $vinculacionUpdate['cargo'] = trim($traslado->cargo_nuevo);
+                }
+                if ($vinculacionUpdate) {
+                    DB::table('vinculacion')->where('id_vinculacion', $traslado->id_vinc_funcionario)->update($vinculacionUpdate);
+                }
+            }
+
+            DB::table('traslado')->where('id_traslado', $idTraslado)->update([
+                'estado' => 'CONFIRMADO',
+                'id_evaluacion_destino' => $idEvaluacionDestino,
+                'id_usuario_resuelve' => session('usuario_autenticado.id_usuario') ?? null,
+                'resuelto_at' => now(),
+            ]);
+
+            // S14 (regla 11): bitácora del cierre del tramo y de la evaluación nueva.
+            $origenCambio = match ($tipo) {
+                'PAUSA' => 'AUSENCIA',
+                'REANUDACION' => 'REGRESO',
+                default => ! empty($traslado->id_delegacion) ? 'DELEGACION' : 'TRASLADO',
+            };
+            $datosCambio = [
+                'origen' => $origenCambio,
+                'id_traslado' => $idTraslado,
+                'id_delegacion' => $traslado->id_delegacion ?? null,
+                'fecha_cambio' => $traslado->fecha_traslado,
+                'id_vinc_evaluador_anterior' => (int) $traslado->id_vinc_evaluador_origen,
+                'id_vinc_evaluador_nuevo' => (int) $traslado->id_vinc_evaluador_nuevo,
+            ];
+            $idOrigen = $origen->id_evaluacion ?? $traslado->id_evaluacion_origen;
+            if ($idOrigen) {
+                registrarEventoEvaluacion((int) $idOrigen, 'TRAMO_CERRADO', $datosCambio + ['dias_laborados' => (int) $traslado->dias_laborados]);
+            }
+            if ($idEvaluacionDestino) {
+                registrarEventoEvaluacion((int) $idEvaluacionDestino, 'EVALUACION_ABIERTA', $datosCambio + [
+                    'tipo_evaluacion' => 'PARCIAL',
+                    'dias_laborados' => $diasDestino,
+                ], null, 'EN_PROCESO');
+            }
+
+            // S14 (regla 9): el evaluado y el nuevo evaluador se enteran del cambio.
+            $motivo = ! empty($traslado->id_delegacion) ? 'una delegación de funciones' : 'un traslado';
+            $fecha = \Carbon\Carbon::parse($traslado->fecha_traslado)->format('d/m/Y');
+            $nuevaEvaluacion = $idEvaluacionDestino ? ' Se abrió una nueva evaluación para concertar compromisos.' : '';
+
+            // La pausa no cambia el evaluador; al regresar se avisa de la evaluación nueva.
+            if ($tipo === 'PAUSA') {
+                return null;
+            }
+            if ($tipo === 'REANUDACION') {
+                if ($idEvaluacionDestino) {
+                    notificarVinculacion(
+                        (int) $traslado->id_vinc_funcionario,
+                        'NUEVA_EVALUACION',
+                        'Nueva evaluación al regresar',
+                        "Desde tu regreso el {$fecha} se abrió una nueva evaluación con " . nombreFuncionarioVinc((int) $traslado->id_vinc_evaluador_nuevo) . '. Tus compromisos anteriores quedaron como borrador para concertar.',
+                        'evaluaciones'
+                    );
+                    notificarVinculacion(
+                        (int) $traslado->id_vinc_evaluador_nuevo,
+                        'NUEVO_EVALUADO',
+                        'Regreso de una persona a cargo',
+                        nombreFuncionarioVinc((int) $traslado->id_vinc_funcionario) . " regresó el {$fecha}. Concierta sus compromisos en la nueva evaluación.",
+                        'evaluaciones-evaluador'
+                    );
+                }
+
+                return null;
+            }
+
+            notificarVinculacion(
+                (int) $traslado->id_vinc_funcionario,
+                'CAMBIO_EVALUADOR',
+                'Cambio de evaluador',
+                "Desde el {$fecha}, por {$motivo}, tu evaluador es " . nombreFuncionarioVinc((int) $traslado->id_vinc_evaluador_nuevo) . ".{$nuevaEvaluacion}",
+                'evaluaciones'
+            );
+            notificarVinculacion(
+                (int) $traslado->id_vinc_evaluador_nuevo,
+                'NUEVO_EVALUADO',
+                'Nueva persona a cargo',
+                'Desde el ' . $fecha . ', por ' . $motivo . ', evalúas a ' . nombreFuncionarioVinc((int) $traslado->id_vinc_funcionario) . '.' . ($idEvaluacionDestino ? ' Concierta sus compromisos en la nueva evaluación.' : ''),
+                'evaluaciones-evaluador'
+            );
+
+            return null;
+        });
+    }
+}
+
+if (!function_exists('programarTraslado')) {
+    /**
+     * S14 - Paso 1 del traslado: calcula los días del tramo de origen, ubica la
+     * evaluación vigente que el evaluador de origen debe calificar y registra
+     * el traslado PROGRAMADO. Lo usan el traslado de Talento Humano y las
+     * delegaciones largas (cada cambio de evaluador queda ligado a la delegación).
+     *
+     * Retorna ['error' => mensaje] o ['id_traslado', 'dias', 'listo'], donde
+     * 'listo' indica que ya se puede confirmar (sin tramo o con nota de origen).
+     */
+    function programarTraslado(array $data, ?int $idVincEvaluadorOrigen = null, ?int $idDelegacion = null, bool $exigirEvaluador = true, string $tipo = 'CAMBIO'): array
+    {
+        // PAUSA cierra el tramo sin cambiar de evaluador; REANUDACION abre la
+        // evaluación nueva al regresar, sin tramo de origen que calificar.
+        $evaluado = DB::table('vinculacion')
+            ->where('id_vinculacion', $data['id_vinc_funcionario'])
+            ->where('activa', 1)
+            ->first();
+
+        if (! $evaluado) {
+            return ['error' => 'El funcionario no tiene una vinculación activa.'];
+        }
+
+        $nombre = nombreFuncionarioVinc((int) $evaluado->id_vinculacion);
+
+        $evaluadorNuevo = DB::table('vinculacion')
+            ->where('id_vinculacion', $data['id_vinc_evaluador_nuevo'])
+            ->where('activa', 1)
+            ->when($exigirEvaluador, fn ($q) => $q->where('es_evaluador', 1))
+            ->first();
+
+        if (! $evaluadorNuevo) {
+            return ['error' => 'El nuevo evaluador debe tener una vinculación activa' . ($exigirEvaluador ? ' como evaluador.' : '.')];
+        }
+
+        // Evaluador origen: el asignado actualmente al funcionario
+        $evaluadorOrigenId = $idVincEvaluadorOrigen;
+        if (! $evaluadorOrigenId) {
+            foreach (getEvaluadorAsignaciones() as $asig) {
+                if ((int) $asig['id_vinc_evaluado'] === (int) $data['id_vinc_funcionario']) {
+                    $evaluadorOrigenId = (int) $asig['id_vinc_evaluador'];
+                    break;
+                }
+            }
+        }
+
+        if (! $evaluadorOrigenId) {
+            return ['error' => "{$nombre} no tiene un evaluador asignado. Asigna un evaluador antes de registrar el cambio."];
+        }
+
+        if ($tipo === 'CAMBIO' && $evaluadorOrigenId === (int) $data['id_vinc_evaluador_nuevo']) {
+            return ['error' => "El evaluador nuevo de {$nombre} no puede ser el mismo que su evaluador actual."];
+        }
+
+        if (DB::table('traslado')->where('id_vinc_funcionario', $data['id_vinc_funcionario'])->where('estado', 'PROGRAMADO')->exists()) {
+            return ['error' => "{$nombre} ya tiene un traslado o cambio de evaluador programado. Confírmalo o cancélalo antes de registrar otro."];
+        }
+
+        // El periodo de aplicación se determina por la fecha del traslado: se prioriza
+        // el periodo ABIERTO del sistema del funcionario cuyo rango contiene la fecha
+        // (ahí es donde trabajó). Si la fecha no cae en ningún periodo abierto, se
+        // conserva el fallback previo.
+        $sistemaEvaluado = strtoupper(trim((string) ($evaluado->sistema_evaluacion ?? 'RENDIMIENTO_LABORAL')));
+
+        $periodo = DB::table('periodo')
+            ->whereRaw('UPPER(TRIM(sistema)) = ?', [$sistemaEvaluado])
+            ->where('estado', 'ABIERTO')
+            ->whereDate('fecha_inicio', '<=', $data['fecha_traslado'])
+            ->whereDate('fecha_fin', '>=', $data['fecha_traslado'])
+            ->orderByDesc('id_periodo')
+            ->first();
+
+        if (! $periodo) {
+            $periodo = DB::table('evaluacion as ev')
+                ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
+                ->where('ev.id_vinc_evaluado', $data['id_vinc_funcionario'])
+                ->whereIn('ev.tipo_evaluacion', ['SEMESTRE_1', 'SEMESTRE_2'])
+                ->where('p.estado', 'ABIERTO')
+                ->orderByDesc('p.id_periodo')
+                ->select('p.*')
+                ->first();
+        }
+
+        if (! $periodo) {
+            $periodo = resolveOpenPeriodForVinculacion((int) $data['id_vinc_funcionario']);
+        }
+
+        // Aquí solo se programa: la evaluación del cargo nuevo se abre al confirmar.
+        $diasTramo = null;
+        $evaluacionOrigen = null;
+
+        if ($periodo) {
+            $fechaInicio = new \DateTime($periodo->fecha_inicio);
+            $fechaFin = new \DateTime($periodo->fecha_fin);
+            $fechaTraslado = new \DateTime($data['fecha_traslado']);
+
+            if ($fechaTraslado < $fechaInicio) {
+                return ['error' => 'La fecha del cambio no puede ser anterior al inicio del periodo vigente (' . $periodo->fecha_inicio . ').'];
+            }
+
+            // Un cambio posterior al cierre deja todo el periodo en el cargo de origen.
+            if ($fechaTraslado > $fechaFin) {
+                $fechaTraslado = (clone $fechaFin)->modify('+1 day');
+            }
+
+            // El tramo de origen inicia con el periodo o con el último traslado
+            // confirmado en él (dos o más traslados en el mismo periodo).
+            $ultimoTraslado = DB::table('traslado')
+                ->where('id_vinc_funcionario', $data['id_vinc_funcionario'])
+                ->where('id_periodo', $periodo->id_periodo)
+                ->where('estado', 'CONFIRMADO')
+                ->max('fecha_traslado');
+            $inicioTramo = $ultimoTraslado ? max($fechaInicio, new \DateTime($ultimoTraslado)) : $fechaInicio;
+
+            if ($fechaTraslado < $inicioTramo) {
+                return ['error' => "La fecha del cambio de {$nombre} no puede ser anterior a su último traslado en este periodo (" . $inicioTramo->format('Y-m-d') . ').'];
+            }
+
+            // Regla: la fecha registrada es el primer día en la nueva área;
+            // el tramo anterior finaliza el día inmediatamente anterior.
+            $diasTramo = $inicioTramo->diff($fechaTraslado)->days;
+
+            // Al reanudar no hay tramo de origen: los días desde la pausa son de ausencia.
+            if ($tipo === 'REANUDACION') {
+                $diasTramo = 0;
+            } else {
+                $evaluacionOrigen = buscarEvaluacionVigenteTraslado((int) $periodo->id_periodo, (int) $data['id_vinc_funcionario'], $evaluadorOrigenId);
+            }
+        }
+
+        $vincularOrigen = $evaluacionOrigen && $diasTramo > 0;
+
+        $idTraslado = DB::transaction(function () use ($data, $evaluado, $periodo, $diasTramo, $evaluacionOrigen, $vincularOrigen, $evaluadorOrigenId, $idDelegacion, $tipo) {
+            if ($vincularOrigen) {
+                // Los días del tramo ponderan su nota en el promedio del semestre.
+                DB::table('evaluacion')
+                    ->where('id_evaluacion', $evaluacionOrigen->id_evaluacion)
+                    ->update(['dias_laborados' => $diasTramo]);
+            } elseif ($evaluacionOrigen) {
+                // Cambio el mismo día en que inicia el tramo: no hubo tiempo
+                // laborado en origen y la evaluación queda solo de consulta.
+                DB::table('evaluacion')
+                    ->where('id_evaluacion', $evaluacionOrigen->id_evaluacion)
+                    ->update(['es_traslado' => 1]);
+            }
+
+            $idTraslado = DB::table('traslado')->insertGetId([
+                'id_vinc_funcionario' => (int) $data['id_vinc_funcionario'],
+                'estado' => 'PROGRAMADO',
+                'tipo' => $tipo,
+                'id_periodo' => $periodo->id_periodo ?? null,
+                'id_delegacion' => $idDelegacion,
+                'id_vinc_evaluador_origen' => $evaluadorOrigenId,
+                'id_vinc_evaluador_nuevo' => (int) $data['id_vinc_evaluador_nuevo'],
+                'id_vinc_reemplazado' => $data['id_vinc_reemplazado'] ?? null,
+                'area_origen' => $evaluado->area,
+                'cargo_origen' => $evaluado->cargo,
+                'area_nuevo' => $data['area_nuevo'] ?? null,
+                'cargo_nuevo' => $data['cargo_nuevo'] ?? null,
+                'fecha_traslado' => $data['fecha_traslado'],
+                'dias_laborados' => $diasTramo,
+                'id_evaluacion_origen' => $vincularOrigen ? $evaluacionOrigen->id_evaluacion : null,
+                'dias_origen_previos' => $vincularOrigen ? $evaluacionOrigen->dias_laborados : null,
+                'resolucion' => $data['resolucion'] ?? null,
+                'motivo' => $data['motivo'] ?? null,
+                'referencia' => trim($data['referencia'] ?? '') ?: null,
+                'id_usuario_registra' => session('usuario_autenticado.id_usuario') ?? null,
+            ]);
+
+            if ($evaluacionOrigen) {
+                registrarEventoEvaluacion(
+                    (int) $evaluacionOrigen->id_evaluacion,
+                    $vincularOrigen ? 'CAMBIO_EVALUADOR_PROGRAMADO' : 'ANULADA_POR_TRASLADO',
+                    [
+                        'id_traslado' => $idTraslado,
+                        'tipo' => $tipo,
+                        'id_delegacion' => $idDelegacion,
+                        'fecha_cambio' => $data['fecha_traslado'],
+                        'id_vinc_evaluador_nuevo' => (int) $data['id_vinc_evaluador_nuevo'],
+                        'dias_laborados' => ['antes' => $evaluacionOrigen->dias_laborados, 'despues' => $diasTramo],
+                    ]
+                );
+            }
+
+            return $idTraslado;
+        });
+
+        return [
+            'id_traslado' => $idTraslado,
+            'dias' => $diasTramo,
+            'listo' => ! $periodo || $diasTramo === 0 || ($evaluacionOrigen && evaluacionTieneNota($evaluacionOrigen)),
+        ];
+    }
+}
+
 Route::post('/admin/traslados', function (Request $request) {
     abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
 
@@ -1251,238 +1916,23 @@ Route::post('/admin/traslados', function (Request $request) {
         'fecha_traslado.after_or_equal' => 'La fecha del traslado no puede ser anterior a la fecha actual. Solo se puede declarar el día que se realiza o comienza.',
     ]);
 
-    $evaluado = DB::table('vinculacion')
-        ->where('id_vinculacion', $data['id_vinc_funcionario'])
-        ->where('activa', 1)
-        ->first();
-
-    abort_unless($evaluado, 403);
-
-    $areaOrigen = $evaluado->area;
-    $cargoOrigen = $evaluado->cargo;
-
-    $evaluadorNuevo = DB::table('vinculacion')
-        ->where('id_vinculacion', $data['id_vinc_evaluador_nuevo'])
-        ->where('activa', 1)
-        ->where('es_evaluador', 1)
-        ->first();
-
-    abort_unless($evaluadorNuevo, 403);
-
-    // Evaluador origen: el asignado actualmente al funcionario
-    $evaluadorOrigenId = null;
-    foreach (getEvaluadorAsignaciones() as $asig) {
-        if ((int) $asig['id_vinc_evaluado'] === (int) $data['id_vinc_funcionario']) {
-            $evaluadorOrigenId = (int) $asig['id_vinc_evaluador'];
-            break;
-        }
+    $programado = programarTraslado($data);
+    if (isset($programado['error'])) {
+        return back()->withErrors(['traslados' => $programado['error']]);
     }
 
-    if (! $evaluadorOrigenId) {
-        return back()->withErrors(['traslados' => 'El funcionario no tiene un evaluador asignado. Asigna un evaluador antes de registrar el traslado.']);
-    }
-
-    if ($evaluadorOrigenId === (int) $data['id_vinc_evaluador_nuevo']) {
-        return back()->withErrors(['traslados' => 'El evaluador nuevo no puede ser el mismo que el evaluador actual del funcionario.']);
-    }
-
-    // Evaluación PARCIAL prorrateada por los días trabajados en la dependencia origen
-    $idEvaluacionParcial = null;
-    $diasLaborados = null;
-
-    // El periodo de aplicación se determina por la fecha del traslado: se prioriza
-    // el periodo ABIERTO del sistema del funcionario cuyo rango contiene la fecha
-    // (ahí es donde trabajó y contra ahí se prorratean las PARCIALes). Si la fecha
-    // no cae en ningún periodo abierto, se conserva el fallback previo.
-    $sistemaEvaluado = strtoupper(trim((string) ($evaluado->sistema_evaluacion ?? 'RENDIMIENTO_LABORAL')));
-
-    $periodo = DB::table('periodo')
-        ->whereRaw('UPPER(TRIM(sistema)) = ?', [$sistemaEvaluado])
-        ->where('estado', 'ABIERTO')
-        ->whereDate('fecha_inicio', '<=', $data['fecha_traslado'])
-        ->whereDate('fecha_fin', '>=', $data['fecha_traslado'])
-        ->orderByDesc('id_periodo')
-        ->first();
-
-    if (! $periodo) {
-        $periodo = DB::table('evaluacion as ev')
-            ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
-            ->where('ev.id_vinc_evaluado', $data['id_vinc_funcionario'])
-            ->whereIn('ev.tipo_evaluacion', ['SEMESTRE_1', 'SEMESTRE_2'])
-            ->where('p.estado', 'ABIERTO')
-            ->orderByDesc('p.id_periodo')
-            ->select('p.*')
-            ->first();
-    }
-
-    if (! $periodo) {
-        $periodo = resolveOpenPeriodForVinculacion((int) $data['id_vinc_funcionario']);
-    }
-
-    if ($periodo) {
-        $fechaInicio = new \DateTime($periodo->fecha_inicio);
-        $fechaFin = new \DateTime($periodo->fecha_fin);
-        $diasPeriodo = $fechaInicio->diff($fechaFin)->days + 1;
-        $fechaTraslado = new \DateTime($data['fecha_traslado']);
-
-        if ($fechaTraslado < $fechaInicio) {
-            return back()->withErrors(['traslados' => 'La fecha del traslado no puede ser anterior al inicio del periodo vigente (' . $periodo->fecha_inicio . ').']);
+    // Sin tramo que calificar, o con la nota de origen ya registrada, el
+    // traslado se confirma de inmediato.
+    if ($programado['listo']) {
+        $error = confirmarTraslado($programado['id_traslado']);
+        if ($error) {
+            return back()->withErrors(['traslados' => 'El traslado quedó programado, pero no se pudo confirmar: ' . $error]);
         }
 
-        if ($fechaTraslado > $fechaFin) {
-            $fechaTraslado = $fechaFin;
-        }
-
-        // Regla: la fecha registrada es el primer día en la nueva área;
-        // el tramo anterior finaliza el día inmediatamente anterior.
-        $diasLaborados = $fechaInicio->diff($fechaTraslado)->days; // Días laborados en origen
-        $diasNuevoCargo = max(0, $diasPeriodo - $diasLaborados);   // Días restantes en nuevo cargo
-
-        // La evaluación SEMESTRE vigente del ciclo (concertada o no) queda bloqueada
-        // por traslado: se etiqueta y solo se puede consultar. Sus compromisos se
-        // copian a la PARCIAL de la dependencia origen.
-        $semestreOrigen = DB::table('evaluacion')
-            ->where('id_periodo', $periodo->id_periodo)
-            ->where('id_vinc_evaluado', $data['id_vinc_funcionario'])
-            ->whereIn('tipo_evaluacion', ['SEMESTRE_1', 'SEMESTRE_2'])
-            ->where('id_vinc_evaluador', $evaluadorOrigenId)
-            ->orderByDesc('id_evaluacion')
-            ->first();
-
-        if ($semestreOrigen) {
-            DB::table('evaluacion')
-                ->where('id_evaluacion', $semestreOrigen->id_evaluacion)
-                ->update(['es_traslado' => 1]);
-        }
-
-        $tramosInferiores90 = [];
-
-        if ($diasLaborados < $diasPeriodo && $diasLaborados > 0) {
-            if ($diasLaborados >= 90) {
-                $existeParcialOrigen = DB::table('evaluacion')
-                    ->where('id_periodo', $periodo->id_periodo)
-                    ->where('id_vinc_evaluado', $data['id_vinc_funcionario'])
-                    ->where('id_vinc_evaluador', $evaluadorOrigenId)
-                    ->where('tipo_evaluacion', 'PARCIAL')
-                    ->exists();
-
-                if (! $existeParcialOrigen) {
-                    $idEvaluacionParcial = DB::table('evaluacion')->insertGetId([
-                        'id_periodo' => $periodo->id_periodo,
-                        'id_vinc_evaluado' => $data['id_vinc_funcionario'],
-                        'id_vinc_evaluador' => $evaluadorOrigenId,
-                        'tipo_evaluacion' => 'PARCIAL',
-                        'fase_actual' => 1,
-                        'concertacion_firmada' => 0,
-                        'estado' => 'EN_PROCESO',
-                        'es_parcial' => 1,
-                        'dias_laborados' => $diasLaborados,
-                        'referencia' => trim($data['referencia'] ?? '') ?: null,
-                    ]);
-
-                    // La PARCIAL de origen hereda los compromisos de la SEMESTRE cerrada.
-                    if ($semestreOrigen) {
-                        copiarCompromisosEvaluacion($semestreOrigen->id_evaluacion, $idEvaluacionParcial);
-                    }
-                }
-            } else {
-                $tramosInferiores90[] = "origen ({$diasLaborados} días)";
-            }
-        }
-
-        // PARCIAL para el nuevo evaluador: días laborados en el nuevo cargo.
-        // Paso 26: La copia de compromisos es OPCIONAL si se especificó un funcionario reemplazado compatible.
-        if ($diasNuevoCargo >= 90) {
-            $existeParcialNuevo = DB::table('evaluacion')
-                ->where('id_periodo', $periodo->id_periodo)
-                ->where('id_vinc_evaluado', $data['id_vinc_funcionario'])
-                ->where('id_vinc_evaluador', $data['id_vinc_evaluador_nuevo'])
-                ->where('tipo_evaluacion', 'PARCIAL')
-                ->exists();
-
-            if (! $existeParcialNuevo) {
-                $idEvaluacionParcialNuevo = DB::table('evaluacion')->insertGetId([
-                    'id_periodo' => $periodo->id_periodo,
-                    'id_vinc_evaluado' => $data['id_vinc_funcionario'],
-                    'id_vinc_evaluador' => (int) $data['id_vinc_evaluador_nuevo'],
-                    'tipo_evaluacion' => 'PARCIAL',
-                    'fase_actual' => 1,
-                    'concertacion_firmada' => 0,
-                    'estado' => 'EN_PROCESO',
-                    'es_parcial' => 1,
-                    'dias_laborados' => $diasNuevoCargo,
-                    'referencia' => trim($data['referencia'] ?? '') ?: null,
-                ]);
-
-                $anteriorDelPuesto = null;
-                if (! empty($data['id_vinc_reemplazado'])) {
-                    // Validar compatibilidad del reemplazo (mismo sistema de evaluación)
-                    $vincReemplazado = DB::table('vinculacion')->where('id_vinculacion', (int)$data['id_vinc_reemplazado'])->first();
-                    if ($vincReemplazado && strtoupper(trim((string)($vincReemplazado->sistema_evaluacion ?? ''))) === $sistemaEvaluado) {
-                        $anteriorDelPuesto = DB::table('evaluacion')
-                            ->where('id_periodo', $periodo->id_periodo)
-                            ->where('id_vinc_evaluado', (int) $data['id_vinc_reemplazado'])
-                            ->whereIn('tipo_evaluacion', ['SEMESTRE_1', 'SEMESTRE_2', 'PARCIAL'])
-                            ->orderByDesc('id_evaluacion')
-                            ->first();
-                    }
-                }
-
-                if ($anteriorDelPuesto) {
-                    copiarCompromisosEvaluacion($anteriorDelPuesto->id_evaluacion, $idEvaluacionParcialNuevo);
-                }
-            }
-        } elseif ($diasNuevoCargo > 0 && $diasNuevoCargo < 90) {
-            $tramosInferiores90[] = "nuevo cargo ({$diasNuevoCargo} días)";
-        }
+        return back()->with('success_traslado', 'Traslado registrado y confirmado. Se abrió la evaluación en el cargo nuevo.');
     }
 
-    // Reasignar el funcionario al nuevo evaluador
-    DB::table('evaluador_asignacion')
-        ->where('id_vinc_evaluado', $data['id_vinc_funcionario'])
-        ->delete();
-
-    DB::table('evaluador_asignacion')->insert([
-        'id_vinc_evaluador' => (int) $data['id_vinc_evaluador_nuevo'],
-        'id_vinc_evaluado' => (int) $data['id_vinc_funcionario'],
-        'fecha_asignacion' => now(),
-    ]);
-
-    // Actualizar dependencia/cargo en la vinculación activa
-    $vinculacionUpdate = [];
-    if (! empty($data['area_nuevo'])) {
-        $vinculacionUpdate['area'] = trim($data['area_nuevo']);
-    }
-    if (! empty($data['cargo_nuevo'])) {
-        $vinculacionUpdate['cargo'] = trim($data['cargo_nuevo']);
-    }
-    if ($vinculacionUpdate) {
-        DB::table('vinculacion')->where('id_vinculacion', $data['id_vinc_funcionario'])->update($vinculacionUpdate);
-    }
-
-    DB::table('traslado')->insert([
-        'id_vinc_funcionario' => (int) $data['id_vinc_funcionario'],
-        'id_vinc_evaluador_origen' => $evaluadorOrigenId,
-        'id_vinc_evaluador_nuevo' => (int) $data['id_vinc_evaluador_nuevo'],
-        'id_vinc_reemplazado' => $data['id_vinc_reemplazado'] ?? null,
-        'area_origen' => $areaOrigen,
-        'cargo_origen' => $cargoOrigen,
-        'area_nuevo' => $data['area_nuevo'] ?? null,
-        'cargo_nuevo' => $data['cargo_nuevo'] ?? null,
-        'fecha_traslado' => $data['fecha_traslado'],
-        'dias_laborados' => $diasLaborados,
-        'id_evaluacion_parcial' => $idEvaluacionParcial,
-        'resolucion' => $data['resolucion'] ?? null,
-        'motivo' => $data['motivo'] ?? null,
-        'id_usuario_registra' => session('usuario_autenticado.id_usuario') ?? null,
-    ]);
-
-    $msg = 'Traslado registrado correctamente.';
-    if (!empty($tramosInferiores90)) {
-        $msg .= ' (Nota: El tramo de ' . implode(' y ', $tramosInferiores90) . ' no genera evaluación parcial por ser inferior a 90 días según la regla funcional).';
-    }
-
-    return back()->with('success_traslado', $msg);
+    return back()->with('success_traslado', "Traslado programado. El evaluador de origen debe concertar y calificar el tramo de {$programado['dias']} días; con la nota registrada, confirma el traslado para abrir la evaluación en el cargo nuevo.");
 })->name('admin.traslados.store');
 
 // --- GET: Histórico de traslados (admin) ---
@@ -1499,10 +1949,97 @@ Route::get('/admin/traslados', function () {
         ->leftJoin('vinculacion as vr', 'vr.id_vinculacion', '=', 't.id_vinc_reemplazado')
         ->leftJoin('funcionario as fr', 'fr.id_funcionario', '=', 'vr.id_funcionario')
         ->leftJoin('evaluacion as evp', 'evp.id_evaluacion', '=', 't.id_evaluacion_parcial')
-        ->select('t.*', 'evp.referencia', 'ff.nombres as funcionario_nombres', 'ff.apellidos as funcionario_apellidos', 'feo.nombres as origen_nombres', 'feo.apellidos as origen_apellidos', 'fen.nombres as nuevo_nombres', 'fen.apellidos as nuevo_apellidos', 'fr.nombres as reemplazado_nombres', 'fr.apellidos as reemplazado_apellidos')
+        ->leftJoin('evaluacion as evo', 'evo.id_evaluacion', '=', 't.id_evaluacion_origen')
+        ->select('t.*', DB::raw('COALESCE(t.referencia, evp.referencia) as referencia'), 'evo.estado as origen_estado', 'evo.calificacion_final as origen_calificacion', 'ff.nombres as funcionario_nombres', 'ff.apellidos as funcionario_apellidos', 'feo.nombres as origen_nombres', 'feo.apellidos as origen_apellidos', 'fen.nombres as nuevo_nombres', 'fen.apellidos as nuevo_apellidos', 'fr.nombres as reemplazado_nombres', 'fr.apellidos as reemplazado_apellidos')
         ->orderByDesc('t.id_traslado')
         ->get();
 })->name('admin.traslados.index');
+
+if (!function_exists('cancelarTraslado')) {
+    /**
+     * S14 - Cancela un traslado PROGRAMADO y devuelve a la evaluación de origen
+     * sus días previos. Solo mientras el tramo de origen no tenga nota: después
+     * el tramo ya se cerró y solo se puede confirmar. Retorna null o el motivo.
+     */
+    function cancelarTraslado(int $idTraslado): ?string
+    {
+        $traslado = DB::table('traslado')->where('id_traslado', $idTraslado)->where('estado', 'PROGRAMADO')->first();
+        if (! $traslado) {
+            return 'El traslado no existe o ya fue resuelto.';
+        }
+
+        $origen = $traslado->id_evaluacion_origen
+            ? DB::table('evaluacion')->where('id_evaluacion', $traslado->id_evaluacion_origen)->first()
+            : null;
+
+        if ($origen && evaluacionTieneNota($origen)) {
+            return 'La evaluación de ' . nombreFuncionarioVinc((int) $traslado->id_vinc_funcionario) . ' ya fue calificada para este tramo; el cambio no se puede cancelar, solo confirmar.';
+        }
+
+        DB::transaction(function () use ($idTraslado, $traslado, $origen) {
+            if ($origen) {
+                DB::table('evaluacion')
+                    ->where('id_evaluacion', $origen->id_evaluacion)
+                    ->update(['dias_laborados' => $traslado->dias_origen_previos]);
+
+                registrarEventoEvaluacion((int) $origen->id_evaluacion, 'CAMBIO_EVALUADOR_CANCELADO', [
+                    'id_traslado' => $idTraslado,
+                    'id_delegacion' => $traslado->id_delegacion ?? null,
+                    'dias_laborados' => ['antes' => $origen->dias_laborados, 'despues' => $traslado->dias_origen_previos],
+                ]);
+            }
+
+            DB::table('traslado')->where('id_traslado', $idTraslado)->update([
+                'estado' => 'CANCELADO',
+                'id_usuario_resuelve' => session('usuario_autenticado.id_usuario') ?? null,
+                'resuelto_at' => now(),
+            ]);
+        });
+
+        return null;
+    }
+}
+
+// Los cambios de evaluador de una delegación se resuelven juntos desde la delegación.
+if (!function_exists('trasladoDeDelegacion')) {
+    function trasladoDeDelegacion(int $idTraslado): bool
+    {
+        return Schema::hasColumn('traslado', 'id_delegacion')
+            && DB::table('traslado')->where('id_traslado', $idTraslado)->whereNotNull('id_delegacion')->exists();
+    }
+}
+
+// --- POST: Confirmar traslado programado (S14 - paso 2) ---
+Route::post('/admin/traslados/{id}/confirmar', function (int $id) {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
+
+    if (trasladoDeDelegacion($id)) {
+        return response()->json(['message' => 'Este cambio hace parte de una delegación; confírmalo desde Delegaciones.'], 422);
+    }
+
+    $error = confirmarTraslado($id);
+    if ($error) {
+        return response()->json(['message' => $error], 422);
+    }
+
+    return response()->json(['success' => true, 'message' => 'Traslado confirmado. Se abrió la evaluación en el cargo nuevo.']);
+})->name('admin.traslados.confirmar');
+
+// --- POST: Cancelar traslado programado (S14) ---
+Route::post('/admin/traslados/{id}/cancelar', function (int $id) {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
+
+    if (trasladoDeDelegacion($id)) {
+        return response()->json(['message' => 'Este cambio hace parte de una delegación; cancélalo desde Delegaciones.'], 422);
+    }
+
+    $error = cancelarTraslado($id);
+    if ($error) {
+        return response()->json(['message' => $error], 422);
+    }
+
+    return response()->json(['success' => true, 'message' => 'Traslado cancelado.']);
+})->name('admin.traslados.cancelar');
 
 // --- POST: Habilitar concertación extratiempo (Admin - S9) ---
 Route::post('/admin/evaluaciones/{id}/extratiempo', function (Request $request, int $id) {
@@ -1527,6 +2064,8 @@ Route::post('/admin/evaluaciones/{id}/extratiempo', function (Request $request, 
             'updated_at' => now(),
         ]);
     }
+
+    registrarEventoEvaluacion($id, 'EXTRATIEMPO_HABILITADO', ['fecha_limite' => $data['fecha_limite']]);
 
     return back()->with('success', 'Concertación en extratiempo habilitada correctamente.');
 })->name('admin.evaluaciones.extratiempo');
@@ -1567,6 +2106,7 @@ Route::post('/admin/delegaciones', function (Request $request) {
         'acto_administrativo_url' => ['nullable', 'string', 'max:1000'],
         'fecha_inicio' => ['required', 'date'],
         'fecha_fin' => ['nullable', 'date', 'after_or_equal:fecha_inicio'],
+        'id_vinc_superior_delegado' => ['nullable', 'integer', 'exists:vinculacion,id_vinculacion'],
     ]);
 
     $delegante = DB::table('vinculacion')->where('id_vinculacion', $data['id_vinc_delegante'])->where('activa', 1)->first();
@@ -1584,6 +2124,10 @@ Route::post('/admin/delegaciones', function (Request $request) {
     $fechaFin = !empty($data['fecha_fin']) ? $data['fecha_fin'] : null;
     if (delegacionActivaTraslapada($delegante->id_vinculacion, $data['fecha_inicio'], $fechaFin)) {
         return back()->withErrors(['delegaciones' => 'El delegante ya tiene una delegación activa que se traslapa con estas fechas.']);
+    }
+
+    if (delegacionEsLarga($data['fecha_inicio'], $fechaFin)) {
+        return registrarDelegacionLarga($data, $delegante, $delegado, $fechaFin);
     }
 
     $conflicto = DB::table('evaluacion as de')
@@ -1636,6 +2180,95 @@ Route::post('/admin/delegaciones', function (Request $request) {
     return back()->with('success_delegacion', 'Delegación activada correctamente.');
 })->name('admin.delegaciones.store');
 
+if (!function_exists('registrarDelegacionLarga')) {
+/**
+ * S14 - Delegación de más de 30 días: se programa y espera a que se califiquen
+ * los tramos de todas las personas a cargo del titular y el del delegado en su
+ * cargo original. Con todas las notas se confirma (aquí mismo si ya están).
+ */
+function registrarDelegacionLarga(array $data, object $delegante, object $delegado, ?string $fechaFin) {
+    $idSuperior = (int) ($data['id_vinc_superior_delegado'] ?? 0);
+    if (! $idSuperior) {
+        return back()->withErrors(['delegaciones' => 'La delegación supera 30 días: selecciona el superior que evaluará al delegado mientras ejerce el cargo.']);
+    }
+    if ($idSuperior === (int) $delegado->id_vinculacion) {
+        return back()->withErrors(['delegaciones' => 'El delegado no puede ser su propio superior.']);
+    }
+
+    $evaluadorOriginal = (int) DB::table('evaluador_asignacion')->where('id_vinc_evaluado', $delegado->id_vinculacion)->orderBy('id_asignacion')->value('id_vinc_evaluador');
+    if (! $evaluadorOriginal) {
+        return back()->withErrors(['delegaciones' => 'El delegado no tiene evaluador asignado en su cargo original; asígnalo antes de delegar.']);
+    }
+
+    // Personas a cargo del titular; el delegado, si es una de ellas, va por su propio cambio.
+    $evaluados = DB::table('evaluador_asignacion')
+        ->where('id_vinc_evaluador', $delegante->id_vinculacion)
+        ->where('id_vinc_evaluado', '!=', $delegado->id_vinculacion)
+        ->pluck('id_vinc_evaluado')
+        ->map(fn ($id) => (int) $id)
+        ->unique()
+        ->values()
+        ->all();
+
+    try {
+        $idDelegacion = DB::transaction(function () use ($data, $delegante, $delegado, $fechaFin, $idSuperior, $evaluadorOriginal, $evaluados) {
+            $idDelegacion = DB::table('delegacion')->insertGetId([
+                'id_vinc_delegante' => $delegante->id_vinculacion,
+                'id_vinc_delegado' => $delegado->id_vinculacion,
+                'motivo' => trim($data['motivo'] ?? '') ?: null,
+                'area' => trim($data['area'] ?? '') ?: ($delegante->area ?? null),
+                'acto_administrativo' => trim($data['acto_administrativo'] ?? '') ?: null,
+                'acto_administrativo_numero' => trim($data['acto_administrativo_numero'] ?? '') ?: null,
+                'acto_administrativo_fecha' => $data['acto_administrativo_fecha'] ?? null,
+                'acto_administrativo_url' => trim($data['acto_administrativo_url'] ?? '') ?: null,
+                'fecha_inicio' => $data['fecha_inicio'],
+                'fecha_fin' => $fechaFin,
+                'estado' => 'PROGRAMADA',
+                'es_larga' => 1,
+                'id_vinc_superior_delegado' => $idSuperior,
+                'id_vinc_evaluador_original_delegado' => $evaluadorOriginal,
+                'id_usuario_registra' => session('usuario_autenticado.id_usuario') ?? null,
+                'detalle_transferencia' => json_encode(['evaluados_transferidos' => $evaluados]),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $delegacion = DB::table('delegacion')->where('id_delegacion', $idDelegacion)->first();
+            programarCambiosDelegacion($delegacion, $evaluados, (int) $delegante->id_vinculacion, (int) $delegado->id_vinculacion, $idSuperior, $data['fecha_inicio']);
+
+            // El titular que se ausenta también cierra su tramo (pausa con su
+            // mismo evaluador). Si no tiene evaluador, no se evalúa y se omite.
+            $evaluadorTitular = (int) DB::table('evaluador_asignacion')
+                ->where('id_vinc_evaluado', $delegante->id_vinculacion)
+                ->orderBy('id_asignacion')
+                ->value('id_vinc_evaluador');
+            if ($evaluadorTitular) {
+                $pausa = programarTraslado([
+                    'id_vinc_funcionario' => (int) $delegante->id_vinculacion,
+                    'id_vinc_evaluador_nuevo' => $evaluadorTitular,
+                    'fecha_traslado' => $data['fecha_inicio'],
+                    'motivo' => substr('Ausencia del titular - Delegación #' . $idDelegacion . (!empty($data['motivo']) ? ' - ' . trim($data['motivo']) : ''), 0, 500),
+                ], $evaluadorTitular, $idDelegacion, false, 'PAUSA');
+
+                if (isset($pausa['error'])) {
+                    throw new \RuntimeException($pausa['error']);
+                }
+            }
+
+            return $idDelegacion;
+        });
+    } catch (\RuntimeException $e) {
+        return back()->withErrors(['delegaciones' => $e->getMessage()]);
+    }
+
+    if (! confirmarCambiosDelegacion($idDelegacion, 'ACTIVA')) {
+        return back()->with('success_delegacion', 'Delegación activada: todos los tramos ya tenían nota.');
+    }
+
+    return back()->with('success_delegacion', 'Delegación programada. El titular debe calificar el tramo de sus ' . count($evaluados) . ' persona(s) a cargo y el evaluador actual del delegado debe calificar su tramo; con todas las notas, confirma el inicio.');
+}
+}
+
 // --- Actualizar o ampliar vigencia / datos de una delegacion (D-01, D-02) ---
 Route::match(['put', 'post'], '/admin/delegaciones/{id}', function (Request $request, int $id) {
     abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
@@ -1663,7 +2296,24 @@ Route::match(['put', 'post'], '/admin/delegaciones/{id}', function (Request $req
         return back()->withErrors(['delegaciones' => 'La fecha final debe ser posterior o igual a la fecha de inicio.']);
     }
 
-    if ($delegacion->estado === 'ACTIVA' && delegacionActivaTraslapada($delegacion->id_vinc_delegante, $fechaInicio, $fechaFin, $id)) {
+    // S14: una delegación corta no se amplía a más de 30 días (se finaliza y se
+    // programa una larga); una larga no cambia su inicio porque sus tramos ya
+    // se calcularon con esa fecha.
+    $errorVigencia = null;
+    if (empty($delegacion->es_larga) && delegacionEsLarga($fechaInicio, $fechaFin) && ! delegacionEsLarga((string) $delegacion->fecha_inicio, $delegacion->fecha_fin)) {
+        $errorVigencia = 'Una delegación de 30 días o menos no se puede ampliar a más de 30 días: finalízala y programa una delegación nueva, que exigirá calificar los tramos.';
+    } elseif (! empty($delegacion->es_larga) && $fechaInicio !== (string) $delegacion->fecha_inicio) {
+        $errorVigencia = 'La fecha de inicio de una delegación de más de 30 días no se puede cambiar: cancélala y prográmala de nuevo.';
+    }
+
+    if ($errorVigencia) {
+        if ($request->wantsJson() || $request->ajax()) {
+            return response()->json(['message' => $errorVigencia], 422);
+        }
+        return back()->withErrors(['delegaciones' => $errorVigencia]);
+    }
+
+    if (in_array($delegacion->estado, ['PROGRAMADA', 'ACTIVA', 'POR_FINALIZAR'], true) && delegacionActivaTraslapada($delegacion->id_vinc_delegante, $fechaInicio, $fechaFin, $id)) {
         if ($request->wantsJson() || $request->ajax()) {
             return response()->json(['message' => 'La nueva vigencia se traslapa con otra delegación activa del mismo titular.'], 422);
         }
@@ -1697,22 +2347,161 @@ Route::match(['put', 'post'], '/admin/delegaciones/{id}', function (Request $req
     return back()->with('success_delegacion', 'Delegación actualizada correctamente.');
 })->name('admin.delegaciones.update');
 
-// --- Finalizar una delegacion: el titular retoma sus evaluaciones pendientes ---
-Route::post('/admin/delegaciones/{id}/finalizar', function (int $id) {
+// --- Finalizar una delegacion: el trabajo pasa al sucesor (por defecto el titular) ---
+// Corta: se resuelve de inmediato. Larga: se programan los cambios de regreso y
+// se espera a que el delegado califique sus tramos y el superior califique al
+// delegado; con todas las notas se confirma (aquí mismo si ya están).
+Route::post('/admin/delegaciones/{id}/finalizar', function (Request $request, int $id) {
     abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
 
     $delegacion = DB::table('delegacion')->where('id_delegacion', $id)->where('estado', 'ACTIVA')->first();
     abort_unless($delegacion, 404);
 
-    revertirDelegacion($delegacion);
-
-    DB::table('delegacion')->where('id_delegacion', $id)->update([
-        'estado' => 'FINALIZADA',
-        'updated_at' => now(),
+    $data = $request->validate([
+        'id_vinc_sucesor' => ['nullable', 'integer', 'exists:vinculacion,id_vinculacion'],
+        'id_vinc_evaluador_regreso' => ['nullable', 'integer', 'exists:vinculacion,id_vinculacion'],
+        'fecha_regreso' => ['nullable', 'date'],
     ]);
 
-    return back()->with('success_delegacion', 'Delegación finalizada. El titular retomó la responsabilidad de la firma final de sus evaluaciones pendientes.');
+    $idSucesor = resolverSucesorDelegacion($delegacion, isset($data['id_vinc_sucesor']) ? (int) $data['id_vinc_sucesor'] : null);
+    if (is_string($idSucesor)) {
+        return response()->json(['message' => $idSucesor], 422);
+    }
+
+    if (empty($delegacion->es_larga)) {
+        DB::transaction(function () use ($delegacion, $id, $idSucesor) {
+            revertirDelegacion($delegacion, $idSucesor);
+
+            DB::table('delegacion')->where('id_delegacion', $id)->update([
+                'estado' => 'FINALIZADA',
+                'id_vinc_sucesor' => $idSucesor,
+                'updated_at' => now(),
+            ]);
+        });
+
+        return response()->json(['success' => true, 'message' => 'Delegación finalizada. Las evaluaciones pendientes pasaron a ' . nombreFuncionarioVinc($idSucesor) . '.']);
+    }
+
+    $fechaRegreso = $data['fecha_regreso']
+        ?? ($delegacion->fecha_fin ? \Carbon\Carbon::parse($delegacion->fecha_fin)->addDay()->toDateString() : now()->toDateString());
+    if ($fechaRegreso <= (string) $delegacion->fecha_inicio) {
+        return response()->json(['message' => 'La fecha de regreso debe ser posterior al inicio de la delegación.'], 422);
+    }
+
+    $idEvaluadorRegreso = (int) ($data['id_vinc_evaluador_regreso'] ?? $delegacion->id_vinc_evaluador_original_delegado);
+
+    // Personas que la delegación dejó a cargo del delegado y que siguen con él.
+    $evaluados = DB::table('traslado as t')
+        ->join('evaluador_asignacion as ea', function ($j) use ($delegacion) {
+            $j->on('ea.id_vinc_evaluado', '=', 't.id_vinc_funcionario')
+                ->where('ea.id_vinc_evaluador', '=', $delegacion->id_vinc_delegado);
+        })
+        ->where('t.id_delegacion', $id)
+        ->where('t.estado', 'CONFIRMADO')
+        ->where('t.id_vinc_evaluador_nuevo', $delegacion->id_vinc_delegado)
+        ->distinct()
+        ->pluck('t.id_vinc_funcionario')
+        ->map(fn ($v) => (int) $v)
+        ->all();
+
+    try {
+        DB::transaction(function () use ($delegacion, $id, $evaluados, $idSucesor, $idEvaluadorRegreso, $fechaRegreso) {
+            programarCambiosDelegacion($delegacion, $evaluados, (int) $delegacion->id_vinc_delegado, $idSucesor, $idEvaluadorRegreso, $fechaRegreso);
+
+            // Si el titular regresa (es el sucesor), reanuda con una evaluación
+            // nueva y su mismo evaluador. Si se retiró, no hay nada que reanudar.
+            $pausa = DB::table('traslado')->where('id_delegacion', $id)->where('tipo', 'PAUSA')->where('estado', 'CONFIRMADO')->first();
+            if ($pausa && $idSucesor === (int) $delegacion->id_vinc_delegante) {
+                $evaluadorTitular = (int) (DB::table('evaluador_asignacion')
+                    ->where('id_vinc_evaluado', $delegacion->id_vinc_delegante)
+                    ->orderBy('id_asignacion')
+                    ->value('id_vinc_evaluador') ?: $pausa->id_vinc_evaluador_nuevo);
+
+                $reanudacion = programarTraslado([
+                    'id_vinc_funcionario' => (int) $delegacion->id_vinc_delegante,
+                    'id_vinc_evaluador_nuevo' => $evaluadorTitular,
+                    'fecha_traslado' => $fechaRegreso,
+                    'motivo' => 'Regreso del titular - Delegación #' . $id,
+                ], $evaluadorTitular, $id, false, 'REANUDACION');
+
+                if (isset($reanudacion['error'])) {
+                    throw new \RuntimeException($reanudacion['error']);
+                }
+            }
+
+            DB::table('delegacion')->where('id_delegacion', $id)->update([
+                'estado' => 'POR_FINALIZAR',
+                'id_vinc_sucesor' => $idSucesor,
+                'fecha_regreso' => $fechaRegreso,
+                'updated_at' => now(),
+            ]);
+        });
+    } catch (\RuntimeException $e) {
+        return response()->json(['message' => $e->getMessage()], 422);
+    }
+
+    if (! confirmarCambiosDelegacion($id, 'FINALIZADA')) {
+        return response()->json(['success' => true, 'message' => 'Delegación finalizada: todos los tramos ya tenían nota.']);
+    }
+
+    return response()->json(['success' => true, 'message' => 'Fin de la delegación programado. El delegado debe calificar los tramos de las personas a cargo y el superior debe calificar el tramo del delegado; con todas las notas, confirma el fin.']);
 })->name('admin.delegaciones.finalizar');
+
+// --- POST: Confirmar inicio o fin de una delegación larga (S14) ---
+Route::post('/admin/delegaciones/{id}/confirmar', function (int $id) {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
+
+    $delegacion = DB::table('delegacion')->where('id_delegacion', $id)->whereIn('estado', ['PROGRAMADA', 'POR_FINALIZAR'])->first();
+    abort_unless($delegacion, 404, 'La delegación no tiene cambios por confirmar.');
+
+    $inicio = $delegacion->estado === 'PROGRAMADA';
+    $error = confirmarCambiosDelegacion($id, $inicio ? 'ACTIVA' : 'FINALIZADA');
+    if ($error) {
+        return response()->json(['message' => $error], 422);
+    }
+
+    return response()->json(['success' => true, 'message' => $inicio
+        ? 'Delegación activada. El delegado ya puede concertar con las personas a cargo.'
+        : 'Delegación finalizada. Las personas a cargo y el delegado quedaron con sus nuevos evaluadores.']);
+})->name('admin.delegaciones.confirmar');
+
+// --- POST: Cancelar el inicio o el fin programado de una delegación larga (S14) ---
+// Solo mientras ningún tramo tenga nota: después ya se cerraron y solo se confirma.
+Route::post('/admin/delegaciones/{id}/cancelar', function (int $id) {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
+
+    $delegacion = DB::table('delegacion')->where('id_delegacion', $id)->whereIn('estado', ['PROGRAMADA', 'POR_FINALIZAR'])->first();
+    abort_unless($delegacion, 404, 'La delegación no tiene cambios por cancelar.');
+
+    $ids = DB::table('traslado')->where('id_delegacion', $id)->where('estado', 'PROGRAMADO')->pluck('id_traslado');
+    $conNota = DB::table('traslado as t')
+        ->join('evaluacion as ev', 'ev.id_evaluacion', '=', 't.id_evaluacion_origen')
+        ->whereIn('t.id_traslado', $ids)
+        ->whereIn('ev.estado', ['CALIFICADA', 'APELACION', 'CERRADA'])
+        ->exists();
+
+    if ($conNota) {
+        return response()->json(['message' => 'Ya hay tramos calificados para este cambio; no se puede cancelar, solo confirmar.'], 422);
+    }
+
+    $inicio = $delegacion->estado === 'PROGRAMADA';
+    DB::transaction(function () use ($ids, $id, $inicio) {
+        foreach ($ids as $idTraslado) {
+            if ($error = cancelarTraslado((int) $idTraslado)) {
+                throw new \RuntimeException($error);
+            }
+        }
+
+        DB::table('delegacion')->where('id_delegacion', $id)->update(array_merge(
+            ['estado' => $inicio ? 'CANCELADA' : 'ACTIVA', 'updated_at' => now()],
+            $inicio ? [] : ['id_vinc_sucesor' => null, 'fecha_regreso' => null]
+        ));
+    });
+
+    return response()->json(['success' => true, 'message' => $inicio
+        ? 'Delegación cancelada.'
+        : 'Fin de la delegación cancelado: sigue activa.']);
+})->name('admin.delegaciones.cancelar');
 
 // --- GET: Historico de delegaciones (admin) ---
 Route::get('/admin/delegaciones', function () {
@@ -1767,6 +2556,14 @@ Route::get('/admin/delegaciones', function () {
                 ? \Carbon\Carbon::parse($r->acto_administrativo_fecha)->format('d/m/Y')
                 : null;
 
+            // S14: datos para decidir el fin y seguir los tramos por calificar.
+            $r->titular_activo = DB::table('vinculacion')->where('id_vinculacion', $r->id_vinc_delegante)->where('activa', 1)->exists();
+            $r->superior_nombre = !empty($r->id_vinc_superior_delegado) ? nombreFuncionarioVinc((int) $r->id_vinc_superior_delegado) : null;
+            $r->sucesor_nombre = !empty($r->id_vinc_sucesor) ? nombreFuncionarioVinc((int) $r->id_vinc_sucesor) : null;
+            $r->tramos_pendientes = in_array($r->estado, ['PROGRAMADA', 'POR_FINALIZAR'], true)
+                ? pendientesDelegacion((int) $r->id_delegacion)
+                : [];
+
             return $r;
         });
 })->name('admin.delegaciones.index');
@@ -1790,10 +2587,14 @@ Route::post('/admin/impedimentos/{id}/resolver', function (Request $request, int
     $solicitud = DB::table('impedimento_recusacion')->where('id_impedimento', $id)->where('estado', 'PENDIENTE')->first();
     abort_unless($solicitud, 404, 'La solicitud no existe o ya fue resuelta.');
 
+    // Aprobar exige reasignar: una solicitud APROBADA siempre queda con nuevo
+    // evaluador, por eso solo las PENDIENTES bloquean la evaluación.
     $data = $request->validate([
         'estado' => ['required', 'in:APROBADO,RECHAZADO'],
         'respuesta' => ['required', 'string'],
-        'id_vinc_nuevo_evaluador' => ['nullable', 'integer', 'exists:vinculacion,id_vinculacion'],
+        'id_vinc_nuevo_evaluador' => ['nullable', 'required_if:estado,APROBADO', 'integer', 'exists:vinculacion,id_vinculacion'],
+    ], [
+        'id_vinc_nuevo_evaluador.required_if' => 'Debe seleccionar el nuevo evaluador para aprobar la solicitud.',
     ]);
 
     DB::transaction(function () use ($id, $solicitud, $data) {
@@ -1804,6 +2605,15 @@ Route::post('/admin/impedimentos/{id}/resolver', function (Request $request, int
             'id_usuario_admin' => session('usuario_autenticado.id_usuario'),
             'updated_at' => now(),
         ]);
+
+        $evaluadorAnterior = (int) DB::table('evaluacion')->where('id_evaluacion', $solicitud->id_evaluacion)->value('id_vinc_evaluador');
+        registrarEventoEvaluacion((int) $solicitud->id_evaluacion, 'IMPEDIMENTO_RESUELTO', array_filter([
+            'id_impedimento' => $id,
+            'tipo' => $solicitud->tipo,
+            'decision' => $data['estado'],
+            'id_vinc_evaluador_anterior' => $data['estado'] === 'APROBADO' ? $evaluadorAnterior : null,
+            'id_vinc_evaluador_nuevo' => $data['estado'] === 'APROBADO' ? (int) $data['id_vinc_nuevo_evaluador'] : null,
+        ], fn ($v) => $v !== null));
 
         // 2. Si se aprueba y se elige un nuevo evaluador, reasignar
         if ($data['estado'] === 'APROBADO' && !empty($data['id_vinc_nuevo_evaluador'])) {
@@ -1839,23 +2649,28 @@ Route::post('/admin/impedimentos/{id}/resolver', function (Request $request, int
                         'id_vinc_evaluador' => $data['id_vinc_nuevo_evaluador'],
                     ]);
 
-                // Crear notificación para el nuevo evaluador
+                // S14 (regla 9): avisos personales al nuevo evaluador y al evaluado.
                 $nombreEvaluado = $evaluado ? "{$evaluado->nombres} {$evaluado->apellidos}" : 'el funcionario';
+                $nombreNuevo = $nuevoEvaluador ? "{$nuevoEvaluador->nombres} {$nuevoEvaluador->apellidos}" : 'un nuevo evaluador';
                 $periodoTxt = $periodo ? "{$periodo->sistema} {$periodo->anio}/{$periodo->semestre}" : '';
                 $tipoTxt = $solicitud->tipo === 'IMPEDIMENTO' ? 'Impedimento' : 'Recusación';
                 $articuloImp = $solicitud->tipo === 'IMPEDIMENTO' ? 'un' : 'una';
                 $generoTxt = $solicitud->tipo === 'IMPEDIMENTO' ? 'aprobado' : 'aprobada';
 
-                if (Schema::hasTable('notificacion')) {
-                    DB::table('notificacion')->insert([
-                        'tipo' => 'IMPEDIMENTO_APROBADO',
-                        'titulo' => "Evaluación reasignada - {$tipoTxt} #{$id}",
-                        'mensaje' => "Se le ha asignado la evaluación de {$nombreEvaluado} ({$periodoTxt}) debido a {$articuloImp} {$tipoTxt} {$generoTxt}. Revise los compromisos y continúe el proceso.",
-                        'seccion' => 'impedimentos-admin',
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
-                }
+                notificarVinculacion(
+                    (int) $data['id_vinc_nuevo_evaluador'],
+                    'IMPEDIMENTO_APROBADO',
+                    "Evaluación reasignada - {$tipoTxt} #{$id}",
+                    "Se le ha asignado la evaluación de {$nombreEvaluado} ({$periodoTxt}) debido a {$articuloImp} {$tipoTxt} {$generoTxt}. Revise los compromisos y continúe el proceso.",
+                    'evaluaciones-evaluador'
+                );
+                notificarVinculacion(
+                    (int) $evaluacion->id_vinc_evaluado,
+                    'CAMBIO_EVALUADOR',
+                    'Cambio de evaluador',
+                    "Por {$articuloImp} {$tipoTxt} {$generoTxt}, tu evaluación del periodo {$periodoTxt} continúa con {$nombreNuevo}. Tus compromisos, evidencias y firmas se conservan.",
+                    'evaluaciones'
+                );
             }
         }
     });
@@ -1887,11 +2702,27 @@ Route::get('/evaluaciones/{id}/compromisos', function (int $id) {
         ->orderBy('numero_orden')
         ->get();
 
+    // S14 (plan 3.4): todos ven si el compromiso es copia; el origen (evaluación y
+    // funcionario reemplazado) solo lo ve Talento Humano.
+    $esTalentoHumano = $rolActivo === 'admin';
     foreach ($compromisos as $c) {
         $c->metas = DB::table('compromiso_meta')
             ->where('id_compromiso', $c->id_compromiso)
             ->pluck('meta')
             ->toArray();
+
+        $c->es_copia = (bool) ($c->es_copia ?? false);
+        $c->copia_ajustada = (bool) ($c->copia_ajustada ?? false);
+        if ($esTalentoHumano && ! empty($c->id_compromiso_origen)) {
+            $original = DB::table('compromiso')->where('id_compromiso', $c->id_compromiso_origen)->first(['id_evaluacion', 'numero_orden']);
+            $c->origen = $original ? [
+                'id_evaluacion' => (int) $original->id_evaluacion,
+                'numero_orden' => (int) $original->numero_orden,
+                'funcionario' => nombreFuncionarioVinc((int) DB::table('evaluacion')->where('id_evaluacion', $original->id_evaluacion)->value('id_vinc_evaluado')),
+            ] : null;
+        } else {
+            unset($c->id_compromiso_origen);
+        }
     }
 
     $evidencias = DB::table('evidencia')
@@ -1947,7 +2778,7 @@ Route::post('/evaluaciones/{id}/ejes', function (Request $request, int $id) {
     abort_unless($puedeEditar, 403);
 
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
-    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación pendiente.');
 
     $data = $request->validate([
         'investigacion' => ['required', 'boolean'],
@@ -1955,6 +2786,11 @@ Route::post('/evaluaciones/{id}/ejes', function (Request $request, int $id) {
     ]);
 
     guardarEvaluacionEjes((int) $id, (bool) $data['investigacion'], (bool) $data['proyeccion_social']);
+
+    registrarEventoEvaluacion($id, 'EJES_DEFINIDOS', [
+        'investigacion' => (bool) $data['investigacion'],
+        'proyeccion_social' => (bool) $data['proyeccion_social'],
+    ]);
 
     return response()->json(['success' => true]);
 });
@@ -1988,7 +2824,7 @@ Route::post('/evaluaciones/{id}/observaciones', function (Request $request, int 
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
-    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación pendiente.');
     abort_unless($evaluacion->concertacion_firmada, 403, 'La concertación debe estar firmada por ambas partes antes de registrar observaciones.');
     abort_if($evaluacion->estado === 'CALIFICADA' || (int) $evaluacion->fase_actual >= 5, 422, 'Ya se calculó la nota final; las observaciones de compromiso quedaron congeladas.');
 
@@ -2021,6 +2857,11 @@ Route::post('/evaluaciones/{id}/observaciones', function (Request $request, int 
         (bool) ($data['confirmar'] ?? false)
     );
 
+    registrarEventoEvaluacion($id, 'OBSERVACION_REGISTRADA', [
+        'id_compromiso' => (int) $data['id_compromiso'],
+        'confirmada' => (bool) ($data['confirmar'] ?? false),
+    ]);
+
     return response()->json(['success' => true, 'observacion' => $observacion]);
 });
 
@@ -2040,7 +2881,7 @@ Route::post('/evaluaciones/{id}/evidencias', function (Request $request, int $id
     abort_unless($vinculacionRegistra, 403);
 
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
-    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación pendiente.');
 
     if (!$evaluacion->concertacion_firmada) {
         return response()->json(['message' => 'Debes esperar a que el evaluador y el evaluado firmen la concertación antes de registrar evidencias.'], 422);
@@ -2076,7 +2917,7 @@ Route::post('/evaluaciones/{id}/evidencias', function (Request $request, int $id
         $idCompromiso = $compromiso->id_compromiso;
     }
 
-    DB::table('evidencia')->insert([
+    $idEvidencia = DB::table('evidencia')->insertGetId([
         'id_evaluacion' => $id,
         'id_compromiso' => $idCompromiso,
         'componente' => $componente,
@@ -2086,6 +2927,12 @@ Route::post('/evaluaciones/{id}/evidencias', function (Request $request, int $id
         'fecha_inclusion' => date('Y-m-d H:i:s'),
         'id_vinc_registra' => $vinculacionRegistra->id_vinculacion,
         'estado_aprobacion' => 'PENDIENTE',
+    ]);
+
+    registrarEventoEvaluacion($id, 'EVIDENCIA_CARGADA', [
+        'id_evidencia' => $idEvidencia,
+        'componente' => $componente,
+        'id_compromiso' => $idCompromiso,
     ]);
 
     return response()->json(['success' => true]);
@@ -2107,7 +2954,7 @@ Route::post('/evaluaciones/{id}/confirmar-evidencias', function (Request $reques
 
     abort_unless($vinculacionEvaluado, 403);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado.');
-    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación pendiente.');
 
     if (!$evaluacion->concertacion_firmada) {
         return response()->json(['message' => 'La concertación debe estar firmada antes de confirmar evidencias.'], 422);
@@ -2146,6 +2993,8 @@ Route::post('/evaluaciones/{id}/confirmar-evidencias', function (Request $reques
         'fase_actual' => 4,
     ]);
 
+    registrarEventoEvaluacion($id, 'EVIDENCIAS_CONFIRMADAS', ['fase' => ['antes' => 3, 'despues' => 4]]);
+
     return response()->json([
         'success' => true,
         'message' => 'Evidencias confirmadas. El evaluador ya puede iniciar la calificación.',
@@ -2167,7 +3016,7 @@ Route::post('/evaluaciones/{id}/evidencias/{idEvidencia}/aprobar', function (Req
     abort_unless($vinculacionEvaluador, 403);
 
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
-    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación pendiente.');
 
     abort_if($evaluacion->estado === 'CALIFICADA', 422, 'Esta evaluación ya fue calificada y calculada; las evidencias quedaron congeladas y no se pueden modificar.');
 
@@ -2200,6 +3049,12 @@ Route::post('/evaluaciones/{id}/evidencias/{idEvidencia}/aprobar', function (Req
         $nuevaFase = 3;
     }
 
+    registrarEventoEvaluacion($id, 'EVIDENCIA_REVISADA', array_filter([
+        'id_evidencia' => $idEvidencia,
+        'decision' => ['antes' => $evidencia->estado_aprobacion, 'despues' => $data['decision']],
+        'fase' => $nuevaFase ? ['antes' => 4, 'despues' => 3] : null,
+    ]));
+
     return response()->json([
         'success' => true,
         'message' => 'Evidencia ' . strtolower($data['decision']) . ' correctamente.',
@@ -2221,7 +3076,7 @@ Route::post('/evaluaciones/{id}/compromisos', function (Request $request, int $i
     abort_unless($puedeEditarCompromiso, 403);
 
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
-    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación pendiente.');
 
     if ($evaluacion->concertacion_firmada) {
         return response()->json(['error' => 'La concertación ya está firmada y congelada.'], 422);
@@ -2276,6 +3131,13 @@ Route::post('/evaluaciones/{id}/compromisos', function (Request $request, int $i
         ]);
     }
 
+    registrarEventoEvaluacion($id, 'COMPROMISO_CREADO', [
+        'id_compromiso' => $compromisoId,
+        'numero_orden' => $orden,
+        'porcentaje_peso' => (float) $data['porcentaje_peso'],
+        'metas' => count($data['metas']),
+    ]);
+
     return response()->json(['success' => true]);
 });
 
@@ -2295,7 +3157,7 @@ Route::delete('/compromisos/{id}', function (int $id) {
     abort_unless($puedeEditarCompromiso, 403);
 
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
-    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación pendiente.');
 
     if ($evaluacion->concertacion_firmada) {
         return response()->json(['error' => 'La concertación ya está firmada y congelada.'], 422);
@@ -2315,6 +3177,12 @@ Route::delete('/compromisos/{id}', function (int $id) {
             ->where('id_compromiso', $c->id_compromiso)
             ->update(['numero_orden' => $i++]);
     }
+
+    registrarEventoEvaluacion((int) $compromiso->id_evaluacion, 'COMPROMISO_ELIMINADO', [
+        'id_compromiso' => $id,
+        'numero_orden' => (int) $compromiso->numero_orden,
+        'porcentaje_peso' => (float) $compromiso->porcentaje_peso,
+    ]);
 
     return response()->json(['success' => true]);
 });
@@ -2338,7 +3206,7 @@ Route::put('/compromisos/{id}', function (Request $request, int $id) {
     abort_unless($puedeEditarCompromiso, 403);
 
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
-    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación pendiente.');
 
     if ($evaluacion->concertacion_firmada) {
         return response()->json(['error' => 'La concertación ya está firmada y congelada.'], 422);
@@ -2364,7 +3232,7 @@ Route::put('/compromisos/{id}', function (Request $request, int $id) {
     DB::table('compromiso')->where('id_compromiso', $id)->update([
         'descripcion' => $data['descripcion'],
         'porcentaje_peso' => $data['porcentaje_peso'],
-    ]);
+    ] + (! empty($compromiso->es_copia) ? ['copia_ajustada' => 1] : []));
 
     DB::table('compromiso_meta')->where('id_compromiso', $id)->delete();
     foreach ($data['metas'] as $meta) {
@@ -2373,6 +3241,14 @@ Route::put('/compromisos/{id}', function (Request $request, int $id) {
             'meta' => $meta,
         ]);
     }
+
+    registrarEventoEvaluacion((int) $compromiso->id_evaluacion, 'COMPROMISO_EDITADO', [
+        'es_copia' => ! empty($compromiso->es_copia),
+        'id_compromiso' => $id,
+        'porcentaje_peso' => ['antes' => (float) $compromiso->porcentaje_peso, 'despues' => (float) $data['porcentaje_peso']],
+        'descripcion_modificada' => trim((string) $compromiso->descripcion) !== trim($data['descripcion']),
+        'metas' => count($data['metas']),
+    ]);
 
     return response()->json(['success' => true]);
 });
@@ -2392,7 +3268,7 @@ Route::post('/evaluaciones/{id}/compromisos/solicitar-modificacion', function (R
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado.');
-    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación pendiente.');
     abort_if($evaluacion->estado === 'CALIFICADA', 422, 'La evaluación ya fue calificada; no se pueden modificar compromisos.');
     abort_if(!$evaluacion->concertacion_firmada, 422, 'La concertación aún no está firmada; use la edición directa de compromisos.');
 
@@ -2447,7 +3323,7 @@ Route::post('/evaluaciones/{id}/compromisos/solicitar-modificacion', function (R
 
     abort_if($pendiente, 422, 'Ya existe una solicitud de modificación pendiente para esta evaluación.');
 
-    DB::table('solicitud_modificacion_compromiso')->insert([
+    $idSolicitud = DB::table('solicitud_modificacion_compromiso')->insertGetId([
         'id_evaluacion' => $id,
         'id_vinc_solicitante' => $idVincSolicitante,
         'motivo' => $data['motivo'],
@@ -2482,6 +3358,12 @@ Route::post('/evaluaciones/{id}/compromisos/solicitar-modificacion', function (R
             'updated_at' => now(),
         ]);
     }
+
+    registrarEventoEvaluacion($id, 'MODIFICACION_SOLICITADA', [
+        'id_solicitud' => $idSolicitud,
+        'id_compromiso' => (int) $data['id_compromiso'],
+        'porcentaje_peso' => ['antes' => (float) $compromiso->porcentaje_peso, 'despues' => (float) $data['porcentaje_peso']],
+    ]);
 
     return response()->json(['success' => true, 'message' => 'Solicitud de modificación registrada.']);
 });
@@ -2559,7 +3441,7 @@ Route::post('/admin/compromisos/solicitudes/{id}/resolver', function (Request $r
             DB::table('compromiso')->where('id_compromiso', $detalle['id_compromiso'])->update([
                 'descripcion' => $detalle['descripcion'],
                 'porcentaje_peso' => $detalle['porcentaje_peso'],
-            ]);
+            ] + (! empty($compromisoActual->es_copia) ? ['copia_ajustada' => 1] : []));
 
             DB::table('compromiso_meta')->where('id_compromiso', $detalle['id_compromiso'])->delete();
             foreach ($detalle['metas'] as $meta) {
@@ -2591,6 +3473,17 @@ Route::post('/admin/compromisos/solicitudes/{id}/resolver', function (Request $r
                 'updated_at' => now(),
             ]);
         }
+
+        // El detalle de textos queda en bitacora_modificacion_compromiso; aquí, los valores clave.
+        $detalleSolicitud = json_decode($solicitud->detalle_cambio, true) ?: [];
+        registrarEventoEvaluacion((int) $solicitud->id_evaluacion, 'MODIFICACION_RESUELTA', array_filter([
+            'id_solicitud' => $id,
+            'decision' => $data['estado'],
+            'id_compromiso' => isset($detalleSolicitud['id_compromiso']) ? (int) $detalleSolicitud['id_compromiso'] : null,
+            'porcentaje_peso' => $data['estado'] === 'APROBADO' && isset($compromisoActual)
+                ? ['antes' => (float) $compromisoActual->porcentaje_peso, 'despues' => (float) $detalleSolicitud['porcentaje_peso']]
+                : null,
+        ], fn ($v) => $v !== null));
     });
 
     return response()->json(['success' => true, 'message' => 'Solicitud resuelta.']);
@@ -2602,7 +3495,7 @@ Route::post('/evaluaciones/{id}/firmar', function (Request $request, int $id) {
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
-    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación pendiente.');
 
     if ($evaluacion->concertacion_firmada) {
         return back()->withErrors(['firma' => 'Esta concertación ya se encuentra firmada.']);
@@ -2681,6 +3574,13 @@ Route::post('/evaluaciones/{id}/firmar', function (Request $request, int $id) {
                 ->update(['fase_actual' => 2]);
         }
     }
+
+    $faseNueva = (int) DB::table('evaluacion')->where('id_evaluacion', $id)->value('fase_actual');
+    registrarEventoEvaluacion($id, 'FIRMA_CONCERTACION', array_filter([
+        'tipo_firma' => $tipoFirma,
+        'concertacion_completa' => $firmasConcertacion === 2,
+        'fase' => $faseNueva !== (int) $evaluacion->fase_actual ? ['antes' => (int) $evaluacion->fase_actual, 'despues' => $faseNueva] : null,
+    ], fn ($v) => $v !== null));
 
     return back()->with('success_firma', 'Firma registrada con éxito.');
 })->name('evaluaciones.firmar');
@@ -2989,16 +3889,186 @@ if (!function_exists('calcularNotaEvaluacion')) {
 }
 }
 
+if (!function_exists('notaSemestrePorTramos')) {
+    /**
+     * S14 - Nota del semestre de un funcionario con traslados en dos pasos:
+     * promedio de la nota propia de cada tramo ponderado por sus días laborados.
+     * Retorna null si el semestre no tiene tramos de traslado. Mientras algún
+     * tramo siga sin nota o haya un traslado por confirmar, la nota es null.
+     */
+    function notaSemestrePorTramos(int $idVincEvaluado, int $anio, string $sistema, int $semestreNumero): ?array
+    {
+        static $soportado = null;
+        $soportado ??= Schema::hasColumn('traslado', 'id_evaluacion_origen');
+
+        if (! $soportado) {
+            return null;
+        }
+
+        $evaluaciones = DB::table('evaluacion as ev')
+            ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
+            ->where('p.anio', $anio)
+            ->where('p.sistema', $sistema)
+            ->where('p.semestre', $semestreNumero)
+            ->where('ev.id_vinc_evaluado', $idVincEvaluado)
+            ->whereIn('ev.tipo_evaluacion', ['SEMESTRE_' . $semestreNumero, 'PARCIAL'])
+            ->where('ev.es_traslado', 0)
+            ->orderBy('ev.id_evaluacion')
+            ->select('ev.id_evaluacion', 'ev.estado', 'ev.dias_laborados', 'p.fecha_inicio', 'p.fecha_fin')
+            ->get();
+
+        if ($evaluaciones->isEmpty()) {
+            return null;
+        }
+
+        $ids = $evaluaciones->pluck('id_evaluacion')->all();
+        $traslados = DB::table('traslado')
+            ->where('estado', '!=', 'CANCELADO')
+            ->where(fn ($q) => $q->whereIn('id_evaluacion_origen', $ids)->orWhereIn('id_evaluacion_destino', $ids))
+            ->pluck('estado');
+
+        if ($traslados->isEmpty()) {
+            return null;
+        }
+
+        $pendiente = $traslados->contains('PROGRAMADO')
+            || $evaluaciones->contains(fn ($ev) => ! evaluacionTieneNota($ev));
+
+        $sumaPonderada = 0.0;
+        $totalDias = 0;
+        $detalles = [];
+        foreach ($evaluaciones as $ev) {
+            $diasPeriodo = (new \DateTime($ev->fecha_inicio))->diff(new \DateTime($ev->fecha_fin))->days + 1;
+            $dias = (int) ($ev->dias_laborados ?: $diasPeriodo);
+            $nota = null;
+
+            if (evaluacionTieneNota($ev)) {
+                $nota = (float) (calcularNotaEvaluacion((int) $ev->id_evaluacion)['nota_final'] ?? 0);
+                $sumaPonderada += $nota * $dias;
+                $totalDias += $dias;
+            }
+
+            $detalles[] = [
+                'id_evaluacion' => $ev->id_evaluacion,
+                'dias_laborados' => $dias,
+                'nota_final' => $nota,
+            ];
+        }
+
+        return [
+            'tipo' => $pendiente ? 'TRAMOS_PENDIENTES' : 'TRAMOS_PONDERADOS',
+            'id_evaluacion' => $evaluaciones->last()->id_evaluacion,
+            'nota' => ! $pendiente && $totalDias > 0 ? redondearEscala($sumaPonderada / $totalDias) : null,
+            'dias_laborados' => $totalDias,
+            'parciales' => $detalles,
+        ];
+    }
+}
+
+if (!function_exists('tramosEvaluadoPorPeriodo')) {
+    /**
+     * S14 (regla 9) - Para cada periodo en que el funcionario cambió de
+     * evaluador por traslado o delegación larga: responsable, fechas, días,
+     * nota y motivo de cada tramo, y la nota ponderada del semestre cuando
+     * todos los tramos la tienen. Solo incluye periodos con tramos.
+     */
+    function tramosEvaluadoPorPeriodo(int $idFuncionario): array
+    {
+        if (! Schema::hasColumn('traslado', 'id_evaluacion_origen')) {
+            return [];
+        }
+
+        $evaluaciones = DB::table('evaluacion as ev')
+            ->join('vinculacion as ve', 've.id_vinculacion', '=', 'ev.id_vinc_evaluado')
+            ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
+            ->leftJoin('vinculacion as va', 'va.id_vinculacion', '=', 'ev.id_vinc_evaluador')
+            ->leftJoin('funcionario as fa', 'fa.id_funcionario', '=', 'va.id_funcionario')
+            ->where('ve.id_funcionario', $idFuncionario)
+            ->where('ev.es_traslado', 0)
+            ->orderBy('p.fecha_inicio')
+            ->orderBy('ev.id_evaluacion')
+            ->select(
+                'ev.id_evaluacion', 'ev.id_vinc_evaluado', 'ev.estado', 'ev.calificacion_final', 'ev.dias_laborados',
+                'p.id_periodo', 'p.anio', 'p.semestre', 'p.sistema', 'p.fecha_inicio', 'p.fecha_fin',
+                'fa.nombres as evaluador_nombres', 'fa.apellidos as evaluador_apellidos'
+            )
+            ->get();
+
+        $ids = $evaluaciones->pluck('id_evaluacion')->all();
+        $traslados = $ids ? DB::table('traslado')
+            ->where('estado', '!=', 'CANCELADO')
+            ->where(fn ($q) => $q->whereIn('id_evaluacion_origen', $ids)->orWhereIn('id_evaluacion_destino', $ids))
+            ->get(['id_evaluacion_origen', 'id_evaluacion_destino', 'fecha_traslado', 'estado', 'id_delegacion', 'tipo']) : collect();
+
+        if ($traslados->isEmpty()) {
+            return [];
+        }
+
+        $reasignadas = DB::table('impedimento_recusacion')
+            ->whereIn('id_evaluacion', $ids)
+            ->where('estado', 'APROBADO')
+            ->pluck('id_evaluacion')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $periodos = [];
+        foreach ($evaluaciones->groupBy('id_periodo') as $evs) {
+            $idsPeriodo = $evs->pluck('id_evaluacion')->map(fn ($id) => (int) $id)->all();
+            $enTramos = fn ($t) => in_array((int) $t->id_evaluacion_origen, $idsPeriodo, true) || in_array((int) $t->id_evaluacion_destino, $idsPeriodo, true);
+            if (! $traslados->contains($enTramos)) {
+                continue;
+            }
+
+            $p = $evs->first();
+            $tramos = [];
+            foreach ($evs as $ev) {
+                $entrada = $traslados->first(fn ($t) => (int) $t->id_evaluacion_destino === (int) $ev->id_evaluacion);
+                $salida = $traslados->first(fn ($t) => (int) $t->id_evaluacion_origen === (int) $ev->id_evaluacion);
+
+                $tramos[] = [
+                    'evaluador' => trim(($ev->evaluador_nombres ?? '') . ' ' . ($ev->evaluador_apellidos ?? '')),
+                    'desde' => $entrada ? $entrada->fecha_traslado : $p->fecha_inicio,
+                    'hasta' => $salida ? \Carbon\Carbon::parse($salida->fecha_traslado)->subDay()->toDateString() : $p->fecha_fin,
+                    'dias' => $ev->dias_laborados,
+                    'nota' => evaluacionTieneNota($ev) ? $ev->calificacion_final : null,
+                    'motivo' => match (true) {
+                        ! $entrada => 'Inicio del periodo',
+                        ($entrada->tipo ?? 'CAMBIO') === 'REANUDACION' => 'Regreso de ausencia',
+                        ! empty($entrada->id_delegacion) => 'Delegación',
+                        default => 'Traslado',
+                    },
+                    'cambio_programado' => $salida && $salida->estado === 'PROGRAMADO',
+                    'reasignada' => in_array((int) $ev->id_evaluacion, $reasignadas, true),
+                ];
+            }
+
+            $semestre = notaSemestrePorTramos((int) $p->id_vinc_evaluado, (int) $p->anio, (string) $p->sistema, (int) $p->semestre);
+            $periodos[] = [
+                'titulo' => "{$p->sistema} {$p->anio}-" . ((int) $p->semestre === 1 ? 'A' : 'B'),
+                'tramos' => $tramos,
+                'nota_semestre' => $semestre['nota'] ?? null,
+            ];
+        }
+
+        return $periodos;
+    }
+}
+
 if (!function_exists('obtenerNotaSemestreConsolidada')) {
     /**
      * S8 - P-03: Consolidación proporcional de evaluaciones parciales y semestrales.
      * Retorna la nota consolidada de un semestre para un evaluado (año, sistema, semestre).
-     * Dos o más evaluaciones parciales válidas (>= 90 días) se promedian para
-     * obtener la nota del semestre. Una única parcial se conserva como tramo
-     * informativo y no constituye una nota definitiva semestral.
+     * S14: sin mínimo de días. Con traslados en dos pasos se usa el promedio
+     * ponderado por tramos; con parciales abiertas por TH, el promedio de sus
+     * notas ponderado por días (una sola parcial ya es la nota del semestre).
      */
     function obtenerNotaSemestreConsolidada(int $idVincEvaluado, int $anio, string $sistema, int $semestreNumero): ?array
     {
+        $porTramos = notaSemestrePorTramos($idVincEvaluado, $anio, $sistema, $semestreNumero);
+        if ($porTramos !== null) {
+            return $porTramos;
+        }
+
         // 1. Buscar si hay una evaluación semestral ordinaria calificada (no anulada por traslado)
         $evalSem = DB::table('evaluacion as ev')
             ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
@@ -3011,7 +4081,10 @@ if (!function_exists('obtenerNotaSemestreConsolidada')) {
             ->where('ev.es_traslado', 0)
             ->first();
 
-        // 2. Buscar evaluaciones parciales válidas (días >= 90) calificadas en este semestre
+        // 2. Evaluaciones parciales calificadas en este semestre. Sin mínimo de
+        //    días: la nota del semestre es el promedio de la nota propia de cada
+        //    tramo (no su prorrateo) ponderado por sus días; con una sola
+        //    parcial, es su propia nota.
         $parciales = DB::table('evaluacion as ev')
             ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
             ->where('p.anio', $anio)
@@ -3020,49 +4093,34 @@ if (!function_exists('obtenerNotaSemestreConsolidada')) {
             ->where('ev.id_vinc_evaluado', $idVincEvaluado)
             ->where('ev.tipo_evaluacion', 'PARCIAL')
             ->where('ev.estado', 'CALIFICADA')
+            ->select('ev.id_evaluacion', 'p.fecha_inicio', 'p.fecha_fin')
             ->get();
 
         if ($parciales->isNotEmpty()) {
-            $sumaNotasParciales = 0.0;
+            $sumaPonderada = 0.0;
             $totalDias = 0;
             $detallesParciales = [];
             foreach ($parciales as $p) {
                 $calc = calcularNotaEvaluacion((int) $p->id_evaluacion);
-                $dias = (int) ($calc['dias_laborados'] ?? 0);
-                if ($dias >= 90) {
-                    // Para el promedio semestral se utiliza la nota propia del
-                    // tramo, no su prorrateo frente al período completo.
-                    $notaTramo = (float) ($calc['nota_final'] ?? 0);
-                    $sumaNotasParciales += $notaTramo;
-                    $totalDias += $dias;
-                    $detallesParciales[] = [
-                        'id_evaluacion' => $p->id_evaluacion,
-                        'dias_laborados' => $dias,
-                        'nota_final' => $calc['nota_final'] ?? 0,
-                        'nota_prorrateada' => $calc['nota_prorrateo'] ?? null,
-                    ];
-                }
-            }
-
-            if (count($detallesParciales) >= 2) {
-                return [
-                    'tipo' => 'PARCIALES_PROMEDIADAS',
-                    'id_evaluacion' => $parciales->first()->id_evaluacion,
-                    'nota' => redondearEscala($sumaNotasParciales / count($detallesParciales)),
-                    'dias_laborados' => $totalDias,
-                    'parciales' => $detallesParciales,
+                $dias = (int) ($calc['dias_laborados'] ?: (new \DateTime($p->fecha_inicio))->diff(new \DateTime($p->fecha_fin))->days + 1);
+                $notaTramo = (float) ($calc['nota_final'] ?? 0);
+                $sumaPonderada += $notaTramo * $dias;
+                $totalDias += $dias;
+                $detallesParciales[] = [
+                    'id_evaluacion' => $p->id_evaluacion,
+                    'dias_laborados' => $dias,
+                    'nota_final' => $notaTramo,
+                    'nota_prorrateada' => $calc['nota_prorrateo'] ?? null,
                 ];
             }
 
-            if (count($detallesParciales) === 1) {
-                return [
-                    'tipo' => 'PARCIAL_NO_CONSOLIDADA',
-                    'id_evaluacion' => $detallesParciales[0]['id_evaluacion'],
-                    'nota' => null,
-                    'dias_laborados' => $totalDias,
-                    'parciales' => $detallesParciales,
-                ];
-            }
+            return [
+                'tipo' => 'PARCIALES_PONDERADAS',
+                'id_evaluacion' => $parciales->first()->id_evaluacion,
+                'nota' => $totalDias > 0 ? redondearEscala($sumaPonderada / $totalDias) : null,
+                'dias_laborados' => $totalDias,
+                'parciales' => $detallesParciales,
+            ];
         }
 
         if ($evalSem) {
@@ -3167,6 +4225,78 @@ if (!function_exists('puedeDescargarInforme')) {
 }
 
 
+if (!function_exists('puedeVerBitacora')) {
+    /**
+     * S14 - Quién consulta la bitácora de una evaluación: Talento Humano, el
+     * evaluado, el evaluador actual y los evaluadores que la tuvieron a cargo
+     * (el titular durante una delegación o quien actuó sobre ella).
+     */
+    function puedeVerBitacora(object $evaluacion): bool
+    {
+        $auth = session('usuario_autenticado');
+        if (! $auth) {
+            return false;
+        }
+        if (($auth['rol_activo'] ?? null) === 'admin' || puedeDescargarInforme((int) $evaluacion->id_evaluacion)) {
+            return true;
+        }
+
+        $esTitularDelegado = ! empty($evaluacion->id_vinc_suplente) && DB::table('vinculacion')
+            ->where('id_vinculacion', $evaluacion->id_vinc_suplente)
+            ->where('id_funcionario', $auth['id_funcionario'] ?? 0)
+            ->exists();
+
+        return $esTitularDelegado || DB::table('evaluacion_evento')
+            ->where('id_evaluacion', $evaluacion->id_evaluacion)
+            ->where('id_usuario_actor', $auth['id_usuario'] ?? 0)
+            ->exists();
+    }
+}
+
+// --- GET: Bitácora de una evaluación (S14, regla 11) ---
+Route::get('/evaluaciones/{id}/bitacora', function (int $id) {
+    abort_unless(session()->has('usuario_autenticado'), 403);
+
+    $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
+    abort_unless($evaluacion, 404);
+    abort_unless(Schema::hasTable('evaluacion_evento') && puedeVerBitacora($evaluacion), 403);
+
+    $eventos = DB::table('evaluacion_evento as e')
+        ->leftJoin('funcionario as f', 'f.id_usuario', '=', 'e.id_usuario_actor')
+        ->leftJoin('usuario as u', 'u.id_usuario', '=', 'e.id_usuario_actor')
+        ->where('e.id_evaluacion', $id)
+        ->orderBy('e.created_at')
+        ->orderBy('e.id_evento')
+        ->get([
+            'e.id_evento', 'e.tipo_evento', 'e.rol_actor', 'e.estado_anterior', 'e.estado_nuevo', 'e.datos', 'e.created_at',
+            DB::raw("TRIM(CONCAT(COALESCE(f.nombres, ''), ' ', COALESCE(f.apellidos, ''))) as actor_nombre"),
+            'u.username as actor_usuario',
+        ])
+        ->map(function ($e) {
+            $e->datos = $e->datos ? json_decode($e->datos, true) : null;
+
+            // El origen de compromisos copiados (evaluación y funcionario
+            // reemplazado) solo lo ve Talento Humano.
+            if (is_array($e->datos) && session('usuario_autenticado.rol_activo') !== 'admin') {
+                unset($e->datos['id_evaluacion_origen'], $e->datos['id_vinc_funcionario_origen']);
+            }
+
+            return $e;
+        });
+
+    // Nombres de las vinculaciones que aparecen en los datos (evaluadores, receptores).
+    $idsVinc = $eventos->flatMap(fn ($e) => collect($e->datos ?? [])
+        ->filter(fn ($v, $k) => str_starts_with((string) $k, 'id_vinc_') && is_numeric($v))
+        ->values())
+        ->map(fn ($v) => (int) $v)
+        ->unique();
+
+    return response()->json([
+        'eventos' => $eventos,
+        'vinculaciones' => $idsVinc->mapWithKeys(fn ($idVinc) => [$idVinc => nombreFuncionarioVinc($idVinc)]),
+    ]);
+})->name('evaluaciones.bitacora');
+
 // --- GET: Vista previa del cálculo de nota (sin guardar) ---
 Route::get('/evaluaciones/{id}/calculo', function (int $id) {
     abort_unless(session()->has('usuario_autenticado'), 403);
@@ -3215,7 +4345,7 @@ Route::post('/evaluaciones/{id}/calificar-compromisos', function (Request $reque
         ->exists();
     abort_unless($puedeEditar, 403);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
-    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación pendiente.');
 
     $data = $request->validate([
         'compromisos' => ['required', 'array'],
@@ -3225,6 +4355,7 @@ Route::post('/evaluaciones/{id}/calificar-compromisos', function (Request $reque
         'compromisos.*.calificacion_definitiva'=> ['nullable', 'numeric', 'min:1', 'max:5', 'decimal:0,1'],
     ]);
 
+    $cambiosNota = [];
     foreach ($data['compromisos'] as $item) {
         $comp = DB::table('compromiso')
             ->where('id_compromiso', $item['id_compromiso'])
@@ -3248,7 +4379,17 @@ Route::post('/evaluaciones/{id}/calificar-compromisos', function (Request $reque
             DB::table('compromiso')
                 ->where('id_compromiso', $item['id_compromiso'])
                 ->update($update);
+
+            foreach ($update as $campo => $valor) {
+                if ((string) $comp->{$campo} !== (string) $valor) {
+                    $cambiosNota[] = ['id_compromiso' => (int) $comp->id_compromiso, 'campo' => $campo, 'antes' => $comp->{$campo}, 'despues' => $valor];
+                }
+            }
         }
+    }
+
+    if (!empty($cambiosNota)) {
+        registrarEventoEvaluacion($id, 'CALIFICACION_COMPROMISOS', ['cambios' => $cambiosNota]);
     }
 
     return response()->json(['success' => true, 'message' => 'Calificaciones de compromisos guardadas.']);
@@ -3278,7 +4419,7 @@ Route::post('/evaluaciones/{id}/calificar-competencias', function (Request $requ
         ->exists();
     abort_unless($puedeEditar, 403);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
-    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación pendiente.');
 
     $data = $request->validate([
         'competencias'   => ['required', 'array'],
@@ -3288,6 +4429,7 @@ Route::post('/evaluaciones/{id}/calificar-competencias', function (Request $requ
         'competencias.*.calificacion_sem2'      => ['nullable', 'numeric', 'min:1', 'max:5', 'decimal:0,1'],
     ]);
 
+    $cambiosNota = [];
     foreach ($data['competencias'] as $item) {
         $existing = DB::table('competencia_evaluada')
             ->where('id_evaluacion', $id)
@@ -3315,6 +4457,17 @@ Route::post('/evaluaciones/{id}/calificar-competencias', function (Request $requ
                 'id_competencia'     => $item['id_competencia'],
             ]));
         }
+
+        foreach ($fields as $campo => $valor) {
+            $anterior = $existing->{$campo} ?? null;
+            if ((string) $anterior !== (string) $valor) {
+                $cambiosNota[] = ['id_competencia' => (int) $item['id_competencia'], 'campo' => $campo, 'antes' => $anterior, 'despues' => $valor];
+            }
+        }
+    }
+
+    if (!empty($cambiosNota)) {
+        registrarEventoEvaluacion($id, 'CALIFICACION_COMPETENCIAS', ['cambios' => $cambiosNota]);
     }
 
     return response()->json(['success' => true, 'message' => 'Competencias guardadas.']);
@@ -3329,7 +4482,7 @@ Route::post('/evaluaciones/{id}/calcular-final', function (Request $request, int
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
-    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación pendiente.');
 
     // Solo admin puede forzar el cálculo; evaluador solo puede calificar sus propias
     if ($rolActivo === 'evaluador') {
@@ -3379,6 +4532,14 @@ Route::post('/evaluaciones/{id}/calcular-final', function (Request $request, int
         'estado'              => 'CALIFICADA',
         'fase_actual'         => 5,
     ]);
+
+    registrarEventoEvaluacion($id, 'EVALUACION_CALIFICADA', [
+        'nota_final' => $calculo['nota_final'],
+        'nota_definitiva' => $calculo['nota_definitiva'],
+        'categoria' => $calculo['categoria'],
+        'dias_laborados' => $calculo['dias_laborados'],
+        'fase' => ['antes' => (int) $evaluacion->fase_actual, 'despues' => 5],
+    ], $evaluacion->estado, 'CALIFICADA');
 
     return response()->json([
         'success' => true,
@@ -3503,7 +4664,7 @@ Route::post('/evaluaciones/{id}/calificar-ejes', function (Request $request, int
         ->exists();
     abort_unless($puedeEditar, 403);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
-    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación pendiente.');
 
     // Verificar que el evaluado tiene aplica_eje_misional = 1
     $vinculacionEvaluado = DB::table('vinculacion')
@@ -3518,7 +4679,12 @@ Route::post('/evaluaciones/{id}/calificar-ejes', function (Request $request, int
         'ejes.*.observacion' => ['nullable', 'string', 'max:500'],
     ]);
 
+    $ejesAntes = DB::table('eje_misional_calificacion')->where('id_evaluacion', $id)->pluck('calificacion', 'eje');
+    $cambiosNota = [];
     foreach ($data['ejes'] as $eje) {
+        if ((string) ($ejesAntes[$eje['tipo_eje']] ?? '') !== (string) $eje['calificacion']) {
+            $cambiosNota[] = ['eje' => $eje['tipo_eje'], 'antes' => $ejesAntes[$eje['tipo_eje']] ?? null, 'despues' => $eje['calificacion']];
+        }
         DB::table('eje_misional_calificacion')->updateOrInsert(
             ['id_evaluacion' => $id, 'eje' => $eje['tipo_eje']],
             [
@@ -3529,6 +4695,10 @@ Route::post('/evaluaciones/{id}/calificar-ejes', function (Request $request, int
                 'origen' => 'EVALUADOR',
             ]
         );
+    }
+
+    if ($cambiosNota) {
+        registrarEventoEvaluacion($id, 'CALIFICACION_EJES', ['cambios' => $cambiosNota]);
     }
 
     return response()->json(['success' => true, 'message' => 'Ejes misionales calificados correctamente.']);
@@ -3687,7 +4857,7 @@ function evaluacionBloqueadaPorImpedimento($id_evaluacion) {
     if (!\Illuminate\Support\Facades\Schema::hasTable('impedimento_recusacion')) return false;
     return \Illuminate\Support\Facades\DB::table('impedimento_recusacion')
         ->where('id_evaluacion', $id_evaluacion)
-        ->whereIn('estado', ['PENDIENTE', 'APROBADO'])
+        ->where('estado', 'PENDIENTE')
         ->exists();
 }
 
@@ -3756,43 +4926,26 @@ if (!function_exists('evaluadoTienePlanMejoramientoPendiente')) {
 }
 
 /**
- * S6 — Vinculación de Talento Humano (receptor de las apelaciones).
- * Se busca la vinculación activa de un usuario ADMINISTRADOR; si no existe,
- * se usa la vinculación del evaluador como receptor de respaldo.
+ * Receptor de una apelación: el superior jerárquico activo del evaluador del
+ * tramo (vinculacion.id_vinc_jefe). Si no tiene, o ya no está activo (se
+ * retiró, o el evaluador representa al Rector), la decide Talento Humano:
+ * retorna null. Nunca recae en el mismo evaluador.
  */
 if (!function_exists('resolverVinculacionReceptorApelacion')) {
-    function resolverVinculacionReceptorApelacion(int $idEvaluacion): int {
+    function resolverVinculacionReceptorApelacion(int $idEvaluacion): ?int {
         $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $idEvaluacion)->first();
-
-        // 1) Superior jerárquico del evaluador (vinculacion.id_vinc_jefe).
-        if ($evaluacion) {
-            $jefeEvaluador = DB::table('vinculacion')
-                ->where('id_vinculacion', $evaluacion->id_vinc_evaluador)
-                ->value('id_vinc_jefe');
-
-            if (!empty($jefeEvaluador)) {
-                return (int) $jefeEvaluador;
-            }
+        if (! $evaluacion) {
+            return null;
         }
 
-        // 2) Fallback: Talento Humano (rol ADMINISTRADOR).
-        $vinculacionTH = DB::table('usuario as u')
-            ->join('funcionario as f', 'f.id_usuario', '=', 'u.id_usuario')
-            ->join('vinculacion as v', function ($join) {
-                $join->on('v.id_funcionario', '=', 'f.id_funcionario')
-                    ->where('v.activa', '=', 1);
-            })
-            ->where('u.rol', 'ADMINISTRADOR')
-            ->select('v.id_vinculacion')
-            ->orderBy('v.id_vinculacion')
-            ->first();
+        $jefeEvaluador = DB::table('vinculacion as ve')
+            ->join('vinculacion as vj', 'vj.id_vinculacion', '=', 've.id_vinc_jefe')
+            ->where('ve.id_vinculacion', $evaluacion->id_vinc_evaluador)
+            ->where('vj.activa', 1)
+            ->where('vj.id_vinculacion', '!=', $evaluacion->id_vinc_evaluador)
+            ->value('vj.id_vinculacion');
 
-        if ($vinculacionTH) {
-            return (int) $vinculacionTH->id_vinculacion;
-        }
-
-        // 3) Último respaldo: el propio evaluador.
-        return (int) ($evaluacion->id_vinc_evaluador ?? 0);
+        return $jefeEvaluador ? (int) $jefeEvaluador : null;
     }
 }
 
@@ -3853,7 +5006,7 @@ Route::post('/evaluaciones/{id}/firmar-notificacion', function (int $id) {
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
-    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación pendiente.');
     abort_unless($evaluacion->estado === 'CALIFICADA', 422, 'La notificación de la calificación se firma cuando la evaluación ya fue calificada.');
 
     $auth = session('usuario_autenticado');
@@ -3864,6 +5017,8 @@ Route::post('/evaluaciones/{id}/firmar-notificacion', function (int $id) {
 
     abort_unless($esEvaluado, 403);
 
+    $yaFirmada = DB::table('firma')->where('id_evaluacion', $id)->where('tipo_firma', 'NOTIFICACION_EVALUADO')->exists();
+
     DB::table('firma')->updateOrInsert(
         ['id_evaluacion' => $id, 'tipo_firma' => 'NOTIFICACION_EVALUADO'],
         [
@@ -3871,6 +5026,8 @@ Route::post('/evaluaciones/{id}/firmar-notificacion', function (int $id) {
             'fecha_firma' => date('Y-m-d H:i:s'),
         ]
     );
+
+    registrarEventoEvaluacion($id, 'NOTIFICACION_FIRMADA', ['nueva_firma' => ! $yaFirmada]);
 
     return response()->json([
         'success' => true,
@@ -3891,7 +5048,7 @@ Route::post('/evaluaciones/{id}/documento-notificacion', function (Request $requ
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
-    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación pendiente.');
     abort_unless($evaluacion->estado === 'CALIFICADA', 422, 'El enlace del documento firmado se registra cuando la evaluación ya fue calificada.');
 
     $auth = session('usuario_autenticado');
@@ -3927,6 +5084,8 @@ Route::post('/evaluaciones/{id}/documento-notificacion', function (Request $requ
             ->where('id_evaluacion', $id)
             ->where('tipo_documento', $tipoDocumento)
             ->delete();
+
+        registrarEventoEvaluacion($id, 'DOCUMENTO_NOTIFICACION', ['tipo_documento' => $tipoDocumento, 'accion' => 'QUITADO']);
 
         return response()->json([
             'success' => true,
@@ -3975,6 +5134,8 @@ Route::post('/evaluaciones/{id}/documento-notificacion', function (Request $requ
 
     $doc = getDocumentoNotificacion($id, $tipoDocumento);
 
+    registrarEventoEvaluacion($id, 'DOCUMENTO_NOTIFICACION', ['tipo_documento' => $tipoDocumento, 'accion' => $existe ? 'ACTUALIZADO' : 'REGISTRADO']);
+
     return response()->json([
         'success' => true,
         'message' => $tipoDocumento === 'ANUAL'
@@ -3998,7 +5159,7 @@ Route::post('/evaluaciones/{id}/recursos', function (Request $request, int $id) 
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
-    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación pendiente.');
     abort_unless($evaluacion->estado === 'CALIFICADA', 422, 'Solo puedes radicar un recurso cuando la evaluación haya sido calificada y calculada.');
     // La firma de la notificación es previa y obligatoria: es la constancia de
     // que el funcionario supo su nota antes de interponer el recurso.
@@ -4068,6 +5229,15 @@ Route::post('/evaluaciones/{id}/recursos', function (Request $request, int $id) 
         ]);
     }
 
+    registrarEventoEvaluacion($id, 'RECURSO_RADICADO', [
+        'id_recurso' => $idRecurso,
+        'tipo_recurso' => $data['tipo_recurso'],
+        'numero_radicado' => sprintf('%s-%s-%04d', $prefijo, date('Y'), $idRecurso),
+        'id_vinc_receptor' => $idReceptor ? (int) $idReceptor : null,
+        'receptor_talento_humano' => $idReceptor === null,
+        'evidencias' => count($evidencias),
+    ]);
+
     return response()->json([
         'success' => true,
         'message' => 'Recurso radicado correctamente (radicado ' . sprintf('%s-%s-%04d', $prefijo, date('Y'), $idRecurso) . ').',
@@ -4087,7 +5257,7 @@ Route::post('/recursos/{id}/decision', function (Request $request, int $id) {
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $recurso->id_evaluacion)->first();
     abort_unless($evaluacion, 404);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
-    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación pendiente.');
 
     $auth = session('usuario_autenticado');
     $rolActivo = $auth['rol_activo'] ?? null;
@@ -4114,6 +5284,8 @@ Route::post('/recursos/{id}/decision', function (Request $request, int $id) {
         . 'DECISIÓN (' . ($data['decision'] === 'APROBADO' ? 'Favorable' : 'Desfavorable')
         . ', ' . date('Y-m-d') . '): ' . $motivacionDecision;
 
+    $estadoAntesRecurso = DB::table('evaluacion')->where('id_evaluacion', $recurso->id_evaluacion)->value('estado');
+
     DB::table('recurso')->where('id_recurso', $id)->update([
         'decision' => $data['decision'],
         'motivacion' => $motivacionFinal,
@@ -4132,6 +5304,14 @@ Route::post('/recursos/{id}/decision', function (Request $request, int $id) {
             ->where('id_evaluacion', $recurso->id_evaluacion)
             ->update($updatePayload);
     }
+
+    $evaluacionRecurso = DB::table('evaluacion')->where('id_evaluacion', $recurso->id_evaluacion)->first();
+    registrarEventoEvaluacion((int) $recurso->id_evaluacion, 'RECURSO_DECIDIDO', array_filter([
+        'id_recurso' => $id,
+        'tipo_recurso' => $recurso->tipo_recurso,
+        'decision' => $data['decision'],
+        'id_vinc_evaluador_nuevo' => ! empty($data['id_vinc_nuevo_evaluador']) && $data['decision'] === 'APROBADO' ? (int) $data['id_vinc_nuevo_evaluador'] : null,
+    ], fn ($v) => $v !== null), $estadoAntesRecurso, $evaluacionRecurso->estado);
 
     $mensaje = $data['decision'] === 'APROBADO'
         ? 'Decisión favorable registrada correctamente. La evaluación ha sido reabierta para su modificación y nuevo cálculo.'
@@ -4307,7 +5487,7 @@ Route::post('/evaluaciones/{id}/plan-mejoramiento', function (Request $request, 
     $evaluacion = getEvaluacionConSistema($id);
     abort_unless($evaluacion, 404);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
-    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación pendiente.');
     abort_unless(evaluacionRequierePlanMejoramiento($evaluacion), 422, 'Esta evaluación no requiere plan de mejoramiento según la calificación obtenida.');
     abort_unless($evaluacion->concertacion_firmada, 422, 'El evaluado debe firmar la concertación antes de habilitar el plan de mejoramiento.');
     abort_unless($evaluacion->estado === 'CALIFICADA', 422, 'El plan de mejoramiento se habilita cuando la evaluación haya sido calificada.');
@@ -4343,6 +5523,8 @@ Route::post('/evaluaciones/{id}/plan-mejoramiento', function (Request $request, 
         ]);
     }
 
+    registrarEventoEvaluacion($id, 'PLAN_MEJORAMIENTO_GUARDADO', ['id_plan' => (int) $idPlan, 'accion' => $plan ? 'EDITADO' : 'CREADO']);
+
     return response()->json([
         'success' => true,
         'message' => 'Plan de mejoramiento guardado correctamente.',
@@ -4362,7 +5544,7 @@ Route::post('/plan-mejoramiento/{id}/firmar', function (Request $request, int $i
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $plan->id_evaluacion)->first();
     abort_unless($evaluacion, 404);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
-    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación (pendiente o aprobado).');
+    abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación pendiente.');
     abort_unless($evaluacion->concertacion_firmada, 422, 'El evaluado debe firmar la concertación antes de firmar el plan de mejoramiento.');
     abort_unless($evaluacion->estado === 'CALIFICADA', 422, 'El plan de mejoramiento se habilita cuando la evaluación haya sido calificada.');
     abort_unless(notificacionCalificacionFirmada((int) $evaluacion->id_evaluacion), 422, mensajeNotificacionPendiente());
@@ -4412,6 +5594,12 @@ Route::post('/plan-mejoramiento/{id}/firmar', function (Request $request, int $i
         DB::table('plan_mejoramiento')->where('id_plan', $id)->update(['estado' => 'CONCERTADO']);
         $planActualizado = DB::table('plan_mejoramiento')->where('id_plan', $id)->first();
     }
+
+    registrarEventoEvaluacion((int) $plan->id_evaluacion, 'PLAN_MEJORAMIENTO_FIRMADO', [
+        'id_plan' => $id,
+        'firmante' => $rolActivo,
+        'estado_plan' => ['antes' => $plan->estado, 'despues' => $planActualizado->estado],
+    ]);
 
     return response()->json([
         'success' => true,
@@ -4759,12 +5947,12 @@ Route::get('/evaluaciones/{id}/informe-anual', function (int $id) {
 Route::get('/admin/notificaciones', function () {
     abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
 
-    $notificaciones = DB::table('notificacion')
+    $notificaciones = notificacionesTalentoHumano()
         ->orderByDesc('created_at')
         ->limit(50)
         ->get();
 
-    $noLeidas = DB::table('notificacion')->where('leida', false)->count();
+    $noLeidas = notificacionesTalentoHumano()->where('leida', false)->count();
 
     return response()->json([
         'notificaciones' => $notificaciones,
@@ -4775,10 +5963,36 @@ Route::get('/admin/notificaciones', function () {
 Route::post('/admin/notificaciones/marcar-leidas', function () {
     abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
 
-    DB::table('notificacion')->where('leida', false)->update(['leida' => true]);
+    notificacionesTalentoHumano()->where('leida', false)->update(['leida' => true]);
 
     return response()->json(['ok' => true]);
 })->name('admin.notificaciones.marcar leidas');
+
+// --- NOTIFICACIONES PERSONALES (S14: evaluado y evaluador) ---
+Route::get('/mis-notificaciones', function () {
+    $idUsuario = session('usuario_autenticado.id_usuario');
+    abort_unless($idUsuario, 403);
+
+    if (! Schema::hasColumn('notificacion', 'id_usuario_destino')) {
+        return response()->json(['notificaciones' => [], 'no_leidas' => 0]);
+    }
+
+    return response()->json([
+        'notificaciones' => DB::table('notificacion')->where('id_usuario_destino', $idUsuario)->orderByDesc('created_at')->limit(50)->get(),
+        'no_leidas' => DB::table('notificacion')->where('id_usuario_destino', $idUsuario)->where('leida', false)->count(),
+    ]);
+})->name('notificaciones.personales');
+
+Route::post('/mis-notificaciones/marcar-leidas', function () {
+    $idUsuario = session('usuario_autenticado.id_usuario');
+    abort_unless($idUsuario, 403);
+
+    if (Schema::hasColumn('notificacion', 'id_usuario_destino')) {
+        DB::table('notificacion')->where('id_usuario_destino', $idUsuario)->where('leida', false)->update(['leida' => true]);
+    }
+
+    return response()->json(['ok' => true]);
+})->name('notificaciones.personales.marcar-leidas');
 
 // ============================================================================
 // CONFIGURACIÓN DEL SISTEMA / ENCUESTA DE CAPACITACIÓN

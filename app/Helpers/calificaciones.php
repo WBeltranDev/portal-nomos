@@ -127,6 +127,28 @@ if (!function_exists('escalaCalificacionCatalogo')) {
     }
 }
 
+if (!function_exists('evaluacionEsTramoTraslado')) {
+    /**
+     * S14 - Indica si la evaluación es un tramo (origen o destino) de un traslado
+     * en dos pasos. Los tramos se califican con su nota propia: sus días solo
+     * ponderan el promedio del semestre, no prorratean la nota del tramo.
+     */
+    function evaluacionEsTramoTraslado(int $idEvaluacion): bool
+    {
+        static $soportado = null;
+        $soportado ??= Schema::hasColumn('traslado', 'id_evaluacion_origen');
+
+        if (! $soportado) {
+            return false;
+        }
+
+        return DB::table('traslado')
+            ->where('estado', '!=', 'CANCELADO')
+            ->where(fn ($q) => $q->where('id_evaluacion_origen', $idEvaluacion)->orWhere('id_evaluacion_destino', $idEvaluacion))
+            ->exists();
+    }
+}
+
 if (!function_exists('calcularNotaEvaluacion')) {
     function calcularNotaEvaluacion(int $idEvaluacion): array {
 
@@ -273,9 +295,11 @@ if (!function_exists('calcularNotaEvaluacion')) {
     // -------------------------------------------------------
     // 5. PRORRATEO RF3 — evaluaciones eventuales/parciales
     // -------------------------------------------------------
+    // Los tramos de un traslado se califican con su nota propia: sus días solo
+    // ponderan el promedio del semestre (notaSemestrePorTramos).
     $notaProrrateo   = null;
     $factorProrrateo = null;
-    if ($evaluacion->dias_laborados && (int)$evaluacion->dias_laborados > 0) {
+    if ($evaluacion->dias_laborados && (int)$evaluacion->dias_laborados > 0 && ! evaluacionEsTramoTraslado($idEvaluacion)) {
         $fechaInicio = new \DateTime($evaluacion->fecha_inicio);
         $fechaFin    = new \DateTime($evaluacion->fecha_fin);
         $diasPeriodo = $fechaInicio->diff($fechaFin)->days + 1;
