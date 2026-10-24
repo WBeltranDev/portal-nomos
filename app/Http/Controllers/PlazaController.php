@@ -2,6 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\ModeloPuestos;
+use App\Services\OcupacionPuestos;
+use App\Services\ResolutorResponsable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -58,8 +61,19 @@ class PlazaController extends Controller
                 DB::raw("TRIM(CONCAT(COALESCE(f.nombres, ''), ' ', COALESCE(f.apellidos, ''))) as ocupante"),
             ]);
 
+        $modelo = app(ModeloPuestos::class);
+
         return response()->json([
             'plazas' => $plazas,
+            'modelo' => [
+                'modo' => $modelo->modo(),
+                'requisitos' => [
+                    ModeloPuestos::OBSERVACION => $modelo->requisitosPendientes(ModeloPuestos::OBSERVACION),
+                    ModeloPuestos::ACTIVO => $modelo->requisitosPendientes(ModeloPuestos::ACTIVO),
+                ],
+                'historial' => $modelo->historial(),
+                'diferencias' => $this->diferenciasPendientes(),
+            ],
             'resumen' => [
                 'total' => $plazas->count(),
                 'borrador' => $plazas->where('estado', 'BORRADOR')->count(),
@@ -205,6 +219,96 @@ class PlazaController extends Controller
         abort_unless($actualizada, 404, 'La plaza no existe o ya fue validada.');
 
         return response()->json(['success' => true, 'message' => 'Plaza validada.']);
+    }
+
+    /**
+     * Para el formulario de traslado: plaza que ocupa hoy la persona y plazas
+     * vacantes, primero las de la nueva dependencia y el nuevo cargo.
+     */
+    public function vacantes(Request $request)
+    {
+        $this->soloAdmin();
+
+        $ocupaciones = app(OcupacionPuestos::class);
+        $actual = $request->integer('id_vinc') ? $ocupaciones->plazaVigente($request->integer('id_vinc')) : null;
+
+        $normalizar = fn ($nombre) => mb_strtoupper(\Illuminate\Support\Str::ascii(trim((string) $nombre)));
+        $buscar = fn ($tabla, $id, $nombre) => $nombre === null ? null : DB::table($tabla)->get([$id, 'nombre'])
+            ->first(fn ($fila) => $normalizar($fila->nombre) === $normalizar($nombre))?->{$id};
+
+        return response()->json([
+            'plaza_actual' => $actual?->codigo_plaza,
+            'vacantes' => $ocupaciones->vacantes(
+                $buscar('dependencia', 'id_dependencia', $request->query('area')) ?? $actual?->id_dependencia,
+                $buscar('cargo', 'id_cargo', $request->query('cargo')) ?? $actual?->id_cargo,
+            ),
+        ]);
+    }
+
+    /** Diferencias de la observación aún sin revisar, con nombres para TH. */
+    private function diferenciasPendientes(): array
+    {
+        $nombre = fn ($alias) => DB::raw("TRIM(CONCAT(COALESCE({$alias}.nombres, ''), ' ', COALESCE({$alias}.apellidos, ''))) as {$alias}_nombre");
+
+        return DB::table('puesto_discrepancia as d')
+            ->join('evaluacion as ev', 'ev.id_evaluacion', '=', 'd.id_evaluacion')
+            ->join('vinculacion as ve', 've.id_vinculacion', '=', 'ev.id_vinc_evaluado')
+            ->join('funcionario as fe', 'fe.id_funcionario', '=', 've.id_funcionario')
+            ->leftJoin('vinculacion as vl', 'vl.id_vinculacion', '=', 'd.id_vinc_responsable_legado')
+            ->leftJoin('funcionario as fl', 'fl.id_funcionario', '=', 'vl.id_funcionario')
+            ->leftJoin('vinculacion as vp', 'vp.id_vinculacion', '=', 'd.id_vinc_responsable_puesto')
+            ->leftJoin('funcionario as fp', 'fp.id_funcionario', '=', 'vp.id_funcionario')
+            ->where('d.resuelta', 0)
+            ->orderBy('d.id_discrepancia')
+            ->limit(100)
+            ->get(['d.id_discrepancia', 'd.id_evaluacion', 'd.motivo', 'd.created_at', $nombre('fe'), $nombre('fl'), $nombre('fp')])
+            ->all();
+    }
+
+    /** Ejecuta ahora la comparación del modo Observación. */
+    public function observar()
+    {
+        $this->soloAdmin();
+
+        if (! app(ModeloPuestos::class)->observando()) {
+            return response()->json(['message' => 'Pon el modelo de puestos en modo Observación para comparar.'], 422);
+        }
+
+        $r = app(ResolutorResponsable::class)->observar();
+
+        return response()->json(['success' => true, 'resultado' => $r,
+            'message' => "Comparación hecha sobre {$r['evaluaciones']} evaluación(es) abierta(s): {$r['diferencias_pendientes']} diferencia(s) pendiente(s), {$r['diferencias_nuevas']} nueva(s)."]);
+    }
+
+    /** TH revisa una diferencia y la acepta; la corrección se hace en el módulo que corresponda. */
+    public function revisarDiferencia(int $id)
+    {
+        $this->soloAdmin();
+
+        $actualizada = DB::table('puesto_discrepancia')->where('id_discrepancia', $id)->where('resuelta', 0)->update([
+            'resuelta' => 1,
+            'resuelta_por' => session('usuario_autenticado.id_usuario'),
+            'resuelta_at' => now(),
+            'updated_at' => now(),
+        ]);
+        abort_unless($actualizada, 404, 'La diferencia no existe o ya fue revisada.');
+
+        return response()->json(['success' => true, 'message' => 'Diferencia marcada como revisada.']);
+    }
+
+    /** Cambia el modo del modelo de puestos (apagado, observación o activo). */
+    public function cambiarModo(Request $request)
+    {
+        $this->soloAdmin();
+
+        $data = $request->validate(['modo' => ['required', 'in:' . implode(',', ModeloPuestos::MODOS)]]);
+
+        $error = app(ModeloPuestos::class)->cambiar($data['modo'], session('usuario_autenticado.id_usuario'));
+        if ($error) {
+            return response()->json(['message' => $error], 422);
+        }
+
+        return response()->json(['success' => true, 'message' => 'Modelo de puestos en modo ' . $data['modo'] . '.']);
     }
 
     /** Corrige el código o el superior de una plaza antes o después de validarla. */

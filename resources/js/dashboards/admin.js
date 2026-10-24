@@ -278,6 +278,47 @@ export function mostrarEvaluadorActualTraslado() {
         });
 }
 
+// S14 (fase F): si el funcionario ocupa una plaza, TH elige la plaza destino
+// (vacante) del traslado; primero se listan las de la nueva dependencia y cargo.
+export function cargarPlazasDestinoTraslado() {
+    const box = document.getElementById('plaza-destino-traslado-box');
+    const select = document.getElementById('plaza-destino-traslado');
+    const ayuda = document.getElementById('plaza-destino-traslado-ayuda');
+    const idVinc = document.getElementById('select-funcionario-traslado')?.value;
+    if (!box || !select) return;
+    if (!idVinc) {
+        box.classList.add('hidden');
+        select.innerHTML = '';
+        return;
+    }
+
+    const params = new URLSearchParams({ id_vinc: idVinc });
+    const area = document.getElementById('area-nuevo-traslado')?.value;
+    const cargo = document.getElementById('cargo-nuevo-traslado')?.value;
+    if (area) params.set('area', area);
+    if (cargo) params.set('cargo', cargo);
+
+    fetchJson(`/admin/plazas/vacantes?${params}`)
+        .then(res => res.json())
+        .then(data => {
+            // Sin plaza actual (catálogo aún no cargado) no se pide destino.
+            box.classList.toggle('hidden', !data.plaza_actual);
+            if (!data.plaza_actual) {
+                select.innerHTML = '';
+                return;
+            }
+            const vacantes = data.vacantes || [];
+            select.innerHTML = '<option value="">Selecciona la plaza destino (vacantes)</option>' + vacantes.map(p =>
+                `<option value="${p.id_puesto}">${escapeHtml(`${p.codigo_plaza} — ${p.cargo} · ${p.dependencia}${p.estado === 'BORRADOR' ? ' (borrador)' : ''}`)}</option>`).join('');
+            if (ayuda) {
+                ayuda.textContent = vacantes.length
+                    ? `Hoy ocupa la plaza ${data.plaza_actual}; quedará vacante al confirmar el traslado. Obligatorio si cambia la dependencia o el cargo.`
+                    : `Hoy ocupa la plaza ${data.plaza_actual}. No hay plazas vacantes: crea o libera una en el Catálogo de plazas.`;
+            }
+        })
+        .catch(() => box.classList.add('hidden'));
+}
+
 export function badgeDecisionRecurso(decision) {
     if (decision === 'PENDIENTE') return '<span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-amber-50 text-amber-700">Pendiente</span>';
     if (decision === 'APROBADO') return '<span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-emerald-50 text-emerald-700">Aprobado</span>';
@@ -1154,9 +1195,74 @@ export function cargarPlazasAdmin() {
                     + chip(`${r.validadas ?? 0} validadas`, 'bg-emerald-50 text-emerald-700')
                     + (r.vinculaciones_sin_plaza ? chip(`${r.vinculaciones_sin_plaza} vinculación(es) sin plaza`, 'bg-rose-50 text-rose-700') : '');
             }
+            renderModeloPuestos(data.modelo || {});
             renderPlazasAdmin();
         })
         .catch(() => { lista.innerHTML = '<div class="py-10 text-center text-xs text-red-500">No se pudo cargar el catálogo de plazas.</div>'; });
+}
+
+const NOMBRE_MODO = { APAGADO: 'Apagado', OBSERVACION: 'Observación', ACTIVO: 'Activo' };
+
+function renderModeloPuestos(modelo) {
+    const modo = modelo.modo || 'APAGADO';
+    const badge = document.getElementById('modelo-puestos-modo');
+    if (badge) {
+        badge.textContent = NOMBRE_MODO[modo] || modo;
+        badge.className = `whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-bold uppercase ${modo === 'ACTIVO' ? 'bg-emerald-50 text-emerald-700' : modo === 'OBSERVACION' ? 'bg-sky-50 text-sky-700' : 'bg-slate-100 text-slate-700'}`;
+    }
+    const selector = document.getElementById('modelo-puestos-selector');
+    if (selector) selector.value = modo;
+
+    // Qué falta para cada modo: TH ve por qué no puede activarlo todavía.
+    const requisitos = document.getElementById('modelo-puestos-requisitos');
+    if (requisitos) {
+        requisitos.innerHTML = ['OBSERVACION', 'ACTIVO'].map(m => {
+            const faltan = modelo.requisitos?.[m] || [];
+            return `<div class="rounded-xl border ${faltan.length ? 'border-amber-100 bg-amber-50/60 text-amber-800' : 'border-emerald-100 bg-emerald-50/60 text-emerald-800'} p-2.5">
+                <p class="font-bold">${NOMBRE_MODO[m]}: ${faltan.length ? 'falta' : 'disponible'}</p>
+                ${faltan.map(f => `<p>• ${escapeHtml(f)}</p>`).join('')}
+            </div>`;
+        }).join('');
+    }
+
+    // Responsable actual vs. responsable por plaza: TH revisa cada diferencia.
+    const diferencias = document.getElementById('modelo-puestos-diferencias');
+    if (diferencias) {
+        const items = modelo.diferencias || [];
+        diferencias.innerHTML = items.length
+            ? items.map(d => `
+                <div class="flex flex-col gap-2 rounded-xl border border-amber-100 bg-amber-50/50 p-2.5 sm:flex-row sm:items-center sm:justify-between">
+                    <div class="min-w-0">
+                        <p class="font-bold text-slate-800 break-words">Evaluación #${d.id_evaluacion} · ${escapeHtml(d.fe_nombre || '')}</p>
+                        <p class="text-slate-600">Hoy la evalúa <b>${escapeHtml(d.fl_nombre || '—')}</b>; por plaza correspondería a <b>${escapeHtml(d.fp_nombre || 'nadie')}</b>. ${escapeHtml(d.motivo || '')}</p>
+                    </div>
+                    <button type="button" onclick="revisarDiferenciaPuestos(${d.id_discrepancia})" class="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50 transition">Marcar revisada</button>
+                </div>`).join('')
+            : '<p class="text-slate-500">Sin diferencias pendientes.</p>';
+    }
+
+    const historial = document.getElementById('modelo-puestos-historial');
+    if (historial) {
+        const cambios = modelo.historial || [];
+        historial.innerHTML = cambios.length
+            ? '<p class="font-bold text-slate-600 mb-1">Últimos cambios</p>' + cambios.map(c =>
+                `<p>${escapeHtml(new Date(c.created_at).toLocaleString('es-CO'))} · ${escapeHtml(NOMBRE_MODO[c.modo_anterior] || c.modo_anterior)} → ${escapeHtml(NOMBRE_MODO[c.modo_nuevo] || c.modo_nuevo)} · ${escapeHtml(c.username || 'Sistema')}</p>`).join('')
+            : 'Sin cambios de modo registrados.';
+    }
+}
+
+export function compararModeloPuestos() {
+    accionPlazas('/admin/plazas/observar', null);
+}
+
+export function revisarDiferenciaPuestos(id) {
+    accionPlazas(`/admin/plazas/diferencias/${id}/revisar`, '¿Marcar esta diferencia como revisada? La corrección (reasignar o ajustar el catálogo) se hace en el módulo que corresponda.');
+}
+
+export function cambiarModoPuestos() {
+    const modo = document.getElementById('modelo-puestos-selector')?.value;
+    if (!modo) return;
+    accionPlazas('/admin/plazas/modo', `¿Cambiar el modelo de puestos a ${NOMBRE_MODO[modo] || modo}?`, { modo });
 }
 
 export function renderPlazasAdmin() {
@@ -1279,6 +1385,9 @@ window.validarPlazasMasivo = validarPlazasMasivo;
 window.validarPlaza = validarPlaza;
 window.editarPlaza = editarPlaza;
 window.guardarPlaza = guardarPlaza;
+window.cambiarModoPuestos = cambiarModoPuestos;
+window.compararModeloPuestos = compararModeloPuestos;
+window.revisarDiferenciaPuestos = revisarDiferenciaPuestos;
 
 // Global window exposure
 window.filtrarEmpleados = filtrarEmpleados;
@@ -1293,6 +1402,7 @@ window.contarAsignados = contarAsignados;
 window.filtrarCheckboxAsignacion = filtrarCheckboxAsignacion;
 window.autoMarcarSubalternos = autoMarcarSubalternos;
 window.mostrarEvaluadorActualTraslado = mostrarEvaluadorActualTraslado;
+window.cargarPlazasDestinoTraslado = cargarPlazasDestinoTraslado;
 window.decidirRecursoAdmin = decidirRecursoAdmin;
 window.abrirEditarPeriodo = abrirEditarPeriodo;
 window.cerrarEditarPeriodo = cerrarEditarPeriodo;

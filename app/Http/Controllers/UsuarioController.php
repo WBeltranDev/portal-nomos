@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Funcionario;
 use App\Models\Cargo;
 use App\Models\Dependencia;
+use App\Services\OcupacionPuestos;
 
 class UsuarioController extends Controller
 {
@@ -156,6 +157,12 @@ class UsuarioController extends Controller
 
             DB::table('vinculacion')->where('id_funcionario', $id)->update(['activa' => 0]);
 
+            // S14 (plan 3.1): sus plazas quedan vacantes.
+            $ocupaciones = app(OcupacionPuestos::class);
+            foreach (DB::table('vinculacion')->where('id_funcionario', $id)->pluck('id_vinculacion') as $idVinculacion) {
+                $ocupaciones->cerrar((int) $idVinculacion, now()->toDateString(), 'Funcionario inhabilitado');
+            }
+
             DB::commit();
             return back()->with('success', 'Empleado inhabilitado correctamente. Ya no aparecerá en los listados activos.');
         } catch (\Exception $e) {
@@ -176,10 +183,21 @@ class UsuarioController extends Controller
 
         $nuevoEstadoVacante = $request->boolean('es_vacante', true);
 
-        DB::table('vinculacion')->where('id_vinculacion', $id)->update([
-            'es_vacante' => $nuevoEstadoVacante ? 1 : 0,
-            'activa' => $nuevoEstadoVacante ? 0 : 1,
-        ]);
+        DB::transaction(function () use ($id, $nuevoEstadoVacante) {
+            DB::table('vinculacion')->where('id_vinculacion', $id)->update([
+                'es_vacante' => $nuevoEstadoVacante ? 1 : 0,
+                'activa' => $nuevoEstadoVacante ? 0 : 1,
+            ]);
+
+            // S14 (plan 3.1): la plaza queda vacante; al cerrar la vacante, la
+            // vinculación vuelve a su plaza si nadie la ocupó entretanto.
+            $ocupaciones = app(OcupacionPuestos::class);
+            if ($nuevoEstadoVacante) {
+                $ocupaciones->cerrar((int) $id, now()->toDateString(), 'Cargo marcado como vacante');
+            } else {
+                $ocupaciones->reactivar((int) $id, 'Vacante cerrada');
+            }
+        });
 
         $msg = $nuevoEstadoVacante 
             ? 'El cargo ha sido marcado como VACANTE y notificado al Administrador para su futura reasignación.'

@@ -756,8 +756,12 @@ Route::post('/admin/dependencias/{id}/toggle', [UsuarioController::class, 'toggl
 
 // --- Catálogo de plazas (S14, modelo de puestos fases A-B) ---
 Route::get('/admin/plazas', [PlazaController::class, 'index'])->name('admin.plazas.index');
+Route::get('/admin/plazas/vacantes', [PlazaController::class, 'vacantes'])->name('admin.plazas.vacantes');
 Route::post('/admin/plazas/generar', [PlazaController::class, 'generar'])->name('admin.plazas.generar');
 Route::post('/admin/plazas/validar-masivo', [PlazaController::class, 'validarMasivo'])->name('admin.plazas.validar-masivo');
+Route::post('/admin/plazas/modo', [PlazaController::class, 'cambiarModo'])->name('admin.plazas.modo');
+Route::post('/admin/plazas/observar', [PlazaController::class, 'observar'])->name('admin.plazas.observar');
+Route::post('/admin/plazas/diferencias/{id}/revisar', [PlazaController::class, 'revisarDiferencia'])->whereNumber('id')->name('admin.plazas.diferencias.revisar');
 Route::post('/admin/plazas/{id}/validar', [PlazaController::class, 'validar'])->whereNumber('id')->name('admin.plazas.validar');
 Route::post('/admin/plazas/{id}', [PlazaController::class, 'actualizar'])->whereNumber('id')->name('admin.plazas.actualizar');
 
@@ -1489,6 +1493,18 @@ if (!function_exists('confirmarTraslado')) {
      */
     function confirmarTraslado(int $idTraslado): ?string
     {
+        try {
+            return confirmarTrasladoEnTransaccion($idTraslado);
+        } catch (\RuntimeException $e) {
+            return $e->getMessage();
+        }
+    }
+}
+
+if (!function_exists('confirmarTrasladoEnTransaccion')) {
+    /** Cuerpo de confirmarTraslado: todo o nada; una excepción revierte el traslado completo. */
+    function confirmarTrasladoEnTransaccion(int $idTraslado): ?string
+    {
         return DB::transaction(function () use ($idTraslado) {
             $traslado = DB::table('traslado')->where('id_traslado', $idTraslado)->lockForUpdate()->first();
 
@@ -1531,6 +1547,13 @@ if (!function_exists('confirmarTraslado')) {
                 if ($duplicada) {
                     return 'El funcionario ya tiene una evaluación parcial con el evaluador de destino en este periodo.';
                 }
+            }
+
+            // S14 (fase F): la plaza destino debe seguir vacante al confirmar.
+            $ocupaciones = app(\App\Services\OcupacionPuestos::class);
+            $idPuestoDestino = ! empty($traslado->id_puesto_destino) ? (int) $traslado->id_puesto_destino : null;
+            if ($idPuestoDestino && ($ocupante = $ocupaciones->ocupante($idPuestoDestino)) && $ocupante !== (int) $traslado->id_vinc_funcionario) {
+                return 'La plaza destino ya la ocupa otra persona: cancela el traslado y prográmalo con otra plaza.';
             }
 
             // La evaluación de origen creada después de programar se vincula ahora.
@@ -1619,6 +1642,15 @@ if (!function_exists('confirmarTraslado')) {
                 }
                 if ($vinculacionUpdate) {
                     DB::table('vinculacion')->where('id_vinculacion', $traslado->id_vinc_funcionario)->update($vinculacionUpdate);
+                }
+
+                // Deja la plaza de origen vacante y ocupa la de destino.
+                if ($idPuestoDestino) {
+                    $ultimoDiaOrigen = \Carbon\Carbon::parse($traslado->fecha_traslado)->subDay()->toDateString();
+                    $ocupaciones->cerrar((int) $traslado->id_vinc_funcionario, $ultimoDiaOrigen, "Traslado #{$idTraslado}");
+                    if ($error = $ocupaciones->ocupar($idPuestoDestino, (int) $traslado->id_vinc_funcionario, $traslado->fecha_traslado, "Traslado #{$idTraslado}")) {
+                        throw new \RuntimeException($error);
+                    }
                 }
             }
 
@@ -1762,6 +1794,25 @@ if (!function_exists('programarTraslado')) {
             return ['error' => "{$nombre} ya tiene un traslado o cambio de evaluador programado. Confírmalo o cancélalo antes de registrar otro."];
         }
 
+        // S14 (fase F): si la persona ya tiene plaza y el traslado cambia su
+        // dependencia o cargo, TH elige una plaza destino vacante.
+        $ocupaciones = app(\App\Services\OcupacionPuestos::class);
+        $plazaOrigen = $ocupaciones->plazaVigente((int) $data['id_vinc_funcionario']);
+        $idPuestoDestino = ! empty($data['id_puesto_destino']) ? (int) $data['id_puesto_destino'] : null;
+        $cambiaDePuesto = $tipo === 'CAMBIO' && (! empty($data['area_nuevo']) || ! empty($data['cargo_nuevo']));
+
+        if ($plazaOrigen && $cambiaDePuesto && ! $idPuestoDestino) {
+            return ['error' => "{$nombre} ocupa la plaza {$plazaOrigen->codigo_plaza}: elige la plaza destino del traslado."];
+        }
+        if ($idPuestoDestino) {
+            if ($plazaOrigen && (int) $plazaOrigen->id_puesto === $idPuestoDestino) {
+                return ['error' => 'La plaza destino es la misma que ocupa hoy.'];
+            }
+            if ($ocupaciones->ocupante($idPuestoDestino)) {
+                return ['error' => 'La plaza destino ya tiene un ocupante vigente: elige una plaza vacante.'];
+            }
+        }
+
         // El periodo de aplicación se determina por la fecha del traslado: se prioriza
         // el periodo ABIERTO del sistema del funcionario cuyo rango contiene la fecha
         // (ahí es donde trabajó). Si la fecha no cae en ningún periodo abierto, se
@@ -1836,7 +1887,7 @@ if (!function_exists('programarTraslado')) {
 
         $vincularOrigen = $evaluacionOrigen && $diasTramo > 0;
 
-        $idTraslado = DB::transaction(function () use ($data, $evaluado, $periodo, $diasTramo, $evaluacionOrigen, $vincularOrigen, $evaluadorOrigenId, $idDelegacion, $tipo) {
+        $idTraslado = DB::transaction(function () use ($data, $evaluado, $periodo, $diasTramo, $evaluacionOrigen, $vincularOrigen, $evaluadorOrigenId, $idDelegacion, $tipo, $plazaOrigen, $idPuestoDestino) {
             if ($vincularOrigen) {
                 // Los días del tramo ponderan su nota en el promedio del semestre.
                 DB::table('evaluacion')
@@ -1856,6 +1907,8 @@ if (!function_exists('programarTraslado')) {
                 'tipo' => $tipo,
                 'id_periodo' => $periodo->id_periodo ?? null,
                 'id_delegacion' => $idDelegacion,
+                'id_puesto_origen' => $plazaOrigen->id_puesto ?? null,
+                'id_puesto_destino' => $idPuestoDestino,
                 'id_vinc_evaluador_origen' => $evaluadorOrigenId,
                 'id_vinc_evaluador_nuevo' => (int) $data['id_vinc_evaluador_nuevo'],
                 'id_vinc_reemplazado' => $data['id_vinc_reemplazado'] ?? null,
@@ -1912,6 +1965,7 @@ Route::post('/admin/traslados', function (Request $request) {
         'resolucion' => ['nullable', 'string', 'max:200'],
         'motivo' => ['nullable', 'string', 'max:500'],
         'referencia' => ['nullable', 'string', 'max:200'],
+        'id_puesto_destino' => ['nullable', 'integer', 'exists:puesto,id_puesto'],
     ], [
         'fecha_traslado.after_or_equal' => 'La fecha del traslado no puede ser anterior a la fecha actual. Solo se puede declarar el día que se realiza o comienza.',
     ]);
@@ -3586,309 +3640,6 @@ Route::post('/evaluaciones/{id}/firmar', function (Request $request, int $id) {
 })->name('evaluaciones.firmar');
 
 
-/**
- * Calcula la nota final de una evaluación según los documentos oficiales de Unitrópico.
- *
- * Las ponderaciones provienen de la configuración parametrizada
- * (tabla `ponderacion` o defaultPonderacionesConfig()):
- *
- * RENDIMIENTO_LABORAL (RL):
- *   - Compromisos:              80 %  (suma ponderada en escala 1.0-5.0)
- *   - Competencias comunes:     10 %  (promedio en escala 1.0-5.0)
- *   - Competencias nivel jer:   10 %  (promedio en escala 1.0-5.0)
- *   Total:                     100 %
- *
- * ACUERDO_GESTION (AG) sin ejes misionales:
- *   - Compromisos:              80 %
- *   - Competencias comunes:     10 %
- *   - Competencias nivel jer:   10 %
- *   Total:                     100 %
- *
- * ACUERDO_GESTION (AG) con ejes misionales (solo líderes de programa/departamento/escuela):
- *   Docencia siempre aplica; investigación y proyección social según el caso.
- *   Cada eje activo toma su peso (por defecto 10%) de compromisos.
- *   - Con 1 eje activo:   compromisos=70%, ejes=10%, comun=10%, nivel=10%   → 100%
- *   - Con 2 ejes activos: compromisos=60%, ejes=20%, comun=10%, nivel=10%   → 100%
- *   - Con 3 ejes activos: compromisos=50%, ejes=30%, comun=10%, nivel=10%   → 100%
- *
- * Escala institucional (1.0-5.0, un decimal). Las mismas cuatro bandas se usan
- * para calificar cada nota y para determinar la categoría final:
- *    1.0 a 3.4: No satisfactorio
- *    3.5 a 4.0: Susceptible a plan de mejora (Aceptable)
- *    4.1 a 4.5: Bueno (Alto)
- *    4.6 a 5.0: Sobresaliente (Muy alto)
- *
- * Categorías finales (mismas bandas de la escala):
- *   ≥ 4.6:          SOBRESALIENTE
- *   4.1 a 4.5:      BUENO
- *   3.5 a 4.0:      APROBADO_MEJORA  (Susceptible a plan de mejora)
- *   1.0 a 3.4:      NO_SATISFACTORIO
- *
- * Plan de mejoramiento (1er semestre):
- *   RL: aplica si calificación ∈ [1.0, 4.0]  (No satisfactorio o susceptible a plan)
- *   AG: aplica si calificación ∈ [1.0, 4.0]  (No satisfactorio o susceptible a plan)
- *
- * Prorrateo RF3:
- *   nota_final_prorrateo = nota_final × (dias_laborados / dias_totales_periodo)
- *   Solo aplica si dias_laborados < dias_totales_periodo (evaluaciones eventuales/parciales).
- *
- * Fuente: requerimientos tl (2).pdf | Pesos y ejes misionales (1).pdf | Formatos AG y RL XLSX
- */
-if (!function_exists('calcularNotaEvaluacion')) {
-    function calcularNotaEvaluacion(int $idEvaluacion): array {
-
-    $evaluacion = DB::table('evaluacion as ev')
-        ->join('vinculacion as ve', 've.id_vinculacion', '=', 'ev.id_vinc_evaluado')
-        ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
-        ->where('ev.id_evaluacion', $idEvaluacion)
-        ->select('ev.*', 'p.sistema', 'p.fecha_inicio', 'p.fecha_fin', 've.aplica_eje_misional', 've.nivel_jerarquico')
-        ->first();
-
-    if (!$evaluacion) {
-        return ['error' => 'Evaluación no encontrada.'];
-    }
-
-    $sistema = strtoupper(trim((string) $evaluacion->sistema));
-
-    // -------------------------------------------------------
-    // PESOS SEGÚN SISTEMA Y EJES ACTIVOS (ponderación parametrizada)
-    //   RL:                compromisos=80%, comunes=10%, nivel=10%
-    //   AG sin ejes:       compromisos=80%, comunes=10%, nivel=10%
-    //   AG con ejes:       compromisos=50-70%, ejes=10-30%, comunes=10%, nivel=10%
-    // -------------------------------------------------------
-    $ponderaciones = getPonderacionesConfig();
-    $configSistema = $ponderaciones[$sistema] ?? $ponderaciones['RENDIMIENTO_LABORAL'];
-
-    $pesoCompromisos = (float) ($configSistema['peso_compromisos'] ?? 80.0);
-    $pesoCompComun   = (float) ($configSistema['peso_competencias'] ?? 20.0) / 2;
-    $pesoCompNivel   = (float) ($configSistema['peso_competencias'] ?? 20.0) / 2;
-
-    // -------------------------------------------------------
-    // EJES MISIONALES ACTIVOS (solo AG con aplica_eje_misional)
-    // -------------------------------------------------------
-    $ejesActivos   = [];
-    $notasPorEje   = [];
-    $ejeCals       = [];
-
-    if ($sistema === 'ACUERDO_GESTION' && $evaluacion->aplica_eje_misional) {
-        // Leer qué ejes están habilitados desde la tabla evaluacion_eje (investigacion / proyeccion_social)
-        $ejesConfig = getEvaluacionEjes($idEvaluacion);
-
-        // Docencia SIEMPRE activa si aplica_eje_misional = 1
-        $pesoEjes = [
-            'DOCENCIA' => (float) ($configSistema['peso_docencia'] ?? 10.0),
-        ];
-        if (!empty($ejesConfig['investigacion'])) {
-            $pesoEjes['INVESTIGACION'] = (float) ($configSistema['peso_investigacion'] ?? 10.0);
-        }
-        if (!empty($ejesConfig['proyeccion_social'])) {
-            $pesoEjes['PROYECCION_SOCIAL'] = (float) ($configSistema['peso_proyeccion_social'] ?? 10.0);
-        }
-
-        $ejesActivos = array_keys($pesoEjes);
-
-        // Obtener calificaciones de cada eje desde la tabla eje_misional_calificacion
-        $ejeCals = DB::table('eje_misional_calificacion')
-            ->where('id_evaluacion', $idEvaluacion)
-            ->whereNotNull('calificacion')
-            ->pluck('calificacion', 'eje')
-            ->toArray();
-
-        foreach ($ejesActivos as $tipoEje) {
-            // Sin nota cargada se usa el mínimo de la escala (1.0), no 0.0:
-            // un 0.0 ya no es un valor válido y hundiría la nota final por
-            // debajo del mínimo institucional.
-            $notasPorEje[$tipoEje] = isset($ejeCals[$tipoEje]) ? (float)$ejeCals[$tipoEje] : 1.0;
-        }
-
-        // Los ejes que NO aplican devuelven su peso a compromisos
-        $pesoCompromisos += (float) ($configSistema['peso_docencia'] ?? 0.0)
-            + (float) ($configSistema['peso_investigacion'] ?? 0.0)
-            + (float) ($configSistema['peso_proyeccion_social'] ?? 0.0)
-            - array_sum($pesoEjes);
-    } elseif ($sistema === 'ACUERDO_GESTION' && !$evaluacion->aplica_eje_misional) {
-        // El funcionario no tiene eje misional: docencia, investigación y
-        // proyección social no aplican, todo su peso vuelve a compromisos.
-        $pesoCompromisos += (float) ($configSistema['peso_docencia'] ?? 0.0)
-            + (float) ($configSistema['peso_investigacion'] ?? 0.0)
-            + (float) ($configSistema['peso_proyeccion_social'] ?? 0.0);
-        $pesoEjes = [];
-    } else {
-        // RL: sin ejes misionales
-        $pesoEjes = [];
-    }
-
-    // -------------------------------------------------------
-    // 1. NOTA COMPROMISOS — suma ponderada (1.0 a 5.0 cada uno)
-    // -------------------------------------------------------
-    $compromisos = DB::table('compromiso')
-        ->where('id_evaluacion', $idEvaluacion)
-        ->whereNotNull('calificacion_definitiva')
-        ->get(['porcentaje_peso', 'calificacion_definitiva']);
-
-    $totalPesoCompromisos = DB::table('compromiso')
-        ->where('id_evaluacion', $idEvaluacion)
-        ->sum('porcentaje_peso');
-
-    $notaCompromisos = 0.0;
-    if ($totalPesoCompromisos > 0 && $compromisos->isNotEmpty()) {
-        foreach ($compromisos as $c) {
-            $notaCompromisos += ((float)$c->calificacion_definitiva * (float)$c->porcentaje_peso);
-        }
-        $notaCompromisos = $notaCompromisos / (float)$totalPesoCompromisos;
-    }
-
-    // -------------------------------------------------------
-    // 2. NOTA COMPETENCIAS COMUNES (promedio escala 1.0 a 5.0)
-    // -------------------------------------------------------
-    $compComun = DB::table('competencia_evaluada as ce')
-        ->join('competencia_catalogo as cc', 'cc.id_competencia', '=', 'ce.id_competencia')
-        ->where('ce.id_evaluacion', $idEvaluacion)
-        ->where('cc.tipo', 'COMUN')
-        ->whereNotNull('ce.calificacion_definitiva')
-        ->avg('ce.calificacion_definitiva');
-    $notaCompComun = is_null($compComun) ? 1.0 : (float)$compComun;
-
-    // -------------------------------------------------------
-    // 3. NOTA COMPETENCIAS NIVEL JERÁRQUICO (promedio 1.0 a 5.0)
-    // -------------------------------------------------------
-    $compNivel = DB::table('competencia_evaluada as ce')
-        ->join('competencia_catalogo as cc', 'cc.id_competencia', '=', 'ce.id_competencia')
-        ->where('ce.id_evaluacion', $idEvaluacion)
-        ->where('cc.tipo', 'NIVEL_JERARQUICO')
-        ->whereNotNull('ce.calificacion_definitiva')
-        ->avg('ce.calificacion_definitiva');
-    $notaCompNivel = is_null($compNivel) ? 1.0 : (float)$compNivel;
-
-    // -------------------------------------------------------
-    // 4. NOTA FINAL (antes de prorrateo)
-    // -------------------------------------------------------
-    $subtotalCompromisos = $notaCompromisos * ($pesoCompromisos / 100.0);
-    $subtotalComun       = $notaCompComun   * ($pesoCompComun   / 100.0);
-    $subtotalNivel       = $notaCompNivel   * ($pesoCompNivel   / 100.0);
-
-    $subtotalesEjes = [];
-    $subtotalEjesTotal = 0.0;
-    foreach ($pesoEjes as $tipoEje => $pesoEje) {
-        $subtotalEje = ($notasPorEje[$tipoEje] ?? 1.0) * ($pesoEje / 100.0);
-        $subtotalesEjes[$tipoEje] = redondearEscala($subtotalEje);
-        $subtotalEjesTotal += $subtotalEje;
-    }
-
-    $notaFinal = redondearEscala($subtotalCompromisos + $subtotalComun + $subtotalNivel + $subtotalEjesTotal);
-
-    // -------------------------------------------------------
-    // 5. PRORRATEO RF3 — evaluaciones eventuales/parciales
-    // -------------------------------------------------------
-    $notaProrrateo   = null;
-    $factorProrrateo = null;
-    if ($evaluacion->dias_laborados && (int)$evaluacion->dias_laborados > 0) {
-        $fechaInicio = new \DateTime($evaluacion->fecha_inicio);
-        $fechaFin    = new \DateTime($evaluacion->fecha_fin);
-        $diasPeriodo = $fechaInicio->diff($fechaFin)->days + 1;
-        if ($diasPeriodo > 0 && (int)$evaluacion->dias_laborados < $diasPeriodo) {
-            $factorProrrateo = (int)$evaluacion->dias_laborados / $diasPeriodo;
-            $notaProrrateo   = redondearEscala($notaFinal * $factorProrrateo);
-        }
-    }
-
-    // -------------------------------------------------------
-    // 6. CATEGORÍA FINAL
-    // -------------------------------------------------------
-    $notaParaCategoria = $notaProrrateo ?? $notaFinal;
-    $categoria = nivelEscalaCalificacion($notaParaCategoria);
-
-    // -------------------------------------------------------
-    // 7. PLAN DE MEJORAMIENTO (1er semestre)
-    // -------------------------------------------------------
-    $requierePlanMejoramiento = false;
-    $tipoEval = $evaluacion->tipo_evaluacion ?? $evaluacion->tipo ?? 'SEMESTRE_1';
-    if ($tipoEval === 'SEMESTRE_1') {
-        if (in_array($sistema, ['RENDIMIENTO_LABORAL', 'ACUERDO_GESTION']) && in_array($categoria, ['NO_SATISFACTORIO', 'APROBADO_MEJORA'])) {
-            $requierePlanMejoramiento = true;
-        }
-    }
-
-    // -------------------------------------------------------
-    // 8. PENDIENTES — qué falta por calificar antes de poder cerrar la evaluación
-    // -------------------------------------------------------
-    $totalCompromisos = DB::table('compromiso')->where('id_evaluacion', $idEvaluacion)->count();
-    $compromisosSinCalificar = DB::table('compromiso')
-        ->where('id_evaluacion', $idEvaluacion)
-        ->whereNull('calificacion_definitiva')
-        ->count();
-
-    $catalogoPath = storage_path('app/competencias_catalogo.json');
-    $catalogo = file_exists($catalogoPath) ? (json_decode(file_get_contents($catalogoPath), true) ?? []) : [];
-    $nivelJerarquico = strtoupper(trim((string) $evaluacion->nivel_jerarquico));
-
-    $comunesEsperadas = collect($catalogo[$sistema]['COMUN'] ?? [])->pluck('nombre')->all();
-    $nivelEsperadas   = collect($catalogo[$sistema]['NIVEL_JERARQUICO'][$nivelJerarquico] ?? [])->pluck('nombre')->all();
-
-    $comunesCalificadas = DB::table('competencia_evaluada as ce')
-        ->join('competencia_catalogo as cc', 'cc.id_competencia', '=', 'ce.id_competencia')
-        ->where('ce.id_evaluacion', $idEvaluacion)->where('cc.tipo', 'COMUN')
-        ->whereNotNull('ce.calificacion_definitiva')->pluck('cc.nombre')->all();
-    $nivelCalificadas = DB::table('competencia_evaluada as ce')
-        ->join('competencia_catalogo as cc', 'cc.id_competencia', '=', 'ce.id_competencia')
-        ->where('ce.id_evaluacion', $idEvaluacion)->where('cc.tipo', 'NIVEL_JERARQUICO')
-        ->whereNotNull('ce.calificacion_definitiva')->pluck('cc.nombre')->all();
-
-    $comunesFaltantes = array_values(array_diff($comunesEsperadas, $comunesCalificadas));
-    $nivelFaltantes   = array_values(array_diff($nivelEsperadas, $nivelCalificadas));
-
-    $ejesFaltantes = [];
-    foreach ($ejesActivos as $tipoEjeActivo) {
-        if (!isset($ejeCals[$tipoEjeActivo])) {
-            $ejesFaltantes[] = $tipoEjeActivo;
-        }
-    }
-
-    $pendientes = [
-        'compromisos_sin_calificar'      => $compromisosSinCalificar,
-        'competencias_comunes_faltantes' => $comunesFaltantes,
-        'competencias_nivel_faltantes'   => $nivelFaltantes,
-        'ejes_faltantes'                 => $ejesFaltantes,
-    ];
-
-    $calificacionCompleta = $totalCompromisos > 0
-        && $compromisosSinCalificar === 0
-        && empty($comunesFaltantes)
-        && empty($nivelFaltantes)
-        && empty($ejesFaltantes);
-
-    return [
-        'sistema'                   => $sistema,
-        'pesos' => [
-            'compromisos'       => $pesoCompromisos,
-            'comun'             => $pesoCompComun,
-            'nivel_jerarquico'  => $pesoCompNivel,
-            'ejes'              => $pesoEjes,
-        ],
-        'ejes_activos'              => $ejesActivos,
-        'notas_ejes_raw'            => $notasPorEje,
-        'nota_compromisos_raw'      => redondearEscala($notaCompromisos),
-        'nota_comp_comun_raw'       => redondearEscala($notaCompComun),
-        'nota_comp_nivel_raw'       => redondearEscala($notaCompNivel),
-        'subtotal_compromisos'      => redondearEscala($subtotalCompromisos),
-        'subtotal_comun'            => redondearEscala($subtotalComun),
-        'subtotal_nivel'            => redondearEscala($subtotalNivel),
-        'subtotales_ejes'           => $subtotalesEjes,
-        'subtotal_ejes_total'       => redondearEscala($subtotalEjesTotal),
-        'nota_final'                => $notaFinal,
-        'dias_laborados'            => $evaluacion->dias_laborados,
-        'factor_prorrateo'          => $factorProrrateo ? round($factorProrrateo, 6) : null,
-        'nota_prorrateo'            => $notaProrrateo,
-        'nota_definitiva'           => $notaProrrateo ?? $notaFinal,
-        'categoria'                 => $categoria,
-        'requiere_plan_mejoramiento'=> $requierePlanMejoramiento,
-        'calificacion_completa'     => $calificacionCompleta,
-        'pendientes'                => $pendientes,
-        'estado'                    => $evaluacion->estado,
-    ];
-}
-}
-
 if (!function_exists('notaSemestrePorTramos')) {
     /**
      * S14 - Nota del semestre de un funcionario con traslados en dos pasos:
@@ -4936,6 +4687,18 @@ if (!function_exists('resolverVinculacionReceptorApelacion')) {
         $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $idEvaluacion)->first();
         if (! $evaluacion) {
             return null;
+        }
+
+        // S14 (regla 7): con el modelo de puestos activo, el receptor sale de la
+        // plaza superior de la plaza del evaluador (delegación vigente u
+        // ocupante). Plaza superior vacante o inexistente: Talento Humano.
+        if (app(\App\Services\ModeloPuestos::class)->activo()) {
+            $resolutor = app(\App\Services\ResolutorResponsable::class);
+            $idPuesto = $evaluacion->id_puesto_evaluador ?: $resolutor->plazaDe((int) $evaluacion->id_vinc_evaluador);
+            $idSuperior = $idPuesto ? DB::table('puesto')->where('id_puesto', $idPuesto)->value('id_puesto_superior') : null;
+            $receptor = $idSuperior ? $resolutor->responsableDePlaza((int) $idSuperior)['id_vinc'] : null;
+
+            return $receptor && $receptor !== (int) $evaluacion->id_vinc_evaluador ? $receptor : null;
         }
 
         $jefeEvaluador = DB::table('vinculacion as ve')

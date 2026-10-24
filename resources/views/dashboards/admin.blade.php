@@ -412,6 +412,32 @@
             <!-- SECTION: JERARQUÍA / JEFES SUPERIORES (S10) -->
             <!-- SECTION: CATÁLOGO DE PLAZAS (S14, modelo de puestos fases A-B) -->
             <section id="section-plazas" class="section-content hidden space-y-6">
+                {{-- Interruptor del modelo de puestos (plan, fase G) --}}
+                <div class="panel-card rounded-3xl p-6">
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div class="min-w-0">
+                            <p class="text-xs font-bold uppercase tracking-[0.22em] text-[#00594E]">Modo del modelo de puestos</p>
+                            <p class="text-sm text-slate-500 mt-1"><b>Apagado:</b> todo funciona por persona, como hoy. <b>Observación:</b> además calcula el responsable por plaza y solo registra diferencias. <b>Activo:</b> las plazas mandan.</p>
+                        </div>
+                        <div class="flex shrink-0 items-center gap-2">
+                            <span id="modelo-puestos-modo" class="whitespace-nowrap rounded-full bg-slate-100 px-3 py-1 text-[11px] font-bold uppercase text-slate-700">—</span>
+                            <select id="modelo-puestos-selector" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs">
+                                <option value="APAGADO">Apagado</option>
+                                <option value="OBSERVACION">Observación</option>
+                                <option value="ACTIVO">Activo</option>
+                            </select>
+                            <button type="button" onclick="cambiarModoPuestos()" class="rounded-xl bg-[#00594E] px-4 py-2 text-xs font-bold text-white hover:brightness-110 transition">Cambiar</button>
+                        </div>
+                    </div>
+                    <div id="modelo-puestos-requisitos" class="mt-3 grid gap-2 sm:grid-cols-2 text-[11px]"></div>
+                    <div class="mt-4 flex flex-wrap items-center justify-between gap-2">
+                        <p class="text-xs font-bold text-slate-700">Diferencias de la observación <span class="font-normal text-slate-500">(se compara cada día a las 2:00 a. m.)</span></p>
+                        <button type="button" onclick="compararModeloPuestos()" class="rounded-xl border border-[#00594E] px-3 py-1.5 text-xs font-bold text-[#00594E] hover:bg-[#EAF2EF] transition">Comparar ahora</button>
+                    </div>
+                    <div id="modelo-puestos-diferencias" class="mt-2 grid gap-2 text-[11px]"></div>
+                    <div id="modelo-puestos-historial" class="mt-3 text-[11px] text-slate-500"></div>
+                </div>
+
                 <div class="panel-card rounded-3xl p-6">
                     <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                         <div>
@@ -960,7 +986,7 @@
                             <div>
                                 <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Funcionario a trasladar (Vinculación)</label>
                                 <input type="search" id="buscar-funcionario-traslado" oninput="filtrarOpcionesAsignacion('buscar-funcionario-traslado', 'select-funcionario-traslado')" class="mb-2 w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Buscar funcionario por nombre o cargo" />
-                                <select name="id_vinc_funcionario" id="select-funcionario-traslado" onchange="mostrarEvaluadorActualTraslado(); mostrarAreaAntiguaTraslado();" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
+                                <select name="id_vinc_funcionario" id="select-funcionario-traslado" onchange="mostrarEvaluadorActualTraslado(); mostrarAreaAntiguaTraslado(); cargarPlazasDestinoTraslado();" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
                                     <option value="">Selecciona un funcionario</option>
                                     @foreach($empleados as $e)
                                         @if($e->id_vinculacion && $e->activo)
@@ -997,7 +1023,7 @@
                                 </div>
                                 <div>
                                     <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Nueva Área (Destino)</label>
-                                    <select name="area_nuevo" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white">
+                                    <select name="area_nuevo" id="area-nuevo-traslado" onchange="cargarPlazasDestinoTraslado()" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white">
                                         <option value="">Conservar área actual o seleccionar nueva</option>
                                         @foreach($dependenciasCatalogo as $dp)
                                             <option value="{{ $dp->nombre }}">{{ $dp->nombre }}</option>
@@ -1007,12 +1033,18 @@
                             </div>
                             <div class="mt-3">
                                 <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Nuevo Cargo (Opcional - si cambia de puesto)</label>
-                                <select name="cargo_nuevo" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white">
+                                <select name="cargo_nuevo" id="cargo-nuevo-traslado" onchange="cargarPlazasDestinoTraslado()" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white">
                                     <option value="">Conservar cargo actual o seleccionar nuevo</option>
                                     @foreach($cargosCatalogo as $cg)
                                         <option value="{{ $cg->nombre }}">{{ $cg->nombre }}</option>
                                     @endforeach
                                 </select>
+                            </div>
+                            {{-- S14 (fase F): solo aparece si el funcionario ya ocupa una plaza del catálogo --}}
+                            <div id="plaza-destino-traslado-box" class="hidden">
+                                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Plaza destino</label>
+                                <select name="id_puesto_destino" id="plaza-destino-traslado" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white"></select>
+                                <p id="plaza-destino-traslado-ayuda" class="text-[9px] text-slate-400 mt-0.5"></p>
                             </div>
                             <div>
                                 <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Motivo del traslado</label>
