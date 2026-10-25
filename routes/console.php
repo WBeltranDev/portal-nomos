@@ -41,6 +41,33 @@ Artisan::command('puestos:linea-base {--comparar= : Ruta de una línea base guar
     return 0;
 })->purpose('Guarda (o compara) la línea base de conteos para conciliar la migración a puestos');
 
+// S14 - Enlace de asignaciones, evaluaciones, delegaciones, tramos y traslados a su plaza (plan, fase C).
+Artisan::command('puestos:enlazar {--aplicar : Escribe los enlaces; sin esta opción solo es un ensayo}', function (\App\Services\EnlacePuestos $enlace) {
+    $aplicar = (bool) $this->option('aplicar');
+    $r = $aplicar ? $enlace->aplicar() : $enlace->ensayar();
+
+    $this->table(['Tabla', 'Enlazados', 'Excepciones'], collect($r['resumen'])->map(fn ($v, $t) => [$t, $v['enlazados'], $v['excepciones']])->values());
+
+    if ($r['excepciones']) {
+        $nombres = \Illuminate\Support\Facades\DB::table('vinculacion as v')
+            ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
+            ->whereIn('v.id_vinculacion', array_filter(array_column($r['excepciones'], 'id_vinculacion')))
+            ->pluck(\Illuminate\Support\Facades\DB::raw("CONCAT(f.nombres, ' ', f.apellidos)"), 'v.id_vinculacion');
+        $this->warn('Excepciones para Talento Humano (no se enlazaron):');
+        $this->table(['Tabla', 'Id', 'Persona', 'Motivo'], array_map(fn ($e) => [$e['tabla'], $e['id'], $nombres[$e['id_vinculacion']] ?? '-', $e['motivo']], $r['excepciones']));
+    }
+
+    // El reporte guardado solo lleva ids (sin nombres), igual que la línea base.
+    $ruta = storage_path('app/conciliacion/enlace-' . ($aplicar ? 'aplicado' : 'ensayo') . '-' . now()->format('Ymd-His') . '.json');
+    if (! is_dir(dirname($ruta))) {
+        mkdir(dirname($ruta), 0775, true);
+    }
+    file_put_contents($ruta, json_encode($r, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+
+    $this->info(($aplicar ? 'Enlaces escritos.' : 'Ensayo: no se escribió nada. Use --aplicar para escribir.') . " Reporte en {$ruta}");
+    return 0;
+})->purpose('Enlaza los registros existentes a su plaza (ensayo por defecto)');
+
 // S14 - Modo Observación: compara el responsable actual con el responsable por plaza.
 Artisan::command('puestos:observar', function (\App\Services\ModeloPuestos $modelo, \App\Services\ResolutorResponsable $resolutor) {
     if (! $modelo->observando()) {
