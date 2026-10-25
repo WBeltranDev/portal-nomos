@@ -741,6 +741,7 @@ Route::post('/seleccionar-rol', function (Request $request) {
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\UsuarioController;
 use App\Http\Controllers\PlazaController;
+use App\Http\Controllers\CargaPlantaController;
 
 Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
@@ -757,6 +758,12 @@ Route::post('/admin/dependencias/{id}/toggle', [UsuarioController::class, 'toggl
 // --- Catálogo de plazas (S14, modelo de puestos fases A-B) ---
 Route::get('/admin/plazas', [PlazaController::class, 'index'])->name('admin.plazas.index');
 Route::get('/admin/plazas/vacantes', [PlazaController::class, 'vacantes'])->name('admin.plazas.vacantes');
+// Carga de la planta oficial (Excel de TH): ensayo, aplicación, pendientes y documento oficial.
+Route::post('/admin/plazas/carga/analizar', [CargaPlantaController::class, 'analizar'])->name('admin.plazas.carga.analizar');
+Route::post('/admin/plazas/carga/aplicar', [CargaPlantaController::class, 'aplicar'])->name('admin.plazas.carga.aplicar');
+Route::get('/admin/plazas/pendientes', [CargaPlantaController::class, 'pendientes'])->name('admin.plazas.pendientes');
+Route::post('/admin/plazas/pendientes/{id}', [CargaPlantaController::class, 'resolverPendiente'])->whereNumber('id')->name('admin.plazas.pendientes.resolver');
+Route::get('/admin/plazas/documento-oficial', [CargaPlantaController::class, 'documento'])->name('admin.plazas.documento');
 Route::post('/admin/plazas/generar', [PlazaController::class, 'generar'])->name('admin.plazas.generar');
 Route::post('/admin/plazas/validar-masivo', [PlazaController::class, 'validarMasivo'])->name('admin.plazas.validar-masivo');
 Route::post('/admin/plazas/modo', [PlazaController::class, 'cambiarModo'])->name('admin.plazas.modo');

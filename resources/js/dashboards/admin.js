@@ -1197,8 +1197,145 @@ export function cargarPlazasAdmin() {
             }
             renderModeloPuestos(data.modelo || {});
             renderPlazasAdmin();
+            cargarPendientesPlanta();
         })
         .catch(() => { lista.innerHTML = '<div class="py-10 text-center text-xs text-red-500">No se pudo cargar el catálogo de plazas.</div>'; });
+}
+
+// --- S14: carga de la planta oficial (ensayo → aplicar → pendientes) ---
+let ensayoPlanta = null;
+let dependenciasPlanta = [];
+
+const ETIQUETA_CAMPO = {
+    area: 'Área', cargo: 'Cargo', codigo_cargo: 'Código', grado_cargo: 'Grado', nivel_jerarquico: 'Nivel',
+    tipo_vinculacion: 'Vinculación', sistema_evaluacion: 'Sistema', fecha_ingreso: 'Ingreso', fecha_retiro: 'Retiro',
+    es_evaluador: 'Evaluador', aplica_eje_misional: 'Eje docencia', id_vinc_jefe: 'Jefe (vinculación)', correo_cargo: 'Correo del cargo',
+};
+
+export function analizarPlanta() {
+    const archivo = document.getElementById('planta-archivo')?.files?.[0];
+    const caja = document.getElementById('planta-ensayo');
+    if (!archivo || !caja) {
+        alert('Selecciona el Excel de la planta (.xlsx).');
+        return;
+    }
+    const datos = new FormData();
+    datos.append('archivo', archivo);
+    caja.classList.remove('hidden');
+    caja.innerHTML = '<p class="text-slate-500">Revisando el archivo...</p>';
+
+    fetchJson('/admin/plazas/carga/analizar', { method: 'POST', body: datos })
+        .then(async res => {
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo revisar el archivo.'));
+            ensayoPlanta = data;
+            renderEnsayoPlanta(data);
+        })
+        .catch(err => { caja.innerHTML = `<p class="text-red-600 font-semibold">${escapeHtml(err.message)}</p>`; });
+}
+
+function renderEnsayoPlanta(d) {
+    const caja = document.getElementById('planta-ensayo');
+    const r = d.resumen || {};
+    const chip = (texto, clases = 'bg-slate-100 text-slate-700') => `<span class="rounded-full px-3 py-1 font-bold ${clases}">${texto}</span>`;
+    const lista = (items, fn) => items.length ? `<ul class="space-y-1">${items.map(i => `<li>${fn(i)}</li>`).join('')}</ul>` : '<p class="text-slate-400">Ninguno.</p>';
+
+    caja.innerHTML = `
+        <div class="rounded-xl border border-sky-100 bg-sky-50/50 p-3">
+            <p class="font-bold text-slate-800 mb-2">Ensayo de «${escapeHtml(d.archivo)}» — todavía no se guardó nada</p>
+            <div class="flex flex-wrap gap-2">
+                ${chip(`${r.personas_reconocidas}/${r.personas_en_planta} funcionarios reconocidos`)}
+                ${chip(`${r.personas_con_cambios} con cambios`, 'bg-amber-50 text-amber-700')}
+                ${chip(`${r.reasignaciones_de_evaluador} reasignación(es) de evaluador`, 'bg-amber-50 text-amber-700')}
+                ${chip(`${r.vacantes_a_crear}/${r.vacantes_en_planta} vacantes se crean`)}
+                ${chip(`${r.cargos_nuevos} cargo(s) nuevo(s)`)}
+                ${chip(`${r.ficticios_a_inactivar} registro(s) ficticio(s) a inactivar`)}
+                ${chip(`${r.pendientes} pendiente(s) para el panel`, r.pendientes ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700')}
+            </div>
+        </div>
+        ${(d.advertencias || []).length ? `<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-800"><p class="font-bold">Advertencias del archivo</p>${lista(d.advertencias, w => escapeHtml(w))}</div>` : ''}
+        <div class="rounded-xl border border-slate-100 bg-white p-3"><p class="font-bold text-slate-700 mb-1">Cambios en los datos de cargo (el Excel manda)</p>
+            ${lista(d.cambios || [], c => `<b>${escapeHtml(c.nombre)}</b>: ${Object.entries(c.diferencias).map(([k, v]) => `${escapeHtml(ETIQUETA_CAMPO[k] || k)} <span class="text-slate-400">${escapeHtml(String(v.antes ?? '—'))}</span> → <b>${escapeHtml(String(v.despues ?? '—'))}</b>`).join(' · ')}`)}
+        </div>
+        <div class="grid gap-3 sm:grid-cols-2">
+            <div class="rounded-xl border border-slate-100 bg-white p-3"><p class="font-bold text-slate-700 mb-1">Cargos nuevos en el catálogo</p>${lista(d.cargos_nuevos || [], c => `${escapeHtml(c.nombre)} (${c.codigo}-${c.grado})`)}</div>
+            <div class="rounded-xl border border-slate-100 bg-white p-3"><p class="font-bold text-slate-700 mb-1">Registros ficticios que se inactivan</p>${lista(d.inactivar || [], f => `${escapeHtml(f.nombre)} · ${escapeHtml(f.cargo || '')}`)}</div>
+        </div>
+        <div class="rounded-xl border border-slate-100 bg-white p-3"><p class="font-bold text-slate-700 mb-1">Quedarán pendientes para resolver en el panel</p>${lista(d.pendientes || [], p => escapeHtml(p.descripcion))}</div>
+        <div class="flex justify-end">
+            <button type="button" onclick="aplicarPlanta()" class="rounded-xl bg-[#00594E] px-5 py-2.5 text-xs font-bold text-white hover:brightness-110 transition">Aplicar carga</button>
+        </div>`;
+}
+
+export function aplicarPlanta() {
+    if (!ensayoPlanta) return;
+    if (!confirm('¿Aplicar la carga de la planta? Se actualizan los datos de cargo de los funcionarios, se reasignan evaluadores, se crean las plazas y vacantes y se inactivan los registros ficticios.')) return;
+    fetchJson('/admin/plazas/carga/aplicar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: ensayoPlanta.token, archivo: ensayoPlanta.archivo }),
+    })
+        .then(async res => {
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo aplicar la carga.'));
+            alert(data.message || 'Carga aplicada.');
+            ensayoPlanta = null;
+            document.getElementById('planta-ensayo')?.classList.add('hidden');
+            cargarPlazasAdmin();
+        })
+        .catch(err => alert(err.message));
+}
+
+export function cargarPendientesPlanta() {
+    const caja = document.getElementById('planta-pendientes');
+    if (!caja) return;
+    Promise.all([
+        fetchJson('/admin/plazas/pendientes').then(r => r.json()),
+        fetchJson('/admin/plazas/vacantes').then(r => r.json()),
+    ]).then(([data, vacantes]) => {
+        dependenciasPlanta = data.dependencias || [];
+        const ultima = document.getElementById('planta-ultima-carga');
+        if (ultima) {
+            ultima.textContent = data.ultima_carga
+                ? `Última carga: ${data.ultima_carga.archivo} · ${new Date(data.ultima_carga.created_at).toLocaleString('es-CO')} · ${data.ultima_carga.username || ''}`
+                : 'Aún no se ha cargado la planta.';
+        }
+        const pendientes = data.pendientes || [];
+        const opcionesDependencia = '<option value="">Elige la dependencia</option>' + dependenciasPlanta.map(d => `<option value="${d.id_dependencia}">${escapeHtml(d.nombre)}</option>`).join('');
+        const opcionesVacante = '<option value="">Elige una plaza vacante</option>' + (vacantes.vacantes || []).map(p => `<option value="${p.id_puesto}">${escapeHtml(`${p.codigo_plaza} — ${p.cargo} · ${p.dependencia}`)}</option>`).join('');
+
+        caja.innerHTML = pendientes.length ? pendientes.map(p => {
+            let accion = '';
+            if (p.tipo === 'VACANTE_SIN_DEPENDENCIA') {
+                accion = `<select id="pend-dep-${p.id_pendiente}" class="rounded-xl border border-slate-200 bg-white p-1.5 text-xs">${opcionesDependencia}</select>
+                    <button type="button" onclick="resolverPendientePlanta(${p.id_pendiente}, 'crear_vacante')" class="rounded-xl bg-[#00594E] px-3 py-1.5 text-xs font-bold text-white">Crear plaza vacante</button>`;
+            } else if (p.tipo === 'PERSONA_SIN_PLAZA' && p.datos?.id_vinculacion) {
+                accion = `<select id="pend-plaza-${p.id_pendiente}" class="rounded-xl border border-slate-200 bg-white p-1.5 text-xs">${opcionesVacante}</select>
+                    <button type="button" onclick="resolverPendientePlanta(${p.id_pendiente}, 'asignar_plaza')" class="rounded-xl bg-[#00594E] px-3 py-1.5 text-xs font-bold text-white">Asignar plaza</button>`;
+            } else {
+                accion = `<button type="button" onclick="resolverPendientePlanta(${p.id_pendiente}, 'resuelto')" class="rounded-xl bg-[#00594E] px-3 py-1.5 text-xs font-bold text-white">Marcar resuelto</button>`;
+            }
+            return `<div class="flex flex-col gap-2 rounded-xl border border-rose-100 bg-rose-50/40 p-2.5 sm:flex-row sm:items-center sm:justify-between">
+                <p class="min-w-0 text-slate-700 break-words">${escapeHtml(p.descripcion)}</p>
+                <div class="flex shrink-0 flex-wrap items-center gap-2">${accion}
+                    <button type="button" onclick="resolverPendientePlanta(${p.id_pendiente}, 'descartar')" class="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600">Descartar</button>
+                </div>
+            </div>`;
+        }).join('') : '<p class="text-slate-500">Sin pendientes.</p>';
+    }).catch(() => { caja.innerHTML = '<p class="text-red-500">No se pudieron cargar los pendientes.</p>'; });
+}
+
+export function resolverPendientePlanta(id, accion) {
+    const body = { accion };
+    if (accion === 'crear_vacante') {
+        body.id_dependencia = document.getElementById(`pend-dep-${id}`)?.value;
+        if (!body.id_dependencia) { alert('Elige la dependencia de la vacante.'); return; }
+    }
+    if (accion === 'asignar_plaza') {
+        body.id_puesto = document.getElementById(`pend-plaza-${id}`)?.value;
+        if (!body.id_puesto) { alert('Elige la plaza vacante.'); return; }
+    }
+    accionPlazas(`/admin/plazas/pendientes/${id}`, accion === 'descartar' ? '¿Descartar este pendiente?' : null, body);
 }
 
 const NOMBRE_MODO = { APAGADO: 'Apagado', OBSERVACION: 'Observación', ACTIVO: 'Activo' };
@@ -1386,6 +1523,9 @@ window.validarPlaza = validarPlaza;
 window.editarPlaza = editarPlaza;
 window.guardarPlaza = guardarPlaza;
 window.cambiarModoPuestos = cambiarModoPuestos;
+window.analizarPlanta = analizarPlanta;
+window.aplicarPlanta = aplicarPlanta;
+window.resolverPendientePlanta = resolverPendientePlanta;
 window.compararModeloPuestos = compararModeloPuestos;
 window.revisarDiferenciaPuestos = revisarDiferenciaPuestos;
 

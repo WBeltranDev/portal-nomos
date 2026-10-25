@@ -412,6 +412,31 @@
             <!-- SECTION: JERARQUÍA / JEFES SUPERIORES (S10) -->
             <!-- SECTION: CATÁLOGO DE PLAZAS (S14, modelo de puestos fases A-B) -->
             <section id="section-plazas" class="section-content hidden space-y-6">
+                {{-- Carga de la planta oficial de TH (S14): ensayo, aplicación, pendientes y documento oficial --}}
+                <div class="panel-card rounded-3xl p-6">
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div class="min-w-0">
+                            <p class="text-xs font-bold uppercase tracking-[0.22em] text-[#00594E]">Planta oficial</p>
+                            <h2 class="text-xl font-black text-slate-900">Carga de la planta de cargos y vacantes</h2>
+                            <p class="text-sm text-slate-500 mt-1">1) Sube el Excel de la planta y revisa el ensayo (no se guarda nada). 2) Aplica la carga: actualiza los datos de cargo de los funcionarios, crea las plazas y las vacantes. 3) Resuelve los pendientes. 4) Valida las plazas y descarga el catálogo oficial.</p>
+                        </div>
+                        <div class="flex shrink-0 flex-wrap gap-2">
+                            <a href="/admin/plazas/documento-oficial?formato=pdf" class="rounded-xl border border-[#00594E] px-3 py-2 text-xs font-bold text-[#00594E] hover:bg-[#EAF2EF] transition">Catálogo oficial (PDF)</a>
+                            <a href="/admin/plazas/documento-oficial?formato=xlsx" class="rounded-xl border border-[#00594E] px-3 py-2 text-xs font-bold text-[#00594E] hover:bg-[#EAF2EF] transition">Catálogo oficial (Excel)</a>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <input id="planta-archivo" type="file" accept=".xlsx" class="flex-1 rounded-xl border border-slate-200 bg-white p-2 text-xs">
+                        <button type="button" onclick="analizarPlanta()" class="rounded-xl bg-[#00594E] px-4 py-2.5 text-xs font-bold text-white hover:brightness-110 transition">Revisar (ensayo)</button>
+                    </div>
+                    <div id="planta-ensayo" class="mt-4 hidden space-y-3 text-[11px]"></div>
+                    <div class="mt-5">
+                        <p class="text-xs font-bold text-slate-700">Pendientes de la carga</p>
+                        <p id="planta-ultima-carga" class="text-[11px] text-slate-500"></p>
+                        <div id="planta-pendientes" class="mt-2 grid gap-2 text-[11px]"></div>
+                    </div>
+                </div>
+
                 {{-- Interruptor del modelo de puestos (plan, fase G) --}}
                 <div class="panel-card rounded-3xl p-6">
                     <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
