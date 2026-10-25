@@ -3,28 +3,46 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
- * S14 - Enlace de los registros existentes a su plaza (plan, fase C).
+ * S14 - Enlace de los registros a su plaza (plan, fases C y E).
  *
- * Llena las referencias a plaza que la fase B dejó vacías, a partir de las
- * ocupaciones cargadas con la planta:
+ * Llena las referencias a plaza a partir de las ocupaciones cargadas con la
+ * planta:
  *   - evaluador_asignacion: plaza vigente del evaluador.
  *   - evaluacion: abierta → plaza vigente del titular (el delegante si hay
  *     suplente); cerrada → la plaza que el evaluador ocupaba en el periodo.
  *   - delegacion: plaza del delegante durante la delegación.
  *   - periodo_parcial: la de su delegación o, si no, la del evaluador asignado.
  *   - traslado: plaza del trasladado antes de la fecha de traslado (origen).
+ * Lo que una delegación vigente puso a cargo del delegado (copias de la
+ * delegación corta, traslados de la larga) queda en la plaza delegada.
+ *
+ * Asignaciones y evaluaciones abiertas guardan además la persona con la que se
+ * enlazaron (id_vinc_enlazado). Si el flujo actual cambia esa persona
+ * (traslado, recurso, fin de delegación), se vuelven a enlazar a la plaza de
+ * la nueva; las evaluaciones cerradas no se tocan una vez enlazadas.
  *
  * Solo enlaza cuando la plaza es inequívoca (una única ocupación cubre las
- * fechas); lo demás queda como excepción para Talento Humano. Nunca cambia
- * una referencia ya puesta ni toca las columnas de vinculación, así que se
- * puede ejecutar las veces que haga falta.
+ * fechas); lo demás queda como excepción para Talento Humano. Se puede
+ * ejecutar las veces que haga falta.
  */
 class EnlacePuestos
 {
+    private const CLAVES = [
+        'evaluador_asignacion' => 'id_asignacion',
+        'evaluacion' => 'id_evaluacion',
+        'delegacion' => 'id_delegacion',
+        'periodo_parcial' => 'id_periodo_parcial',
+        'traslado' => 'id_traslado',
+    ];
+
     /** @var array<int, \Illuminate\Support\Collection> ocupaciones por vinculación */
     private array $ocupaciones = [];
+
+    /** "delegado-evaluado" => plaza delegada, para lo que una delegación vigente puso a cargo del delegado. */
+    private array $aCargoDeDelegado = [];
 
     private array $enlaces = [];
 
@@ -45,25 +63,14 @@ class EnlacePuestos
             $this->calcular();
 
             foreach ($this->enlaces as $tabla => $filas) {
-                $clave = self::CLAVES[$tabla];
                 foreach ($filas as $id => $valores) {
-                    // whereNull: si alguien lo enlazó entre el cálculo y la escritura, se respeta.
-                    $columna = array_key_first($valores);
-                    DB::table($tabla)->where($clave, $id)->whereNull($columna)->update($valores);
+                    DB::table($tabla)->where(self::CLAVES[$tabla], $id)->update($valores);
                 }
             }
 
             return $this->resultado();
         });
     }
-
-    private const CLAVES = [
-        'evaluador_asignacion' => 'id_asignacion',
-        'evaluacion' => 'id_evaluacion',
-        'delegacion' => 'id_delegacion',
-        'periodo_parcial' => 'id_periodo_parcial',
-        'traslado' => 'id_traslado',
-    ];
 
     private function calcular(): void
     {
@@ -75,52 +82,80 @@ class EnlacePuestos
             ->groupBy('id_vinculacion')
             ->all();
 
+        $plazaDelegacion = $this->delegaciones();
+        $this->aCargoDeDelegado = $this->aCargoDeDelegado($plazaDelegacion);
         $this->asignaciones();
         $this->evaluaciones();
-        $plazaDelegacion = $this->delegaciones();
         $this->periodosParciales($plazaDelegacion);
         $this->traslados();
     }
 
     private function asignaciones(): void
     {
-        $filas = DB::table('evaluador_asignacion')->whereNull('id_puesto_evaluador')->get();
+        $conEnlazado = Schema::hasColumn('evaluador_asignacion', 'id_vinc_enlazado');
+        $filas = DB::table('evaluador_asignacion')
+            ->where(fn ($q) => $conEnlazado
+                ? $q->whereNull('id_puesto_evaluador')->orWhereNull('id_vinc_enlazado')->orWhereColumn('id_vinc_enlazado', '!=', 'id_vinc_evaluador')
+                : $q->whereNull('id_puesto_evaluador'))
+            ->get();
+
         foreach ($filas as $a) {
-            $ocupacion = $this->vigente($a->id_vinc_evaluador);
-            if ($ocupacion) {
-                $this->enlaces['evaluador_asignacion'][$a->id_asignacion] = ['id_puesto_evaluador' => $ocupacion->id_puesto];
+            $persona = (int) $a->id_vinc_evaluador;
+
+            // Ya enlazada a mano o antes de guardar la persona: se adopta la persona actual.
+            if ($a->id_puesto_evaluador && $conEnlazado && $a->id_vinc_enlazado === null) {
+                $this->enlaces['evaluador_asignacion'][$a->id_asignacion] = ['id_vinc_enlazado' => $persona];
+                continue;
+            }
+
+            $idPuesto = $this->aCargoDeDelegado[$persona . '-' . $a->id_vinc_evaluado] ?? $this->vigente($persona)?->id_puesto;
+            if ($idPuesto) {
+                $this->enlaces['evaluador_asignacion'][$a->id_asignacion] = ['id_puesto_evaluador' => $idPuesto]
+                    + ($conEnlazado ? ['id_vinc_enlazado' => $persona] : []);
             } else {
-                $this->excepcion('evaluador_asignacion', $a->id_asignacion, $a->id_vinc_evaluador, 'El evaluador no ocupa ninguna plaza vigente.');
+                $this->excepcion('evaluador_asignacion', $a->id_asignacion, $persona, 'El evaluador no ocupa ninguna plaza vigente.');
             }
         }
     }
 
     private function evaluaciones(): void
     {
+        $conEnlazado = Schema::hasColumn('evaluacion', 'id_vinc_enlazado');
+        $titular = 'COALESCE(e.id_vinc_suplente, e.id_vinc_evaluador)';
         $filas = DB::table('evaluacion as e')
             ->join('periodo as p', 'p.id_periodo', '=', 'e.id_periodo')
-            ->whereNull('e.id_puesto_evaluador')
-            ->get(['e.id_evaluacion', 'e.id_vinc_evaluador', 'e.id_vinc_suplente', 'e.estado', 'p.fecha_inicio', 'p.fecha_fin']);
+            ->where(fn ($q) => $q->whereNull('e.id_puesto_evaluador')
+                ->when($conEnlazado, fn ($q2) => $q2->orWhere(fn ($q3) => $q3->where('e.estado', 'EN_PROCESO')
+                    ->where(fn ($q4) => $q4->whereNull('e.id_vinc_enlazado')->orWhereRaw("e.id_vinc_enlazado <> {$titular}")))))
+            ->get(['e.id_evaluacion', 'e.id_vinc_evaluado', 'e.id_vinc_evaluador', 'e.id_vinc_suplente', 'e.estado', 'e.id_puesto_evaluador',
+                $conEnlazado ? 'e.id_vinc_enlazado' : DB::raw('NULL as id_vinc_enlazado'), 'p.fecha_inicio', 'p.fecha_fin']);
 
         foreach ($filas as $e) {
+            // El trabajo pertenece a la plaza del titular (con delegación corta, el delegante).
+            $persona = (int) ($e->id_vinc_suplente ?: $e->id_vinc_evaluador);
+
+            if ($e->id_puesto_evaluador && $e->id_vinc_enlazado === null) {
+                $this->enlaces['evaluacion'][$e->id_evaluacion] = ['id_vinc_enlazado' => $persona];
+                continue;
+            }
+
+            $delegada = $this->aCargoDeDelegado[$persona . '-' . $e->id_vinc_evaluado] ?? null;
             if ($e->estado === 'EN_PROCESO') {
-                // El trabajo abierto pertenece a la plaza del titular (con delegación, el delegante).
-                $titular = (int) ($e->id_vinc_suplente ?: $e->id_vinc_evaluador);
-                $ocupacion = $this->vigente($titular);
+                $ocupacion = $delegada ? $this->ocupacionDePlaza($delegada) : $this->vigente($persona);
                 $motivo = 'El evaluador titular no ocupa ninguna plaza vigente.';
             } else {
                 // Cerrada: la plaza que el evaluador ocupaba durante el periodo, sin suponer historia.
-                $titular = (int) $e->id_vinc_evaluador;
-                [$ocupacion, $motivo] = $this->enFechas($titular, $e->fecha_inicio, $e->fecha_fin);
+                $persona = (int) $e->id_vinc_evaluador;
+                [$ocupacion, $motivo] = $this->enFechas($persona, $e->fecha_inicio, $e->fecha_fin);
             }
 
-            if ($ocupacion) {
+            if ($ocupacion || $delegada) {
                 $this->enlaces['evaluacion'][$e->id_evaluacion] = [
-                    'id_puesto_evaluador' => $ocupacion->id_puesto,
-                    'id_puesto_ocupacion_responsable' => $ocupacion->id_puesto_ocupacion,
-                ];
+                    'id_puesto_evaluador' => $ocupacion->id_puesto ?? $delegada,
+                    'id_puesto_ocupacion_responsable' => $ocupacion->id_puesto_ocupacion ?? null,
+                ] + ($conEnlazado ? ['id_vinc_enlazado' => $persona] : []);
             } else {
-                $this->excepcion('evaluacion', $e->id_evaluacion, $titular, $motivo);
+                $this->excepcion('evaluacion', $e->id_evaluacion, $persona, $motivo);
             }
         }
     }
@@ -145,6 +180,31 @@ class EnlacePuestos
         }
 
         return $plazas;
+    }
+
+    /** Personas que una delegación vigente dejó a cargo del delegado: copias (corta) y traslados (larga). */
+    private function aCargoDeDelegado(array $plazaDelegacion): array
+    {
+        $mapa = [];
+        $vigentes = DB::table('delegacion')->whereIn('estado', ['ACTIVA', 'POR_FINALIZAR'])->get();
+        foreach ($vigentes as $d) {
+            $idPuesto = $plazaDelegacion[$d->id_delegacion] ?? null;
+            if (! $idPuesto) {
+                continue;
+            }
+
+            $detalle = $d->detalle_transferencia ? json_decode($d->detalle_transferencia, true) : [];
+            $evaluados = array_merge(
+                $detalle['evaluados_transferidos'] ?? [],
+                DB::table('traslado')->where('id_delegacion', $d->id_delegacion)->where('id_vinc_evaluador_nuevo', $d->id_vinc_delegado)
+                    ->where('estado', 'CONFIRMADO')->pluck('id_vinc_funcionario')->all(),
+            );
+            foreach ($evaluados as $idEvaluado) {
+                $mapa[$d->id_vinc_delegado . '-' . $idEvaluado] = $idPuesto;
+            }
+        }
+
+        return $mapa;
     }
 
     private function periodosParciales(array $plazaDelegacion): void
@@ -201,6 +261,17 @@ class EnlacePuestos
     private function vigente(int $idVinc): ?object
     {
         return ($this->ocupaciones[$idVinc] ?? collect())->firstWhere('estado', 'VIGENTE');
+    }
+
+    private function ocupacionDePlaza(int $idPuesto): ?object
+    {
+        foreach ($this->ocupaciones as $deLaPersona) {
+            if ($o = $deLaPersona->first(fn ($o) => (int) $o->id_puesto === $idPuesto && $o->estado === 'VIGENTE')) {
+                return $o;
+            }
+        }
+
+        return null;
     }
 
     /**

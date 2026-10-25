@@ -68,6 +68,24 @@ Artisan::command('puestos:enlazar {--aplicar : Escribe los enlaces; sin esta opc
     return 0;
 })->purpose('Enlaza los registros existentes a su plaza (ensayo por defecto)');
 
+// S14 - Enlace de lo nuevo y relevo por plaza (plan, fase E). También corre después de cada operación web.
+Artisan::command('puestos:sincronizar', function (\App\Services\SincronizadorPlazas $sincronizador) {
+    $r = $sincronizador->sincronizar();
+    if (isset($r['omitido'])) {
+        $this->info($r['omitido']);
+        return 0;
+    }
+
+    $enlazados = array_sum(array_column($r['enlace'], 'enlazados'));
+    $this->info("Enlaces: {$enlazados} · excepciones: " . count($r['excepciones']));
+    $this->info($r['relevo'] === null
+        ? 'Relevo: el modelo de plazas no está activo.'
+        : "Relevo: {$r['relevo']['asignaciones']} asignaciones y {$r['relevo']['evaluaciones']} evaluaciones pasaron al ocupante vigente · {$r['relevo']['en_calificacion']} en calificación esperan decisión de TH");
+    return 0;
+})->purpose('Enlaza a su plaza lo nuevo y, con el modelo activo, pasa el trabajo abierto al ocupante vigente');
+
+\Illuminate\Support\Facades\Schedule::command('puestos:sincronizar')->dailyAt('01:50')->withoutOverlapping();
+
 // S14 - Modo Observación: compara el responsable actual con el responsable por plaza.
 Artisan::command('puestos:observar', function (\App\Services\ModeloPuestos $modelo, \App\Services\ResolutorResponsable $resolutor) {
     if (! $modelo->observando()) {

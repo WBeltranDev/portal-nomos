@@ -226,8 +226,13 @@ function notificacionesTalentoHumano() {
 
 if (!function_exists('delegacionActivaTraslapada')) {
 function delegacionActivaTraslapada(int $idDelegante, string $fechaInicio, ?string $fechaFin = null, int $exceptId = 0): bool {
+    // S14 (fase E): también choca con otra delegación de la misma plaza, aunque
+    // la haya hecho un ocupante anterior.
+    $idPuesto = app(\App\Services\OcupacionPuestos::class)->plazaVigente($idDelegante)?->id_puesto;
+
     $query = DB::table('delegacion')
-        ->where('id_vinc_delegante', $idDelegante)
+        ->where(fn ($q) => $q->where('id_vinc_delegante', $idDelegante)
+            ->when($idPuesto, fn ($q2) => $q2->orWhere('id_puesto', $idPuesto)))
         ->whereIn('estado', ['PROGRAMADA', 'ACTIVA', 'POR_FINALIZAR'])
         ->where('id_delegacion', '!=', $exceptId);
 
@@ -390,6 +395,15 @@ if (!function_exists('resolverSucesorDelegacion')) {
  * no está activo, la elección es obligatoria. Retorna el id o un mensaje.
  */
 function resolverSucesorDelegacion($delegacion, ?int $idSucesor): int|string {
+    // S14 (fase E): con el modelo de plazas activo, el sucesor por defecto es
+    // quien ocupa hoy la plaza delegada, no el delegante (pudo haberla dejado).
+    if (! $idSucesor && ! empty($delegacion->id_puesto) && app(\App\Services\ModeloPuestos::class)->activo()) {
+        $idSucesor = app(\App\Services\OcupacionPuestos::class)->ocupante((int) $delegacion->id_puesto);
+        if (! $idSucesor) {
+            return 'La plaza delegada está vacante: selecciona quién asume sus evaluaciones.';
+        }
+    }
+
     $idSucesor ??= DB::table('vinculacion')->where('id_vinculacion', $delegacion->id_vinc_delegante)->where('activa', 1)->exists()
         ? (int) $delegacion->id_vinc_delegante
         : null;
