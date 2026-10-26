@@ -127,6 +127,78 @@ if (!function_exists('escalaCalificacionCatalogo')) {
     }
 }
 
+if (!function_exists('evaluacionEsTramoTraslado')) {
+    /**
+     * S14 - Indica si la evaluación es un tramo (origen o destino) de un traslado
+     * en dos pasos. Los tramos se califican con su nota propia: sus días solo
+     * ponderan el promedio del semestre, no prorratean la nota del tramo.
+     */
+    function evaluacionEsTramoTraslado(int $idEvaluacion): bool
+    {
+        static $soportado = null;
+        $soportado ??= Schema::hasColumn('traslado', 'id_evaluacion_origen');
+
+        if (! $soportado) {
+            return false;
+        }
+
+        return DB::table('traslado')
+            ->where('estado', '!=', 'CANCELADO')
+            ->where(fn ($q) => $q->where('id_evaluacion_origen', $idEvaluacion)->orWhere('id_evaluacion_destino', $idEvaluacion))
+            ->exists();
+    }
+}
+
+/**
+ * Calcula la nota final de una evaluación según los documentos oficiales de Unitrópico.
+ *
+ * Las ponderaciones provienen de la configuración parametrizada
+ * (tabla `ponderacion` o defaultPonderacionesConfig()):
+ *
+ * RENDIMIENTO_LABORAL (RL):
+ *   - Compromisos:              80 %  (suma ponderada en escala 1.0-5.0)
+ *   - Competencias comunes:     10 %  (promedio en escala 1.0-5.0)
+ *   - Competencias nivel jer:   10 %  (promedio en escala 1.0-5.0)
+ *   Total:                     100 %
+ *
+ * ACUERDO_GESTION (AG) sin ejes misionales:
+ *   - Compromisos:              80 %
+ *   - Competencias comunes:     10 %
+ *   - Competencias nivel jer:   10 %
+ *   Total:                     100 %
+ *
+ * ACUERDO_GESTION (AG) con ejes misionales (solo líderes de programa/departamento/escuela):
+ *   Docencia siempre aplica; investigación y proyección social según el caso.
+ *   Cada eje activo toma su peso (por defecto 10%) de compromisos.
+ *   - Con 1 eje activo:   compromisos=70%, ejes=10%, comun=10%, nivel=10%   → 100%
+ *   - Con 2 ejes activos: compromisos=60%, ejes=20%, comun=10%, nivel=10%   → 100%
+ *   - Con 3 ejes activos: compromisos=50%, ejes=30%, comun=10%, nivel=10%   → 100%
+ *
+ * Escala institucional (1.0-5.0, un decimal). Las mismas cuatro bandas se usan
+ * para calificar cada nota y para determinar la categoría final:
+ *    1.0 a 3.4: No satisfactorio
+ *    3.5 a 4.0: Susceptible a plan de mejora (Aceptable)
+ *    4.1 a 4.5: Bueno (Alto)
+ *    4.6 a 5.0: Sobresaliente (Muy alto)
+ *
+ * Categorías finales (mismas bandas de la escala):
+ *   ≥ 4.6:          SOBRESALIENTE
+ *   4.1 a 4.5:      BUENO
+ *   3.5 a 4.0:      APROBADO_MEJORA  (Susceptible a plan de mejora)
+ *   1.0 a 3.4:      NO_SATISFACTORIO
+ *
+ * Plan de mejoramiento (1er semestre):
+ *   RL: aplica si calificación ∈ [1.0, 4.0]  (No satisfactorio o susceptible a plan)
+ *   AG: aplica si calificación ∈ [1.0, 4.0]  (No satisfactorio o susceptible a plan)
+ *
+ * Prorrateo RF3:
+ *   nota_final_prorrateo = nota_final × (dias_laborados / dias_totales_periodo)
+ *   Solo aplica si dias_laborados < dias_totales_periodo (evaluaciones eventuales/parciales).
+ *   S14: no aplica a los tramos de un traslado o delegación (evaluacionEsTramoTraslado):
+ *   se califican con su nota propia y sus días solo ponderan la nota del semestre.
+ *
+ * Fuente: requerimientos tl (2).pdf | Pesos y ejes misionales (1).pdf | Formatos AG y RL XLSX
+ */
 if (!function_exists('calcularNotaEvaluacion')) {
     function calcularNotaEvaluacion(int $idEvaluacion): array {
 
@@ -273,9 +345,11 @@ if (!function_exists('calcularNotaEvaluacion')) {
     // -------------------------------------------------------
     // 5. PRORRATEO RF3 — evaluaciones eventuales/parciales
     // -------------------------------------------------------
+    // Los tramos de un traslado se califican con su nota propia: sus días solo
+    // ponderan el promedio del semestre (notaSemestrePorTramos).
     $notaProrrateo   = null;
     $factorProrrateo = null;
-    if ($evaluacion->dias_laborados && (int)$evaluacion->dias_laborados > 0) {
+    if ($evaluacion->dias_laborados && (int)$evaluacion->dias_laborados > 0 && ! evaluacionEsTramoTraslado($idEvaluacion)) {
         $fechaInicio = new \DateTime($evaluacion->fecha_inicio);
         $fechaFin    = new \DateTime($evaluacion->fecha_fin);
         $diasPeriodo = $fechaInicio->diff($fechaFin)->days + 1;

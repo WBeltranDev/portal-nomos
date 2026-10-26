@@ -251,6 +251,9 @@ export function navegarMenu(button, seccion) {
     if (targetSeccion === 'delegaciones' && typeof window.cargarDelegacionesAdmin === 'function') {
         window.cargarDelegacionesAdmin();
     }
+    if (targetSeccion === 'plazas' && typeof window.cargarPlazasAdmin === 'function') {
+        window.cargarPlazasAdmin();
+    }
     if (window.innerWidth < 1024) toggleSidebar();
 }
 

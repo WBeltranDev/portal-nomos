@@ -160,10 +160,11 @@ export function cargarResultadoEvaluado(ev) {
     const recBtn = document.getElementById('btn-recusacion-evaluado');
     const formRec = document.getElementById('form-recusacion-accion');
     const modalRec = document.getElementById('modal-recusacion');
+    // La recusación procede desde la concertación hasta antes de calificar.
     const puedeDeclararRecusacion = ev.estado === 'EN_PROCESO'
-        && !ev.concertacion_firmada
-        && Number(ev.fase_actual || 1) <= 2
-        && !ev.es_traslado;
+        && Number(ev.fase_actual || 1) < 5
+        && !ev.es_traslado
+        && ev.estado_impedimento !== 'PENDIENTE';
     if (recBtn) recBtn.classList.toggle('hidden', !puedeDeclararRecusacion);
     if (!puedeDeclararRecusacion && modalRec) modalRec.classList.add('hidden');
     if (formRec) formRec.action = `/evaluacion/${ev.id_evaluacion}/impedimento`;
@@ -547,6 +548,7 @@ export function cargarCompromisosEvaluado(ev) {
                             <span id="icon-chevron-evaluado-${c.id_compromiso}" class="material-symbols-outlined text-[#00594E] text-base transition-transform duration-200">expand_more</span>
                             <div>
                                 <span class="text-[10px] font-black uppercase text-[#00594E] tracking-wide">Compromiso #${idx + 1}</span>
+                                ${c.es_copia ? `<span class="ml-1 whitespace-nowrap rounded-full bg-sky-50 px-2 py-0.5 text-[9px] font-bold uppercase text-sky-700" title="Copiado como borrador de los compromisos de un tramo anterior">Copiado de un tramo anterior${c.copia_ajustada ? ' (ajustado)' : ''}</span>` : ''}
                                 <p class="text-xs font-semibold text-slate-800 mt-0.5">${escapeHtml(c.descripcion)}</p>
                             </div>
                         </div>

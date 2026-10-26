@@ -59,6 +59,9 @@ return [
             'prefix_indexes' => true,
             'strict' => true,
             'engine' => null,
+            // Hora de Colombia: NOW() y los valores por defecto de las columnas
+            // coinciden con la app, y las TIMESTAMP se leen en esta zona.
+            'timezone' => env('DB_TIMEZONE', '-05:00'),
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 Mysql::ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
             ]) : [],
@@ -79,6 +82,9 @@ return [
             'prefix_indexes' => true,
             'strict' => true,
             'engine' => null,
+            // Hora de Colombia: NOW() y los valores por defecto de las columnas
+            // coinciden con la app, y las TIMESTAMP se leen en esta zona.
+            'timezone' => env('DB_TIMEZONE', '-05:00'),
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 Mysql::ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
             ]) : [],

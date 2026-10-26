@@ -30,11 +30,11 @@
                         @foreach ($usuarios as $u)
                             <article class="usuario-card rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-nombre="{{ strtolower(($u->nombres ?? 'Usuario') . ' ' . ($u->apellidos ?? 'Admin')) }}" data-cedula="{{ strtolower($u->documento_identidad ?? '') }}" data-correo="{{ strtolower($u->correo_institucional ?? '') }}">
                                 <div class="flex items-start justify-between gap-4">
-                                    <div>
-                                        <h3 class="font-bold text-slate-900">{{ $u->nombres ?? 'Usuario' }} {{ $u->apellidos ?? 'Admin' }}</h3>
-                                        <p class="text-sm text-slate-500">{{ $u->correo_institucional }}</p>
+                                    <div class="min-w-0">
+                                        <h3 class="font-bold text-slate-900 break-words">{{ $u->nombres ?? 'Usuario' }} {{ $u->apellidos ?? 'Admin' }}</h3>
+                                        <p class="text-sm text-slate-500 break-all">{{ $u->correo_institucional }}</p>
                                     </div>
-                                    <span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-[#EAF2EF] text-[#00594E]">{{ $u->rol }}</span>
+                                    <span class="shrink-0 whitespace-nowrap text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-[#EAF2EF] text-[#00594E]">{{ $u->rol }}</span>
                                 </div>
                                 <div class="mt-4 grid grid-cols-2 gap-2 text-xs">
                                     <div class="rounded-xl bg-slate-50 p-3"><p class="text-slate-400 uppercase font-bold text-[10px]">ID</p><p class="font-semibold text-slate-800">#{{ $u->id_usuario }}</p></div>
@@ -410,6 +410,92 @@
             </section>
 
             <!-- SECTION: JERARQUÍA / JEFES SUPERIORES (S10) -->
+            <!-- SECTION: CATÁLOGO DE PLAZAS (S14, modelo de puestos fases A-B) -->
+            <section id="section-plazas" class="section-content hidden space-y-6">
+                {{-- Carga de la planta oficial de TH (S14): ensayo, aplicación, pendientes y documento oficial --}}
+                <div class="panel-card rounded-3xl p-6">
+                    <div class="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                        <div class="min-w-0 xl:flex-1">
+                            <p class="text-xs font-bold uppercase tracking-[0.22em] text-[#00594E]">Planta oficial</p>
+                            <h2 class="text-xl font-black text-slate-900">Carga de la planta de cargos y vacantes</h2>
+                            <p class="text-sm text-slate-500 mt-1">Para revisar la planta actual, descárgala, corrígela y vuelve a subirla. 1) Sube el Excel de la planta y revisa el ensayo (no se guarda nada). 2) Aplica la carga: actualiza los datos de cargo de los funcionarios, crea las plazas y las vacantes. 3) Resuelve los pendientes. 4) Valida las plazas y descarga el catálogo oficial.</p>
+                        </div>
+                        <div class="flex flex-wrap gap-2 xl:max-w-md xl:shrink-0 xl:justify-end">
+                            <a href="/admin/plazas/planta-revision" title="Planta actual en el formato de la carga, para que Talento Humano la revise, la corrija y la vuelva a subir" class="rounded-xl bg-[#00594E] px-3 py-2 text-xs font-bold text-white hover:bg-[#00473E] transition">Descargar planta para revisión (Excel)</a>
+                            <a href="/admin/plazas/documento-oficial?formato=pdf" class="rounded-xl border border-[#00594E] px-3 py-2 text-xs font-bold text-[#00594E] hover:bg-[#EAF2EF] transition">Catálogo oficial (PDF)</a>
+                            <a href="/admin/plazas/documento-oficial?formato=xlsx" class="rounded-xl border border-[#00594E] px-3 py-2 text-xs font-bold text-[#00594E] hover:bg-[#EAF2EF] transition">Catálogo oficial (Excel)</a>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <input id="planta-archivo" type="file" accept=".xlsx" class="flex-1 rounded-xl border border-slate-200 bg-white p-2 text-xs">
+                        <button type="button" onclick="analizarPlanta()" class="rounded-xl bg-[#00594E] px-4 py-2.5 text-xs font-bold text-white hover:brightness-110 transition">Revisar (ensayo)</button>
+                    </div>
+                    <div id="planta-ensayo" class="mt-4 hidden space-y-3 text-[11px]"></div>
+                    <div class="mt-5">
+                        <p class="text-xs font-bold text-slate-700">Pendientes de la carga</p>
+                        <p id="planta-ultima-carga" class="text-[11px] text-slate-500"></p>
+                        <div id="planta-pendientes" class="mt-2 grid grid-cols-1 gap-2 text-[11px]"></div>
+                    </div>
+                </div>
+
+                {{-- Interruptor del modelo de puestos (plan, fase G) --}}
+                <div class="panel-card rounded-3xl p-6">
+                    <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div class="min-w-0 lg:flex-1">
+                            <p class="text-xs font-bold uppercase tracking-[0.22em] text-[#00594E]">Modo del modelo de puestos</p>
+                            <p class="text-sm text-slate-500 mt-1"><b>Apagado:</b> todo funciona por persona, como hoy. <b>Observación:</b> además calcula el responsable por plaza y solo registra diferencias. <b>Activo:</b> las plazas mandan.</p>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2 lg:shrink-0">
+                            <span id="modelo-puestos-modo" class="whitespace-nowrap rounded-full bg-slate-100 px-3 py-1 text-[11px] font-bold uppercase text-slate-700">—</span>
+                            <select id="modelo-puestos-selector" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs">
+                                <option value="APAGADO">Apagado</option>
+                                <option value="OBSERVACION">Observación</option>
+                                <option value="ACTIVO">Activo</option>
+                            </select>
+                            <button type="button" onclick="cambiarModoPuestos()" class="rounded-xl bg-[#00594E] px-4 py-2 text-xs font-bold text-white hover:brightness-110 transition">Cambiar</button>
+                        </div>
+                    </div>
+                    <div id="modelo-puestos-requisitos" class="mt-3 grid gap-2 sm:grid-cols-2 text-[11px]"></div>
+                    <div class="mt-4 flex flex-wrap items-center justify-between gap-2">
+                        <p class="text-xs font-bold text-slate-700">Diferencias de la observación <span class="font-normal text-slate-500">(evaluaciones y asignaciones contra la jerarquía de plazas; se compara cada día a las 2:00 a. m.)</span></p>
+                        <button type="button" onclick="compararModeloPuestos()" class="rounded-xl border border-[#00594E] px-3 py-1.5 text-xs font-bold text-[#00594E] hover:bg-[#EAF2EF] transition">Comparar ahora</button>
+                    </div>
+                    <div id="modelo-puestos-diferencias" class="mt-2 grid gap-2 text-[11px]"></div>
+                    <div class="mt-4">
+                        <p class="text-xs font-bold text-slate-700">Relevos por decidir <span class="font-normal text-slate-500">(evaluaciones en calificación cuya plaza cambió de ocupante)</span></p>
+                        <div id="modelo-puestos-relevos" class="mt-2 grid gap-2 text-[11px]"></div>
+                    </div>
+                    <div id="modelo-puestos-historial" class="mt-3 text-[11px] text-slate-500"></div>
+                </div>
+
+                <div class="panel-card rounded-3xl p-6">
+                    <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                        <div class="min-w-0 lg:flex-1">
+                            <p class="text-xs font-bold uppercase tracking-[0.22em] text-[#00594E]">Modelo de puestos</p>
+                            <h1 class="text-2xl sm:text-3xl font-black text-slate-900">Catálogo de plazas</h1>
+                            <p class="text-sm text-slate-500 mt-1">Una plaza por puesto concreto (dependencia, cargo, grado y consecutivo) con su ocupante vigente. Genera el borrador desde las vinculaciones activas y valídalo; las plazas que comparten dependencia, cargo y grado se confirman una por una.</p>
+                        </div>
+                        <div class="flex flex-wrap gap-2 lg:shrink-0">
+                            <button type="button" onclick="generarBorradorPlazas()" class="rounded-xl border border-[#00594E] px-4 py-2.5 text-xs font-bold text-[#00594E] hover:bg-[#EAF2EF] transition">Generar borrador</button>
+                            <button type="button" onclick="validarPlazasMasivo()" class="rounded-xl bg-[#00594E] px-4 py-2.5 text-xs font-bold text-white hover:brightness-110 transition">Validar plazas únicas</button>
+                        </div>
+                    </div>
+                    <div id="plazas-resumen" class="mt-4 flex flex-wrap gap-2 text-[11px] font-bold"></div>
+                    <div class="mt-4 flex flex-col gap-2 sm:flex-row">
+                        <input id="plazas-buscar" oninput="renderPlazasAdmin()" type="search" placeholder="Buscar por código, dependencia, cargo u ocupante" class="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-[#00594E]">
+                        <select id="plazas-filtro" onchange="renderPlazasAdmin()" class="rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm">
+                            <option value="">Todas</option>
+                            <option value="revisar">Por revisar</option>
+                            <option value="BORRADOR">Borrador</option>
+                            <option value="VALIDADA">Validadas</option>
+                        </select>
+                    </div>
+                    <div id="plazas-lista" class="mt-4 grid gap-3">
+                        <div class="py-10 text-center text-slate-500 text-xs">Cargando plazas...</div>
+                    </div>
+                </div>
+            </section>
+
             <section id="section-jerarquia" class="section-content hidden space-y-6">
                 <div class="panel-card rounded-3xl p-6">
                     <div class="mb-5 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
@@ -560,7 +646,7 @@
                         @csrf
                         <div class="flex items-start gap-2 mb-4 text-xs text-[#00594E]">
                             <span class="material-symbols-outlined text-base shrink-0">info</span>
-                            <p>Habilita una evaluación parcial para un funcionario. El tramo debe pertenecer al periodo seleccionado y durar al menos 90 días.</p>
+                            <p>Habilita una evaluación parcial para un funcionario. El tramo debe pertenecer al periodo seleccionado; no hay duración mínima: su nota pondera por los días del tramo.</p>
                         </div>
                         @error('periodo_parcial')
                             <p class="mb-3 rounded-lg bg-red-50 p-2 text-xs font-semibold text-red-700">{{ $message }}</p>
@@ -924,13 +1010,13 @@
                             <span class="material-symbols-outlined text-[#00594E]">swap_horiz</span>
                             <h2 class="text-2xl sm:text-3xl font-black text-slate-900">Traslados de Funcionarios</h2>
                         </div>
-                        <p class="text-sm text-slate-500 mb-4">Registra el traslado a otra dependencia. El traslado reinicia la concertación con el nuevo evaluador.</p>
+                        <p class="text-sm text-slate-500 mb-4">Programa el traslado a otra dependencia. El evaluador actual debe calificar el tramo laborado; con esa nota confirmas el traslado y se abre una nueva evaluación para concertar con el nuevo evaluador.</p>
                         <form method="POST" action="{{ route('admin.traslados.store') }}" class="space-y-3">
                             @csrf
                             <div>
                                 <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Funcionario a trasladar (Vinculación)</label>
                                 <input type="search" id="buscar-funcionario-traslado" oninput="filtrarOpcionesAsignacion('buscar-funcionario-traslado', 'select-funcionario-traslado')" class="mb-2 w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Buscar funcionario por nombre o cargo" />
-                                <select name="id_vinc_funcionario" id="select-funcionario-traslado" onchange="mostrarEvaluadorActualTraslado(); mostrarAreaAntiguaTraslado();" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
+                                <select name="id_vinc_funcionario" id="select-funcionario-traslado" onchange="mostrarEvaluadorActualTraslado(); mostrarAreaAntiguaTraslado(); cargarPlazasDestinoTraslado();" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
                                     <option value="">Selecciona un funcionario</option>
                                     @foreach($empleados as $e)
                                         @if($e->id_vinculacion && $e->activo)
@@ -967,7 +1053,7 @@
                                 </div>
                                 <div>
                                     <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Nueva Área (Destino)</label>
-                                    <select name="area_nuevo" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white">
+                                    <select name="area_nuevo" id="area-nuevo-traslado" onchange="cargarPlazasDestinoTraslado()" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white">
                                         <option value="">Conservar área actual o seleccionar nueva</option>
                                         @foreach($dependenciasCatalogo as $dp)
                                             <option value="{{ $dp->nombre }}">{{ $dp->nombre }}</option>
@@ -977,18 +1063,24 @@
                             </div>
                             <div class="mt-3">
                                 <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Nuevo Cargo (Opcional - si cambia de puesto)</label>
-                                <select name="cargo_nuevo" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white">
+                                <select name="cargo_nuevo" id="cargo-nuevo-traslado" onchange="cargarPlazasDestinoTraslado()" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white">
                                     <option value="">Conservar cargo actual o seleccionar nuevo</option>
                                     @foreach($cargosCatalogo as $cg)
                                         <option value="{{ $cg->nombre }}">{{ $cg->nombre }}</option>
                                     @endforeach
                                 </select>
                             </div>
+                            {{-- S14 (fase F): solo aparece si el funcionario ya ocupa una plaza del catálogo --}}
+                            <div id="plaza-destino-traslado-box" class="hidden">
+                                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Plaza destino</label>
+                                <select name="id_puesto_destino" id="plaza-destino-traslado" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white"></select>
+                                <p id="plaza-destino-traslado-ayuda" class="text-[9px] text-slate-400 mt-0.5"></p>
+                            </div>
                             <div>
                                 <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Motivo del traslado</label>
                                 <input type="text" name="motivo" maxlength="500" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Ej: Reorganización administrativa, necesidad del servicio" />
                             </div>
-                            <button type="submit" class="w-full bg-[#B5A160] text-white rounded-xl py-2.5 text-xs font-bold hover:brightness-110 transition shadow-md shadow-[#B5A160]/20">Procesar traslado</button>
+                            <button type="submit" class="w-full bg-[#B5A160] text-white rounded-xl py-2.5 text-xs font-bold hover:brightness-110 transition shadow-md shadow-[#B5A160]/20">Programar traslado</button>
                         </form>
                     </div>
 
@@ -996,7 +1088,7 @@
                         <div class="flex items-end justify-between gap-4 mb-4">
                             <div>
                                 <h3 class="text-lg font-bold text-slate-800">Histórico de traslados</h3>
-                                <p class="text-xs text-slate-500 mt-1">Registro de traslados ejecutados.</p>
+                                <p class="text-xs text-slate-500 mt-1">Traslados programados, confirmados y cancelados.</p>
                             </div>
                             <span id="traslados-admin-contador" class="text-[10px] font-bold uppercase rounded-full px-3 py-1.5 bg-[#EAF2EF] text-[#00594E]">Cargando...</span>
                         </div>
@@ -1048,6 +1140,18 @@
                                     <p class="text-[9px] text-slate-400 mt-0.5">Vacío = vigencia abierta</p>
                                 </div>
                             </div>
+                            <div class="rounded-xl border border-amber-100 bg-amber-50/60 p-3 space-y-2">
+                                <p class="text-[11px] text-amber-800"><b>Más de 30 días o vigencia abierta:</b> el titular debe calificar el tramo de todas sus personas a cargo y el evaluador del delegado debe calificar su tramo antes de confirmar el inicio. Con 30 días o menos, el delegado atiende las mismas evaluaciones sin tramos.</p>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Superior que evaluará al delegado (si supera 30 días)</label>
+                                    <select name="id_vinc_superior_delegado" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white">
+                                        <option value="">Selecciona el nuevo superior del delegado</option>
+                                        @foreach($evaluadoresDelegacion as $ed)
+                                            <option value="{{ $ed->id_vinculacion }}">{{ $ed->nombres }} {{ $ed->apellidos }} - {{ $ed->cargo }} ({{ $ed->area }})</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                            </div>
                             <div>
                                 <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Área / Dependencia Delegada</label>
                                 <select name="area" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white">
@@ -1062,7 +1166,7 @@
                                 <input type="text" name="motivo" maxlength="500" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Ej. Vacaciones, comisión de servicios, licencia" />
                             </div>
 
-                            <button type="submit" class="w-full bg-[#B5A160] text-white rounded-xl py-2.5 text-xs font-bold hover:brightness-110 transition shadow-md shadow-[#B5A160]/20">Activar delegación</button>
+                            <button type="submit" class="w-full bg-[#B5A160] text-white rounded-xl py-2.5 text-xs font-bold hover:brightness-110 transition shadow-md shadow-[#B5A160]/20">Registrar delegación</button>
                         </form>
                     </div>
 
@@ -1070,7 +1174,7 @@
                         <div class="flex items-end justify-between gap-4 mb-4">
                             <div>
                                 <h3 class="text-lg font-bold text-slate-800">Histórico de delegaciones</h3>
-                                <p class="text-xs text-slate-500 mt-1">Delegaciones activas y finalizadas.</p>
+                                <p class="text-xs text-slate-500 mt-1">Delegaciones programadas, activas, por finalizar y cerradas.</p>
                             </div>
                             <span id="delegaciones-admin-contador" class="text-[10px] font-bold uppercase rounded-full px-3 py-1.5 bg-[#EAF2EF] text-[#00594E]">Cargando...</span>
                         </div>
@@ -1243,7 +1347,12 @@
                                         data-fase="{{ $ev->fase_actual }}"
                                         data-estado="{{ $ev->estado }}"
                                         data-sistema="{{ $ev->sistema }}">
-                                        <td class="p-3 font-semibold text-slate-500">#{{ $ev->id_evaluacion }}</td>
+                                        <td class="p-3 font-semibold text-slate-500">
+                                            <span class="whitespace-nowrap">#{{ $ev->id_evaluacion }}</span>
+                                            <button type="button" onclick="verBitacora({{ $ev->id_evaluacion }})" class="ml-1 align-middle text-slate-400 hover:text-[#00594E]" title="Ver la bitácora de esta evaluación">
+                                                <span class="material-symbols-outlined text-[16px]">history</span>
+                                            </button>
+                                        </td>
                                         <td class="p-3 font-semibold text-slate-900">{{ $ev->evaluado_nombres }} {{ $ev->evaluado_apellidos }}</td>
                                         <td class="p-3 text-slate-500">{{ $ev->evaluado_cargo }} · {{ $ev->evaluado_area }}</td>
                                         <td class="p-3 text-slate-600">{{ $ev->evaluador_nombres }} {{ $ev->evaluador_apellidos }}</td>
@@ -1494,119 +1603,6 @@
         ])->values()),
     };
 </script>
-<script>
-    (function() {
-        // Escapa texto antes de inyectarlo en innerHTML. Este script es clásico y
-        // se ejecuta antes que los módulos de Vite, por eso no puede importar
-        // escapeHtml() de common.js.
-        const escNotif = (value) => {
-            const d = document.createElement('div');
-            d.textContent = value ?? '';
-            return d.innerHTML;
-        };
-        // Lista blanca de secciones: evita inyectar JS en el onclick generado.
-        const SECCIONES_NOTIF = ['periodos', 'recursos-planes', 'impedimentos-admin', 'delegaciones', 'compromisos-modificacion'];
-
-        const notifContainer = document.getElementById('notificaciones-container');
-        const notifDropdown = document.getElementById('notif-dropdown');
-        const notifLista = document.getElementById('notif-lista');
-        const notifVacia = document.getElementById('notif-vacia');
-        const notifBadge = document.getElementById('notif-badge');
-
-        if (!notifContainer) return;
-
-        const iconos = {
-            'PERIODO_CERCA': 'schedule',
-            'RECURSO_NUEVO': 'gavel',
-            'PLAN_NUEVO': 'assignment',
-            'IMPEDIMENTO_NUEVO': 'block',
-            'RECUSACION_NUEVA': 'gavel',
-            'DELEGACION_PROXIMA': 'swap_horiz',
-            'IMPEDIMENTO_APROBADO': 'how_to_reg',
-            'MODIFICACION_COMPROMISO': 'edit_note',
-        };
-
-        const colores = {
-            'PERIODO_CERCA': 'bg-amber-50 text-amber-700',
-            'RECURSO_NUEVO': 'bg-blue-50 text-blue-700',
-            'PLAN_NUEVO': 'bg-purple-50 text-purple-700',
-            'IMPEDIMENTO_NUEVO': 'bg-red-50 text-red-600',
-            'RECUSACION_NUEVA': 'bg-orange-50 text-orange-700',
-            'DELEGACION_PROXIMA': 'bg-teal-50 text-teal-700',
-            'IMPEDIMENTO_APROBADO': 'bg-emerald-50 text-emerald-700',
-            'MODIFICACION_COMPROMISO': 'bg-sky-50 text-sky-700',
-        };
-
-        window.toggleNotificaciones = function() {
-            notifDropdown.classList.toggle('hidden');
-            if (!notifDropdown.classList.contains('hidden')) {
-                cargarNotificaciones();
-            }
-        };
-
-        document.addEventListener('click', function(e) {
-            if (!notifContainer.contains(e.target)) {
-                notifDropdown.classList.add('hidden');
-            }
-        });
-
-        function cargarNotificaciones() {
-            fetch('/admin/notificaciones', {
-                headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
-            })
-            .then(r => r.json())
-            .then(data => {
-                const items = data.notificaciones || [];
-                if (!items.length) {
-                    notifLista.classList.add('hidden');
-                    notifVacia.classList.remove('hidden');
-                    return;
-                }
-                notifVacia.classList.add('hidden');
-                notifLista.classList.remove('hidden');
-
-                notifLista.innerHTML = items.map(n => {
-                    const icon = iconos[n.tipo] || 'info';
-                    const color = colores[n.tipo] || 'bg-slate-50 text-slate-600';
-                    const fecha = new Date(n.created_at).toLocaleDateString('es-CO', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-                    const leida = n.leida ? 'opacity-60' : '';
-                    const seccion = SECCIONES_NOTIF.includes(n.seccion) ? n.seccion : '';
-                    const link = seccion ? `onclick="navegarMenu(document.querySelector('[data-section=\\'${seccion}\\']'), '${seccion}')"` : '';
-                    return `<div class="px-4 py-3 hover:bg-slate-50 transition cursor-pointer ${leida}" ${link}>
-                        <div class="flex items-start gap-3">
-                            <span class="material-symbols-outlined text-lg mt-0.5 ${escNotif(color)} rounded-lg p-1.5 bg-opacity-50">${escNotif(icon)}</span>
-                            <div class="min-w-0 flex-1">
-                                <p class="text-xs font-bold text-slate-800 truncate">${escNotif(n.titulo)}</p>
-                                <p class="text-[11px] text-slate-500 mt-0.5 leading-snug">${escNotif(n.mensaje)}</p>
-                                <p class="text-[10px] text-slate-400 mt-1">${escNotif(fecha)}</p>
-                            </div>
-                            ${!n.leida ? '<span class="w-2 h-2 rounded-full bg-[#00594E] shrink-0 mt-1.5"></span>' : ''}
-                        </div>
-                    </div>`;
-                }).join('');
-            })
-            .catch(() => {
-                notifLista.innerHTML = '<div class="py-6 text-center text-xs text-red-400">Error al cargar notificaciones.</div>';
-            });
-        }
-
-        window.marcarTodasLeidas = function() {
-            fetch('/admin/notificaciones/marcar-leidas', {
-                method: 'POST',
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'Accept': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
-                }
-            })
-            .then(r => r.json())
-            .then(() => {
-                if (notifBadge) notifBadge.classList.add('hidden');
-                cargarNotificaciones();
-            });
-        };
-    })();
-    </script>
 
     <script>
         function filtrarEvaluacionesAdmin() {

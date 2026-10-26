@@ -20,6 +20,10 @@
             <span class="material-symbols-outlined">account_tree</span>
             Jerarquía / Jefes
         </button>
+        <button type="button" class="sidebar-link w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-slate-700 transition" onclick="navegarMenu(this, 'plazas')">
+            <span class="material-symbols-outlined">badge</span>
+            Catálogo de plazas
+        </button>
         <button type="button" class="sidebar-link w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-slate-700 transition" onclick="navegarMenu(this, 'no-calificados')">
             <span class="material-symbols-outlined">summarize</span>
             Parciales y No Calificados

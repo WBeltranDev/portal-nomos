@@ -17,9 +17,11 @@
             <span class="text-[10px] uppercase tracking-[0.18em] text-[#B5A160] font-bold">{{ $rolActivo }}</span>
         </div>
 
-        {{-- Campana de notificaciones (Solo Admin) --}}
-        @if(($rolActivo ?? '') === 'admin')
-        <div class="relative" id="notificaciones-container">
+        {{-- Campana de notificaciones: Talento Humano ve las generales; evaluado y evaluador, sus avisos personales (S14) --}}
+        @php($esAdminNotif = ($rolActivo ?? '') === 'admin')
+        <div class="relative" id="notificaciones-container"
+             data-url-lista="{{ $esAdminNotif ? '/admin/notificaciones' : '/mis-notificaciones' }}"
+             data-url-leidas="{{ $esAdminNotif ? '/admin/notificaciones/marcar-leidas' : '/mis-notificaciones/marcar-leidas' }}">
             <button type="button" onclick="toggleNotificaciones()" class="relative p-2 rounded-lg hover:bg-white/10 transition" title="Notificaciones">
                 <span class="material-symbols-outlined text-white/80 text-xl">notifications</span>
                 <span id="notif-badge" class="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold px-1 {{ ($notificacionesNoLeidas ?? 0) > 0 ? '' : 'hidden' }}">{{ $notificacionesNoLeidas ?? 0 }}</span>
@@ -36,7 +38,8 @@
                 <div id="notif-vacia" class="hidden py-6 text-center text-xs text-slate-400">No hay notificaciones.</div>
             </div>
         </div>
-        @endif
+        @include('partials.notificaciones-script')
+        @include('partials.bitacora-modal')
 
         <div class="relative">
             <button type="button" onclick="toggleProfileMenu()" class="flex items-center gap-3 rounded-full pl-1 pr-3 py-1.5 hover:bg-white/10 transition">

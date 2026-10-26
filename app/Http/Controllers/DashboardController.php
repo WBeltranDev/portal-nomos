@@ -79,6 +79,7 @@ class DashboardController extends Controller
         $funcionariosParaPeriodoParcial = collect();
         $evaluacionesEvaluador = collect();
         $evaluacionesEvaluado = collect();
+        $tramosEvaluado = [];
         $informesEvaluador = collect();
         $evaluadosDisponibles = collect();
         $evaluacionesInstanciaExterna = collect();
@@ -467,7 +468,14 @@ class DashboardController extends Controller
                     DB::raw('IF(f_ev.id_firma IS NOT NULL, 1, 0) as evaluado_firmado'),
                     DB::raw('IF(f_er.id_firma IS NOT NULL, 1, 0) as evaluador_firmado'),
                     DB::raw('(SELECT COUNT(*) FROM concertacion_extratiempo ce WHERE ce.id_evaluacion = ev.id_evaluacion AND ce.activo = 1) as tiene_extratiempo'),
-                    DB::raw('(SELECT estado FROM impedimento_recusacion ir WHERE ir.id_evaluacion = ev.id_evaluacion ORDER BY id_impedimento DESC LIMIT 1) as estado_impedimento')
+                    DB::raw('(SELECT estado FROM impedimento_recusacion ir WHERE ir.id_evaluacion = ev.id_evaluacion ORDER BY id_impedimento DESC LIMIT 1) as estado_impedimento'),
+                    // S14: traslado programado que espera la nota de este tramo.
+                    Schema::hasColumn('traslado', 'id_periodo')
+                        ? DB::raw("(SELECT t.fecha_traslado FROM traslado t WHERE t.estado = 'PROGRAMADO' AND t.id_periodo = ev.id_periodo AND t.id_vinc_funcionario = ev.id_vinc_evaluado AND t.id_vinc_evaluador_origen = ev.id_vinc_evaluador ORDER BY t.id_traslado DESC LIMIT 1) as traslado_programado_fecha")
+                        : DB::raw('NULL as traslado_programado_fecha'),
+                    Schema::hasColumn('traslado', 'id_periodo')
+                        ? DB::raw("(SELECT t.dias_laborados FROM traslado t WHERE t.estado = 'PROGRAMADO' AND t.id_periodo = ev.id_periodo AND t.id_vinc_funcionario = ev.id_vinc_evaluado AND t.id_vinc_evaluador_origen = ev.id_vinc_evaluador ORDER BY t.id_traslado DESC LIMIT 1) as traslado_programado_dias")
+                        : DB::raw('NULL as traslado_programado_dias')
                 )
                 ->orderByDesc('ev.id_evaluacion')
                 ->get();
@@ -657,6 +665,11 @@ class DashboardController extends Controller
                         && $gruposSemestres->contains("{$ev->anio}|{$ev->sistema}|{$ev->id_vinc_evaluado}");
                 }
             }
+
+            // S14 (regla 9): responsables y notas de cada tramo del periodo.
+            $tramosEvaluado = function_exists('tramosEvaluadoPorPeriodo')
+                ? tramosEvaluadoPorPeriodo((int) $usuario['id_funcionario'])
+                : [];
         }
 
         // 4. Informes en PDF de las personas evaluadas por este evaluador,
@@ -778,18 +791,30 @@ class DashboardController extends Controller
             }
         }
 
-        // --- NOTIFICACIONES (Solo Admin) ---
+        // --- NOTIFICACIONES ---
+        // Talento Humano ve las generales (sin destinatario); el evaluado y el
+        // evaluador, sus avisos personales (S14).
         $notificaciones = collect();
         $notificacionesNoLeidas = 0;
+        $conDestinatario = Schema::hasTable('notificacion') && Schema::hasColumn('notificacion', 'id_usuario_destino');
         if ($rolActivo === 'admin' && Schema::hasTable('notificacion')) {
             // Generar notificaciones automáticas
             self::generarNotificacionesAdmin();
 
             $notificaciones = DB::table('notificacion')
+                ->when($conDestinatario, fn ($q) => $q->whereNull('id_usuario_destino'))
                 ->orderByDesc('created_at')
                 ->limit(50)
                 ->get();
-            $notificacionesNoLeidas = DB::table('notificacion')->where('leida', false)->count();
+            $notificacionesNoLeidas = DB::table('notificacion')
+                ->when($conDestinatario, fn ($q) => $q->whereNull('id_usuario_destino'))
+                ->where('leida', false)
+                ->count();
+        } elseif ($conDestinatario && ! empty($usuario['id_usuario'])) {
+            $notificacionesNoLeidas = DB::table('notificacion')
+                ->where('id_usuario_destino', $usuario['id_usuario'])
+                ->where('leida', false)
+                ->count();
         }
 
         // Support lists
@@ -824,7 +849,7 @@ class DashboardController extends Controller
         $viewData = compact(
             'usuario', 'rolActivo', 'usuarios', 'empleados', 'evaluaciones',
             'evaluacionesAdmin',
-            'periodos', 'ponderaciones', 'evaluacionesEvaluador', 'evaluacionesEvaluado',
+            'periodos', 'ponderaciones', 'evaluacionesEvaluador', 'evaluacionesEvaluado', 'tramosEvaluado',
             'informesEvaluador', 'evaluadosDisponibles', 'miVinculacionEvaluador', 'acuerdosRL', 'acuerdosAG',
             'ponderacionesConfig', 'planesPendientesEvaluador', 'escalaCalificacion',
             'vacantes',
