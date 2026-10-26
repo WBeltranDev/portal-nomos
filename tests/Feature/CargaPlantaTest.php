@@ -91,7 +91,7 @@ class CargaPlantaTest extends TestCase
     }
 
     /** Excel de planta: los auxiliares rotan de oficina (y de correo) y hay vacantes. */
-    private function excel(): string
+    private function excel(array $vacantesExtra = []): string
     {
         $fila = fn ($doc, $nombre, $cargo, $codigo, $grado, $area, $jefe, $correo, $rol) => [
             1, (int) $doc, "{$nombre} {$this->s}", $cargo, $codigo, $grado, $area, new \DateTimeImmutable('2021-09-01'), null, 'PROVISIONALIDAD',
@@ -116,15 +116,18 @@ class CargaPlantaTest extends TestCase
         $w->addRow(Row::fromValues(['ITEM', 'CARGO', 'CODIGO ', 'GRADO', 'NIVEL', 'Tipo de Vinculación', 'SISTEMA DE EVALUACIÓN', 'AREA', 'CANTIDAD', 'TIPO DE VACANTE']));
         $w->addRow(Row::fromValues([1, 'Auxiliar Administrativo', 407, 11, 'Asistente', 'Provisionalidad', 'RL', $this->depA, 2, 'DEFINITIVA']));
         $w->addRow(Row::fromValues([2, "Decano {$this->s}", 8, 6, 'Directivo', 'Periodo Fijo', 'AG', 'Facultades', 1, 'DEFINITIVA']));
+        foreach ($vacantesExtra as $vacante) {
+            $w->addRow(Row::fromValues($vacante));
+        }
         $w->addRow(Row::fromValues(['TOTAL VACANTES', null, null, null, null, null, null, null, 3]));
         $w->close();
 
         return $this->archivo;
     }
 
-    private function subir(): array
+    private function subir(array $vacantesExtra = []): array
     {
-        $archivo = new UploadedFile($this->excel(), 'planta.xlsx', null, null, true);
+        $archivo = new UploadedFile($this->excel($vacantesExtra), 'planta.xlsx', null, null, true);
 
         return $this->post('/admin/plazas/carga/analizar', ['archivo' => $archivo], ['Accept' => 'application/json'])->assertOk()->json();
     }
@@ -216,12 +219,57 @@ class CargaPlantaTest extends TestCase
         $this->assertTrue(DB::table('puesto as p')->join('cargo as c', 'c.id_cargo', '=', 'p.id_cargo')->where('c.nombre', "DECANO {$this->s}")->where('p.id_dependencia', $idDepB)->exists());
     }
 
+    public function test_las_decanaturas_por_facultad_se_crean_como_vacantes(): void
+    {
+        $decanaturas = [[3, "Decano {$this->s}", 8, 6, 'Directivo', 'Periodo Fijo', 'AG', 'Facultad de Artes', 1, 'DEFINITIVA'],
+            [4, "Decano {$this->s}", 8, 6, 'Directivo', 'Periodo Fijo', 'AG', 'Facultad de Ingenierias', 1, 'DEFINITIVA']];
+        $ensayo = $this->subir($decanaturas);
+        $this->aplicar($ensayo)->assertOk();
+        $this->aplicar($this->subir($decanaturas))->assertOk();
+
+        $plazas = DB::table('puesto as p')->join('cargo as c', 'c.id_cargo', '=', 'p.id_cargo')->join('dependencia as d', 'd.id_dependencia', '=', 'p.id_dependencia')
+            ->where('c.nombre', "DECANO {$this->s}")->pluck('d.nombre')->sort()->values()->all();
+        $this->assertSame(['FACULTAD DE ARTES', 'FACULTAD DE INGENIERIAS'], $plazas, 'Una vacante por facultad, sin duplicar al recargar.');
+        $this->assertSame(1, DB::table('carga_planta_pendiente')->where('estado', 'PENDIENTE')->where('tipo', 'VACANTE_SIN_DEPENDENCIA')->count(), 'Solo «Facultades» queda pendiente.');
+    }
+
     public function test_el_catalogo_oficial_se_descarga_en_pdf_y_excel(): void
     {
         $this->aplicar($this->subir())->assertOk();
 
         $this->get('/admin/plazas/documento-oficial?formato=pdf')->assertOk()->assertHeader('Content-Type', 'application/pdf');
         $this->get('/admin/plazas/documento-oficial?formato=xlsx')->assertOk()->assertDownload();
+    }
+
+    public function test_la_planta_para_revision_se_vuelve_a_cargar_sin_cambios(): void
+    {
+        $this->aplicar($this->subir())->assertOk();
+
+        $descarga = $this->get('/admin/plazas/planta-revision')->assertOk()->assertDownload();
+        $revision = tempnam(sys_get_temp_dir(), 'revision') . '.xlsx';
+        copy($descarga->baseResponse->getFile()->getPathname(), $revision);
+
+        $carga = app(\App\Services\CargaPlanta::class);
+        $planta = $carga->leer($revision);
+        $ensayo = $carga->analizar($planta);
+        $mias = ["71{$this->n}", "72{$this->n}", "73{$this->n}", "74{$this->n}"];
+
+        // Lo mismo que hay en la plataforma: ni cambios ni vacantes nuevas para estas personas y oficinas.
+        $this->assertSame([], array_values(array_filter($ensayo['cambios'], fn ($c) => in_array($c['cedula'], $mias, true))));
+        $this->assertSame(4, count(array_filter($planta['personas'], fn ($p) => in_array($p['cedula'], $mias, true))));
+        $vacanteA = collect($ensayo['_vacantes'])->first(fn ($v) => $v['area'] === $this->depA);
+        $this->assertSame([2, 0], [$vacanteA['cantidad'], $vacanteA['faltan']]);
+        $this->assertTrue(collect($ensayo['pendientes'])->contains(fn ($p) => $p['tipo'] === 'VACANTE_SIN_DEPENDENCIA' && $p['datos']['cargo'] === "DECANO {$this->s}"));
+
+        // Al volver a cargarla, los pendientes de la carga anterior se reemplazan (no se duplican).
+        $archivo = new UploadedFile($revision, 'revisada.xlsx', null, null, true);
+        $nuevo = $this->post('/admin/plazas/carga/analizar', ['archivo' => $archivo], ['Accept' => 'application/json'])->assertOk()->json();
+        $this->postJson('/admin/plazas/carga/aplicar', ['token' => $nuevo['token'], 'archivo' => 'revisada.xlsx'])->assertOk();
+        unlink($revision);
+
+        $decano = DB::table('carga_planta_pendiente')->where('tipo', 'VACANTE_SIN_DEPENDENCIA')->where('datos', 'like', "%DECANO {$this->s}%");
+        $this->assertSame(1, (clone $decano)->where('estado', 'PENDIENTE')->count());
+        $this->assertSame(1, (clone $decano)->where('estado', 'DESCARTADO')->count());
     }
 
     public function test_el_lector_entiende_cedulas_en_notacion_cientifica(): void

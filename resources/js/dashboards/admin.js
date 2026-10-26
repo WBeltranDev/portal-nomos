@@ -1307,17 +1307,18 @@ export function cargarPendientesPlanta() {
         caja.innerHTML = pendientes.length ? pendientes.map(p => {
             let accion = '';
             if (p.tipo === 'VACANTE_SIN_DEPENDENCIA') {
-                accion = `<select id="pend-dep-${p.id_pendiente}" class="rounded-xl border border-slate-200 bg-white p-1.5 text-xs">${opcionesDependencia}</select>
+                accion = `<select id="pend-dep-${p.id_pendiente}" class="w-full min-w-0 rounded-xl border border-slate-200 bg-white p-1.5 text-xs sm:w-auto sm:flex-1 sm:max-w-md">${opcionesDependencia}</select>
                     <button type="button" onclick="resolverPendientePlanta(${p.id_pendiente}, 'crear_vacante')" class="rounded-xl bg-[#00594E] px-3 py-1.5 text-xs font-bold text-white">Crear plaza vacante</button>`;
             } else if (p.tipo === 'PERSONA_SIN_PLAZA' && p.datos?.id_vinculacion) {
-                accion = `<select id="pend-plaza-${p.id_pendiente}" class="rounded-xl border border-slate-200 bg-white p-1.5 text-xs">${opcionesVacante}</select>
+                accion = `<select id="pend-plaza-${p.id_pendiente}" class="w-full min-w-0 rounded-xl border border-slate-200 bg-white p-1.5 text-xs sm:w-auto sm:flex-1 sm:max-w-md">${opcionesVacante}</select>
                     <button type="button" onclick="resolverPendientePlanta(${p.id_pendiente}, 'asignar_plaza')" class="rounded-xl bg-[#00594E] px-3 py-1.5 text-xs font-bold text-white">Asignar plaza</button>`;
             } else {
                 accion = `<button type="button" onclick="resolverPendientePlanta(${p.id_pendiente}, 'resuelto')" class="rounded-xl bg-[#00594E] px-3 py-1.5 text-xs font-bold text-white">Marcar resuelto</button>`;
             }
-            return `<div class="flex flex-col gap-2 rounded-xl border border-rose-100 bg-rose-50/40 p-2.5 sm:flex-row sm:items-center sm:justify-between">
-                <p class="min-w-0 text-slate-700 break-words">${escapeHtml(p.descripcion)}</p>
-                <div class="flex shrink-0 flex-wrap items-center gap-2">${accion}
+            // Descripción arriba y acciones abajo: los nombres largos de dependencia no aplastan el texto.
+            return `<div class="min-w-0 space-y-2 rounded-xl border border-rose-100 bg-rose-50/40 p-2.5">
+                <p class="text-slate-700 break-words">${escapeHtml(p.descripcion)}</p>
+                <div class="flex min-w-0 flex-wrap items-center gap-2">${accion}
                     <button type="button" onclick="resolverPendientePlanta(${p.id_pendiente}, 'descartar')" class="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600">Descartar</button>
                 </div>
             </div>`;
@@ -1370,12 +1371,37 @@ function renderModeloPuestos(modelo) {
             ? items.map(d => `
                 <div class="flex flex-col gap-2 rounded-xl border border-amber-100 bg-amber-50/50 p-2.5 sm:flex-row sm:items-center sm:justify-between">
                     <div class="min-w-0">
-                        <p class="font-bold text-slate-800 break-words">Evaluación #${d.id_evaluacion} · ${escapeHtml(d.fe_nombre || '')}</p>
-                        <p class="text-slate-600">Hoy la evalúa <b>${escapeHtml(d.fl_nombre || '—')}</b>; por plaza correspondería a <b>${escapeHtml(d.fp_nombre || 'nadie')}</b>. ${escapeHtml(d.motivo || '')}</p>
+                        <p class="font-bold text-slate-800 break-words">${d.tipo === 'JERARQUIA' ? 'Asignación de evaluador' : `Evaluación #${d.id_evaluacion}`} · ${escapeHtml(d.fe_nombre || '')}</p>
+                        <p class="text-slate-600">Hoy ${d.tipo === 'JERARQUIA' ? 'lo tiene asignado' : 'la evalúa'} <b>${escapeHtml(d.fl_nombre || '—')}</b>; por ${d.tipo === 'JERARQUIA' ? 'jerarquía de plazas' : 'plaza'} correspondería a <b>${escapeHtml(d.fp_nombre || 'nadie')}</b>. ${escapeHtml(d.motivo || '')}</p>
                     </div>
                     <button type="button" onclick="revisarDiferenciaPuestos(${d.id_discrepancia})" class="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50 transition">Marcar revisada</button>
                 </div>`).join('')
             : '<p class="text-slate-500">Sin diferencias pendientes.</p>';
+    }
+
+    // Relevos con calificación iniciada: TH decide caso por caso (por defecto, el nuevo ocupante).
+    const relevos = document.getElementById('modelo-puestos-relevos');
+    if (relevos) {
+        const items = modelo.relevos || [];
+        const activo = modo === 'ACTIVO';
+        relevos.innerHTML = items.length
+            ? items.map(r => `
+                <div class="min-w-0 space-y-2 rounded-xl border border-sky-100 bg-sky-50/50 p-2.5">
+                    <div class="min-w-0">
+                        <p class="font-bold text-slate-800 break-words">Evaluación #${r.id_evaluacion} · ${escapeHtml(r.evaluado || '')} <span class="font-normal text-slate-500">· fase ${r.fase}${r.periodo ? ` · ${escapeHtml(r.periodo)}` : ''} · plaza ${escapeHtml(r.codigo_plaza || '—')}</span></p>
+                        <p class="text-slate-600 break-words">Empezó la calificación <b>${escapeHtml(r.evaluador_actual || '—')}</b>; hoy ocupa la plaza <b>${escapeHtml(r.nuevo_ocupante || '—')}</b>.</p>
+                    </div>
+                    <div class="flex min-w-0 flex-wrap items-center gap-2">
+                        <select id="relevo-decision-${r.id_evaluacion}" class="w-full min-w-0 rounded-xl border border-slate-200 bg-white p-1.5 text-xs sm:w-auto sm:flex-1 sm:max-w-md" ${activo ? '' : 'disabled'}>
+                            <option value="NUEVO_OCUPANTE">Pasa al nuevo ocupante y continúa desde lo guardado</option>
+                            ${r.conservable ? '<option value="CONSERVAR">La termina quien empezó la calificación</option>' : ''}
+                        </select>
+                        <button type="button" onclick="decidirRelevoPuestos(${r.id_evaluacion})" class="rounded-xl bg-[#00594E] px-3 py-1.5 text-xs font-bold text-white hover:brightness-110 transition disabled:opacity-50" ${activo ? '' : 'disabled'}>Aplicar</button>
+                    </div>
+                    ${r.conservable ? '' : '<p class="text-slate-500">Quien la empezó ya no está activo: solo puede pasar al nuevo ocupante.</p>'}
+                    ${activo ? '' : '<p class="text-amber-700">Se decide con el modelo de puestos en modo Activo.</p>'}
+                </div>`).join('')
+            : '<p class="text-slate-500">Sin relevos por decidir.</p>';
     }
 
     const historial = document.getElementById('modelo-puestos-historial');
@@ -1394,6 +1420,15 @@ export function compararModeloPuestos() {
 
 export function revisarDiferenciaPuestos(id) {
     accionPlazas(`/admin/plazas/diferencias/${id}/revisar`, '¿Marcar esta diferencia como revisada? La corrección (reasignar o ajustar el catálogo) se hace en el módulo que corresponda.');
+}
+
+export function decidirRelevoPuestos(id) {
+    const decision = document.getElementById(`relevo-decision-${id}`)?.value;
+    if (!decision) return;
+    const mensaje = decision === 'CONSERVAR'
+        ? '¿Dejar que termine la calificación quien la empezó? El nuevo ocupante no la verá como trabajo suyo.'
+        : '¿Pasar la evaluación al nuevo ocupante? Continúa desde lo guardado y se avisa al evaluado.';
+    accionPlazas(`/admin/plazas/relevos/${id}`, mensaje, { decision });
 }
 
 export function cambiarModoPuestos() {
@@ -1528,6 +1563,7 @@ window.aplicarPlanta = aplicarPlanta;
 window.resolverPendientePlanta = resolverPendientePlanta;
 window.compararModeloPuestos = compararModeloPuestos;
 window.revisarDiferenciaPuestos = revisarDiferenciaPuestos;
+window.decidirRelevoPuestos = decidirRelevoPuestos;
 
 // Global window exposure
 window.filtrarEmpleados = filtrarEmpleados;

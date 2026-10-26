@@ -304,6 +304,50 @@ class PlazaCatalogoTest extends TestCase
         $this->assertSame($this->idUsuario, (int) DB::table('puesto_discrepancia')->where('id_discrepancia', $id)->value('resuelta_por'));
     }
 
+    private function asignar(int $evaluador, int $evaluado): void
+    {
+        DB::table('evaluador_asignacion')->insert(['id_vinc_evaluador' => $evaluador, 'id_vinc_evaluado' => $evaluado, 'fecha_asignacion' => now()]);
+    }
+
+    public function test_la_asignacion_que_sigue_la_jerarquia_de_plazas_no_es_diferencia(): void
+    {
+        $this->observando();
+        $this->asignar($this->jefe, $this->profesional1);
+
+        $r = $this->pendientes();
+        $this->assertSame([1, 0], [$r['asignaciones'], $r['diferencias_pendientes']]);
+    }
+
+    public function test_detecta_asignaciones_que_no_siguen_la_jerarquia_de_plazas(): void
+    {
+        $this->observando();
+        $this->asignar($this->tecnico, $this->profesional1);
+
+        $this->assertSame(1, $this->pendientes()['diferencias_pendientes']);
+        $d = DB::table('puesto_discrepancia')->where('tipo', 'JERARQUIA')->first();
+        $this->assertSame([$this->profesional1, $this->tecnico, $this->jefe], [(int) $d->id_vinc_evaluado, (int) $d->id_vinc_responsable_legado, (int) $d->id_vinc_responsable_puesto]);
+        $this->assertNull($d->id_evaluacion);
+        $this->getJson('/admin/plazas')->assertJsonPath('modelo.diferencias.0.tipo', 'JERARQUIA');
+
+        // Al corregir la asignación, la diferencia se resuelve sola.
+        DB::table('evaluador_asignacion')->where('id_vinc_evaluado', $this->profesional1)->update(['id_vinc_evaluador' => $this->jefe]);
+        $this->assertSame(1, $this->pendientes()['resueltas_solas']);
+    }
+
+    public function test_con_delegacion_vigente_del_superior_el_delegado_puede_tener_la_asignacion(): void
+    {
+        $this->observando();
+        DB::table('delegacion')->insert([
+            'id_vinc_delegante' => $this->jefe, 'id_vinc_delegado' => $this->tecnico, 'id_puesto' => $this->plazaDe($this->jefe)->id_puesto,
+            'fecha_inicio' => now()->subDay()->toDateString(), 'fecha_fin' => now()->addDays(10)->toDateString(), 'estado' => 'ACTIVA', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        // Delegación corta: el titular y el delegado tienen la asignación.
+        $this->asignar($this->jefe, $this->profesional1);
+        $this->asignar($this->tecnico, $this->profesional1);
+
+        $this->assertSame(0, $this->pendientes()['diferencias_pendientes']);
+    }
+
     public function test_comparar_exige_modo_observacion(): void
     {
         $this->postJson('/admin/plazas/observar')->assertStatus(422);

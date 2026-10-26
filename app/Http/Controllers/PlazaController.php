@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Services\ModeloPuestos;
 use App\Services\OcupacionPuestos;
 use App\Services\ResolutorResponsable;
+use App\Services\SincronizadorPlazas;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -73,6 +74,7 @@ class PlazaController extends Controller
                 ],
                 'historial' => $modelo->historial(),
                 'diferencias' => $this->diferenciasPendientes(),
+                'relevos' => app(SincronizadorPlazas::class)->relevosPorDecidir(),
             ],
             'resumen' => [
                 'total' => $plazas->count(),
@@ -251,8 +253,8 @@ class PlazaController extends Controller
         $nombre = fn ($alias) => DB::raw("TRIM(CONCAT(COALESCE({$alias}.nombres, ''), ' ', COALESCE({$alias}.apellidos, ''))) as {$alias}_nombre");
 
         return DB::table('puesto_discrepancia as d')
-            ->join('evaluacion as ev', 'ev.id_evaluacion', '=', 'd.id_evaluacion')
-            ->join('vinculacion as ve', 've.id_vinculacion', '=', 'ev.id_vinc_evaluado')
+            ->leftJoin('evaluacion as ev', 'ev.id_evaluacion', '=', 'd.id_evaluacion')
+            ->join('vinculacion as ve', 've.id_vinculacion', '=', DB::raw('COALESCE(d.id_vinc_evaluado, ev.id_vinc_evaluado)'))
             ->join('funcionario as fe', 'fe.id_funcionario', '=', 've.id_funcionario')
             ->leftJoin('vinculacion as vl', 'vl.id_vinculacion', '=', 'd.id_vinc_responsable_legado')
             ->leftJoin('funcionario as fl', 'fl.id_funcionario', '=', 'vl.id_funcionario')
@@ -261,7 +263,7 @@ class PlazaController extends Controller
             ->where('d.resuelta', 0)
             ->orderBy('d.id_discrepancia')
             ->limit(100)
-            ->get(['d.id_discrepancia', 'd.id_evaluacion', 'd.motivo', 'd.created_at', $nombre('fe'), $nombre('fl'), $nombre('fp')])
+            ->get(['d.id_discrepancia', 'd.tipo', 'd.id_evaluacion', 'd.motivo', 'd.created_at', $nombre('fe'), $nombre('fl'), $nombre('fp')])
             ->all();
     }
 
@@ -277,7 +279,7 @@ class PlazaController extends Controller
         $r = app(ResolutorResponsable::class)->observar();
 
         return response()->json(['success' => true, 'resultado' => $r,
-            'message' => "Comparación hecha sobre {$r['evaluaciones']} evaluación(es) abierta(s): {$r['diferencias_pendientes']} diferencia(s) pendiente(s), {$r['diferencias_nuevas']} nueva(s)."]);
+            'message' => "Comparación hecha sobre {$r['evaluaciones']} evaluación(es) abierta(s) y {$r['asignaciones']} asignación(es) de evaluador: {$r['diferencias_pendientes']} diferencia(s) pendiente(s), {$r['diferencias_nuevas']} nueva(s)."]);
     }
 
     /** TH revisa una diferencia y la acepta; la corrección se hace en el módulo que corresponda. */
@@ -294,6 +296,23 @@ class PlazaController extends Controller
         abort_unless($actualizada, 404, 'La diferencia no existe o ya fue revisada.');
 
         return response()->json(['success' => true, 'message' => 'Diferencia marcada como revisada.']);
+    }
+
+    /** TH decide un relevo con calificación iniciada: pasa al nuevo ocupante o la termina quien la empezó. */
+    public function decidirRelevo(Request $request, int $id)
+    {
+        $this->soloAdmin();
+
+        $data = $request->validate(['decision' => ['required', 'in:NUEVO_OCUPANTE,CONSERVAR']]);
+
+        $error = app(SincronizadorPlazas::class)->decidirRelevo($id, $data['decision']);
+        if ($error) {
+            return response()->json(['message' => $error], 422);
+        }
+
+        return response()->json(['success' => true, 'message' => $data['decision'] === 'NUEVO_OCUPANTE'
+            ? 'La evaluación pasó al nuevo ocupante y continúa desde lo guardado.'
+            : 'La evaluación la termina quien empezó la calificación.']);
     }
 
     /** Cambia el modo del modelo de puestos (apagado, observación o activo). */

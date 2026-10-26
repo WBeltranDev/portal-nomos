@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\CargaPlanta;
+use App\Services\ExportePlanta;
 use App\Services\OcupacionPuestos;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -131,6 +132,17 @@ class CargaPlantaController extends Controller
         }
 
         return response()->json(['success' => true, 'message' => 'Pendiente actualizado.']);
+    }
+
+    /** Planta actual en el formato de la carga, para que TH la revise y la vuelva a subir. */
+    public function plantaRevision(ExportePlanta $exporte)
+    {
+        $this->soloAdmin();
+
+        $ruta = tempnam(sys_get_temp_dir(), 'planta') . '.xlsx';
+        $exporte->generar($ruta);
+
+        return response()->download($ruta, 'Planta_para_revision_TH_' . now('America/Bogota')->format('Y-m-d') . '.xlsx')->deleteFileAfterSend();
     }
 
     /** Paso 5: catálogo oficial de plazas, en PDF o Excel. */

@@ -82,8 +82,9 @@ class ResolutorResponsable
 
     /**
      * Compara el responsable actual de cada evaluación abierta contra el
-     * responsable por plaza. Registra las diferencias nuevas y da por
-     * resueltas las que ya no se presentan. No modifica evaluaciones.
+     * responsable por plaza, y cada asignación de evaluador contra la jerarquía
+     * de plazas. Registra las diferencias nuevas y da por resueltas las que ya
+     * no se presentan. No modifica evaluaciones ni asignaciones.
      */
     public function observar(): array
     {
@@ -97,36 +98,16 @@ class ResolutorResponsable
             if ($porPlaza['id_vinc'] === $legado) {
                 continue;
             }
+            $this->registrar(['tipo' => 'EVALUACION', 'id_evaluacion' => $evaluacion->id_evaluacion], $legado, $porPlaza, $nuevas, $vigentes);
+        }
 
-            // La misma diferencia pendiente, o ya revisada y aceptada por TH (esa no
-            // se vuelve a abrir); las que resolvió el sistema sí pueden reaparecer.
-            $existente = DB::table('puesto_discrepancia')
-                ->where('id_evaluacion', $evaluacion->id_evaluacion)
-                ->where('id_vinc_responsable_legado', $legado)
-                ->where(fn ($q) => $porPlaza['id_vinc'] === null
-                    ? $q->whereNull('id_vinc_responsable_puesto')
-                    : $q->where('id_vinc_responsable_puesto', $porPlaza['id_vinc']))
-                ->where(fn ($q) => $q->where('resuelta', 0)->orWhereNotNull('resuelta_por'))
-                ->orderBy('resuelta')
-                ->first(['id_discrepancia', 'resuelta']);
-
-            if ($existente && $existente->resuelta) {
+        $asignaciones = $this->asignacionesActivas();
+        foreach ($asignaciones as $a) {
+            $esperado = $this->evaluadorPorJerarquia((int) $a->id_vinc_evaluado);
+            if (in_array((int) $a->id_vinc_evaluador, $esperado['aceptados'], true)) {
                 continue;
             }
-
-            $existente = $existente->id_discrepancia ?? null;
-            if (! $existente) {
-                $existente = DB::table('puesto_discrepancia')->insertGetId([
-                    'id_evaluacion' => $evaluacion->id_evaluacion,
-                    'id_vinc_responsable_legado' => $legado,
-                    'id_vinc_responsable_puesto' => $porPlaza['id_vinc'],
-                    'motivo' => $porPlaza['motivo'],
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-                $nuevas++;
-            }
-            $vigentes[] = (int) $existente;
+            $this->registrar(['tipo' => 'JERARQUIA', 'id_vinc_evaluado' => $a->id_vinc_evaluado], (int) $a->id_vinc_evaluador, $esperado, $nuevas, $vigentes);
         }
 
         // Lo que ya no difiere se da por resuelto (sin usuario: lo resolvió el sistema).
@@ -137,9 +118,87 @@ class ResolutorResponsable
 
         return [
             'evaluaciones' => $abiertas->count(),
+            'asignaciones' => $asignaciones->count(),
             'diferencias_nuevas' => $nuevas,
             'diferencias_pendientes' => count($vigentes),
             'resueltas_solas' => $resueltas,
         ];
+    }
+
+    /** Asignaciones de evaluador entre vinculaciones activas. */
+    private function asignacionesActivas()
+    {
+        return DB::table('evaluador_asignacion as a')
+            ->join('vinculacion as ve', 've.id_vinculacion', '=', 'a.id_vinc_evaluado')
+            ->join('vinculacion as va', 'va.id_vinculacion', '=', 'a.id_vinc_evaluador')
+            ->where('ve.activa', 1)
+            ->where('va.activa', 1)
+            ->get(['a.id_vinc_evaluado', 'a.id_vinc_evaluador']);
+    }
+
+    /**
+     * Quién debe evaluar a una persona según la jerarquía de plazas: el
+     * responsable de la plaza superior de su plaza. Se aceptan el ocupante y,
+     * si hay delegación vigente, el delegado (durante una delegación corta ambos
+     * tienen la asignación).
+     */
+    public function evaluadorPorJerarquia(int $idVincEvaluado): array
+    {
+        $plaza = DB::table('puesto_ocupacion as po')
+            ->join('puesto as p', 'p.id_puesto', '=', 'po.id_puesto')
+            ->where('po.id_vinculacion', $idVincEvaluado)
+            ->where('po.estado', 'VIGENTE')
+            ->first(['p.id_puesto', 'p.id_puesto_superior']);
+
+        if (! $plaza) {
+            return ['id_vinc' => null, 'id_puesto' => null, 'aceptados' => [], 'motivo' => 'El evaluado no tiene plaza en el catálogo.'];
+        }
+        if (! $plaza->id_puesto_superior) {
+            return ['id_vinc' => null, 'id_puesto' => null, 'aceptados' => [], 'motivo' => 'La plaza del evaluado no tiene plaza superior.'];
+        }
+
+        $responsable = $this->responsableDePlaza((int) $plaza->id_puesto_superior);
+        $ocupante = DB::table('puesto_ocupacion')->where('id_puesto', $plaza->id_puesto_superior)->where('estado', 'VIGENTE')->value('id_vinculacion');
+        $responsable['aceptados'] = array_values(array_unique(array_filter([$responsable['id_vinc'], $ocupante ? (int) $ocupante : null])));
+        $responsable['motivo'] = $responsable['id_vinc']
+            ? 'Según la jerarquía de plazas lo evalúa el responsable de la plaza superior.'
+            : 'La plaza superior del evaluado está vacante.';
+
+        return $responsable;
+    }
+
+    /**
+     * Registra una diferencia si no existe. La misma diferencia pendiente se
+     * reutiliza; la ya revisada y aceptada por TH no se vuelve a abrir; las que
+     * resolvió el sistema sí pueden reaparecer.
+     */
+    private function registrar(array $clave, int $legado, array $porPlaza, int &$nuevas, array &$vigentes): void
+    {
+        $existente = DB::table('puesto_discrepancia')
+            ->where($clave)
+            ->where('id_vinc_responsable_legado', $legado)
+            ->where(fn ($q) => $porPlaza['id_vinc'] === null
+                ? $q->whereNull('id_vinc_responsable_puesto')
+                : $q->where('id_vinc_responsable_puesto', $porPlaza['id_vinc']))
+            ->where(fn ($q) => $q->where('resuelta', 0)->orWhereNotNull('resuelta_por'))
+            ->orderBy('resuelta')
+            ->first(['id_discrepancia', 'resuelta']);
+
+        if ($existente && $existente->resuelta) {
+            return;
+        }
+
+        $id = $existente->id_discrepancia ?? null;
+        if (! $id) {
+            $id = DB::table('puesto_discrepancia')->insertGetId($clave + [
+                'id_vinc_responsable_legado' => $legado,
+                'id_vinc_responsable_puesto' => $porPlaza['id_vinc'],
+                'motivo' => $porPlaza['motivo'],
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            $nuevas++;
+        }
+        $vigentes[] = (int) $id;
     }
 }

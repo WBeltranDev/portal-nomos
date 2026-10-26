@@ -777,12 +777,14 @@ Route::post('/admin/plazas/carga/analizar', [CargaPlantaController::class, 'anal
 Route::post('/admin/plazas/carga/aplicar', [CargaPlantaController::class, 'aplicar'])->name('admin.plazas.carga.aplicar');
 Route::get('/admin/plazas/pendientes', [CargaPlantaController::class, 'pendientes'])->name('admin.plazas.pendientes');
 Route::post('/admin/plazas/pendientes/{id}', [CargaPlantaController::class, 'resolverPendiente'])->whereNumber('id')->name('admin.plazas.pendientes.resolver');
-Route::get('/admin/plazas/documento-oficial', [CargaPlantaController::class, 'documento'])->name('admin.plazas.documento');
+Route::get('/admin/plazas/planta-revision', [CargaPlantaController::class, 'plantaRevision'])->name('admin.plazas.planta-revision');
+Route::get('/admin/plazas/documento-oficial',[CargaPlantaController::class, 'documento'])->name('admin.plazas.documento');
 Route::post('/admin/plazas/generar', [PlazaController::class, 'generar'])->name('admin.plazas.generar');
 Route::post('/admin/plazas/validar-masivo', [PlazaController::class, 'validarMasivo'])->name('admin.plazas.validar-masivo');
 Route::post('/admin/plazas/modo', [PlazaController::class, 'cambiarModo'])->name('admin.plazas.modo');
 Route::post('/admin/plazas/observar', [PlazaController::class, 'observar'])->name('admin.plazas.observar');
 Route::post('/admin/plazas/diferencias/{id}/revisar', [PlazaController::class, 'revisarDiferencia'])->whereNumber('id')->name('admin.plazas.diferencias.revisar');
+Route::post('/admin/plazas/relevos/{id}', [PlazaController::class, 'decidirRelevo'])->whereNumber('id')->name('admin.plazas.relevos.decidir');
 Route::post('/admin/plazas/{id}/validar', [PlazaController::class, 'validar'])->whereNumber('id')->name('admin.plazas.validar');
 Route::post('/admin/plazas/{id}', [PlazaController::class, 'actualizar'])->whereNumber('id')->name('admin.plazas.actualizar');
 

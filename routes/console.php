@@ -94,7 +94,7 @@ Artisan::command('puestos:observar', function (\App\Services\ModeloPuestos $mode
     }
 
     $r = $resolutor->observar();
-    $this->info("Evaluaciones abiertas: {$r['evaluaciones']} · diferencias nuevas: {$r['diferencias_nuevas']} · pendientes: {$r['diferencias_pendientes']} · resueltas solas: {$r['resueltas_solas']}");
+    $this->info("Evaluaciones abiertas: {$r['evaluaciones']} · asignaciones: {$r['asignaciones']} · diferencias nuevas: {$r['diferencias_nuevas']} · pendientes: {$r['diferencias_pendientes']} · resueltas solas: {$r['resueltas_solas']}");
     return 0;
 })->purpose('Compara el responsable por persona contra el responsable por plaza (modo Observación)');
 

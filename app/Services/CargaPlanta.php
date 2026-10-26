@@ -97,7 +97,7 @@ class CargaPlanta
             $cv = $this->columnas($hojas[$hojaVacantes][$filaVac]);
             $vcol = fn (string ...$o) => $this->columna($cv, $o);
             $k = ['cargo' => $vcol('CARGO'), 'codigo' => $vcol('CODIGO'), 'grado' => $vcol('GRADO'), 'nivel' => $vcol('NIVEL'),
-                'tipo' => $vcol('TIPO DE VINCULACION'), 'sistema' => $vcol('SISTEMA DE EVALUACION'), 'area' => $vcol('AREA'), 'cantidad' => $vcol('CANTIDAD')];
+                'tipo' => $vcol('TIPO DE VINCULACION'), 'sistema' => $vcol('SISTEMA DE EVALUACION'), 'area' => $vcol('AREA'), 'cantidad' => $vcol('CANTIDAD'), 'tipo_vacante' => $vcol('TIPO DE VACANTE')];
             foreach ($hojas[$hojaVacantes] as $n => $fila) {
                 $primera = self::normalizar(reset($fila) ?: '');
                 if ($n <= $filaVac) {
@@ -119,6 +119,7 @@ class CargaPlanta
                     'sistema' => self::SISTEMAS[self::normalizar($fila[$k['sistema']] ?? '')] ?? null,
                     'area' => self::normalizar($fila[$k['area']] ?? ''),
                     'cantidad' => (int) $fila[$k['cantidad']],
+                    'tipo_vacante' => $k['tipo_vacante'] ? self::normalizar($fila[$k['tipo_vacante']] ?? '') : '',
                 ];
             }
 
@@ -315,7 +316,9 @@ class CargaPlanta
             }
             $dependencia = $this->dependencias[$vac['area']] ?? null;
             if ($dependencia) {
-                $vacantes[] = $vac + ['dependencia' => $dependencia];
+                $idCargo = $this->cargos[$vac['cargo']]->id_cargo ?? null;
+                $existentes = $idCargo ? $this->vacantesExistentes((int) $dependencia->id_dependencia, (int) $idCargo, $vac['grado']) : 0;
+                $vacantes[] = $vac + ['dependencia' => $dependencia, 'faltan' => max(0, $vac['cantidad'] - $existentes)];
                 continue;
             }
             for ($i = 1; $i <= $vac['cantidad']; $i++) {
@@ -332,7 +335,7 @@ class CargaPlanta
                 'personas_con_cambios' => count($cambios),
                 'reasignaciones_de_evaluador' => count(array_filter($personas, fn ($x) => $x['reasignar'])),
                 'vacantes_en_planta' => array_sum(array_column($planta['vacantes'], 'cantidad')),
-                'vacantes_a_crear' => array_sum(array_column($vacantes, 'cantidad')),
+                'vacantes_a_crear' => array_sum(array_column($vacantes, 'faltan')),
                 'cargos_nuevos' => count($cargosNuevos),
                 'ficticios_a_inactivar' => count($inactivar),
                 'pendientes' => count($pendientes),
@@ -469,11 +472,7 @@ class CargaPlanta
             // 6. Vacantes con dependencia exacta: solo las que falten (la carga se puede repetir).
             foreach ($analisis['_vacantes'] as $vac) {
                 $idCargo = $this->cargos[$vac['cargo']]->id_cargo;
-                $existentes = DB::table('puesto as p')
-                    ->where('p.id_dependencia', $vac['dependencia']->id_dependencia)->where('p.id_cargo', $idCargo)->where('p.grado', $vac['grado'])
-                    ->where('p.estado', '!=', 'INACTIVA')
-                    ->whereNotExists(fn ($q) => $q->select(DB::raw(1))->from('puesto_ocupacion as po')->whereColumn('po.id_puesto', 'p.id_puesto')->where('po.estado', 'VIGENTE'))
-                    ->count();
+                $existentes = $this->vacantesExistentes((int) $vac['dependencia']->id_dependencia, (int) $idCargo, $vac['grado']);
                 for ($i = $existentes; $i < $vac['cantidad']; $i++) {
                     $this->crearPlaza((int) $vac['dependencia']->id_dependencia, $idCargo, $vac['codigo'], $vac['grado'], $vac['nivel'], $vac['sistema'], null);
                 }
@@ -488,6 +487,10 @@ class CargaPlanta
                 'id_usuario' => $idUsuario,
                 'created_at' => now(),
             ]);
+            // Una carga nueva vuelve a calcular todos los pendientes: los de cargas anteriores se reemplazan.
+            DB::table('carga_planta_pendiente')->where('estado', 'PENDIENTE')->where('id_carga', '!=', $idCarga)->update([
+                'estado' => 'DESCARTADO', 'resuelto_por' => $idUsuario, 'resuelto_at' => now(), 'updated_at' => now(),
+            ]);
             foreach ($analisis['pendientes'] as $p) {
                 DB::table('carga_planta_pendiente')->insert([
                     'id_carga' => $idCarga, 'tipo' => $p['tipo'], 'descripcion' => mb_substr($p['descripcion'], 0, 500),
@@ -499,6 +502,16 @@ class CargaPlanta
         });
 
         return ['id_carga' => $idCarga] + array_diff_key($analisis, ['_personas' => 1, '_vacantes' => 1]);
+    }
+
+    /** Plazas vacantes (sin ocupante vigente) de un cargo y grado en una dependencia. */
+    private function vacantesExistentes(int $idDependencia, int $idCargo, int $grado): int
+    {
+        return DB::table('puesto as p')
+            ->where('p.id_dependencia', $idDependencia)->where('p.id_cargo', $idCargo)->where('p.grado', $grado)
+            ->where('p.estado', '!=', 'INACTIVA')
+            ->whereNotExists(fn ($q) => $q->select(DB::raw(1))->from('puesto_ocupacion as po')->whereColumn('po.id_puesto', 'p.id_puesto')->where('po.estado', 'VIGENTE'))
+            ->count();
     }
 
     /** Crea la plaza vacante de un pendiente cuando TH elige su dependencia en el panel. */

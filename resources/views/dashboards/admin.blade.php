@@ -414,13 +414,14 @@
             <section id="section-plazas" class="section-content hidden space-y-6">
                 {{-- Carga de la planta oficial de TH (S14): ensayo, aplicación, pendientes y documento oficial --}}
                 <div class="panel-card rounded-3xl p-6">
-                    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div class="min-w-0">
+                    <div class="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                        <div class="min-w-0 xl:flex-1">
                             <p class="text-xs font-bold uppercase tracking-[0.22em] text-[#00594E]">Planta oficial</p>
                             <h2 class="text-xl font-black text-slate-900">Carga de la planta de cargos y vacantes</h2>
-                            <p class="text-sm text-slate-500 mt-1">1) Sube el Excel de la planta y revisa el ensayo (no se guarda nada). 2) Aplica la carga: actualiza los datos de cargo de los funcionarios, crea las plazas y las vacantes. 3) Resuelve los pendientes. 4) Valida las plazas y descarga el catálogo oficial.</p>
+                            <p class="text-sm text-slate-500 mt-1">Para revisar la planta actual, descárgala, corrígela y vuelve a subirla. 1) Sube el Excel de la planta y revisa el ensayo (no se guarda nada). 2) Aplica la carga: actualiza los datos de cargo de los funcionarios, crea las plazas y las vacantes. 3) Resuelve los pendientes. 4) Valida las plazas y descarga el catálogo oficial.</p>
                         </div>
-                        <div class="flex shrink-0 flex-wrap gap-2">
+                        <div class="flex flex-wrap gap-2 xl:max-w-md xl:shrink-0 xl:justify-end">
+                            <a href="/admin/plazas/planta-revision" title="Planta actual en el formato de la carga, para que Talento Humano la revise, la corrija y la vuelva a subir" class="rounded-xl bg-[#00594E] px-3 py-2 text-xs font-bold text-white hover:bg-[#00473E] transition">Descargar planta para revisión (Excel)</a>
                             <a href="/admin/plazas/documento-oficial?formato=pdf" class="rounded-xl border border-[#00594E] px-3 py-2 text-xs font-bold text-[#00594E] hover:bg-[#EAF2EF] transition">Catálogo oficial (PDF)</a>
                             <a href="/admin/plazas/documento-oficial?formato=xlsx" class="rounded-xl border border-[#00594E] px-3 py-2 text-xs font-bold text-[#00594E] hover:bg-[#EAF2EF] transition">Catálogo oficial (Excel)</a>
                         </div>
@@ -433,18 +434,18 @@
                     <div class="mt-5">
                         <p class="text-xs font-bold text-slate-700">Pendientes de la carga</p>
                         <p id="planta-ultima-carga" class="text-[11px] text-slate-500"></p>
-                        <div id="planta-pendientes" class="mt-2 grid gap-2 text-[11px]"></div>
+                        <div id="planta-pendientes" class="mt-2 grid grid-cols-1 gap-2 text-[11px]"></div>
                     </div>
                 </div>
 
                 {{-- Interruptor del modelo de puestos (plan, fase G) --}}
                 <div class="panel-card rounded-3xl p-6">
-                    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div class="min-w-0">
+                    <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div class="min-w-0 lg:flex-1">
                             <p class="text-xs font-bold uppercase tracking-[0.22em] text-[#00594E]">Modo del modelo de puestos</p>
                             <p class="text-sm text-slate-500 mt-1"><b>Apagado:</b> todo funciona por persona, como hoy. <b>Observación:</b> además calcula el responsable por plaza y solo registra diferencias. <b>Activo:</b> las plazas mandan.</p>
                         </div>
-                        <div class="flex shrink-0 items-center gap-2">
+                        <div class="flex flex-wrap items-center gap-2 lg:shrink-0">
                             <span id="modelo-puestos-modo" class="whitespace-nowrap rounded-full bg-slate-100 px-3 py-1 text-[11px] font-bold uppercase text-slate-700">—</span>
                             <select id="modelo-puestos-selector" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs">
                                 <option value="APAGADO">Apagado</option>
@@ -456,21 +457,25 @@
                     </div>
                     <div id="modelo-puestos-requisitos" class="mt-3 grid gap-2 sm:grid-cols-2 text-[11px]"></div>
                     <div class="mt-4 flex flex-wrap items-center justify-between gap-2">
-                        <p class="text-xs font-bold text-slate-700">Diferencias de la observación <span class="font-normal text-slate-500">(se compara cada día a las 2:00 a. m.)</span></p>
+                        <p class="text-xs font-bold text-slate-700">Diferencias de la observación <span class="font-normal text-slate-500">(evaluaciones y asignaciones contra la jerarquía de plazas; se compara cada día a las 2:00 a. m.)</span></p>
                         <button type="button" onclick="compararModeloPuestos()" class="rounded-xl border border-[#00594E] px-3 py-1.5 text-xs font-bold text-[#00594E] hover:bg-[#EAF2EF] transition">Comparar ahora</button>
                     </div>
                     <div id="modelo-puestos-diferencias" class="mt-2 grid gap-2 text-[11px]"></div>
+                    <div class="mt-4">
+                        <p class="text-xs font-bold text-slate-700">Relevos por decidir <span class="font-normal text-slate-500">(evaluaciones en calificación cuya plaza cambió de ocupante)</span></p>
+                        <div id="modelo-puestos-relevos" class="mt-2 grid gap-2 text-[11px]"></div>
+                    </div>
                     <div id="modelo-puestos-historial" class="mt-3 text-[11px] text-slate-500"></div>
                 </div>
 
                 <div class="panel-card rounded-3xl p-6">
-                    <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                        <div>
+                    <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                        <div class="min-w-0 lg:flex-1">
                             <p class="text-xs font-bold uppercase tracking-[0.22em] text-[#00594E]">Modelo de puestos</p>
                             <h1 class="text-2xl sm:text-3xl font-black text-slate-900">Catálogo de plazas</h1>
                             <p class="text-sm text-slate-500 mt-1">Una plaza por puesto concreto (dependencia, cargo, grado y consecutivo) con su ocupante vigente. Genera el borrador desde las vinculaciones activas y valídalo; las plazas que comparten dependencia, cargo y grado se confirman una por una.</p>
                         </div>
-                        <div class="flex flex-wrap gap-2 shrink-0">
+                        <div class="flex flex-wrap gap-2 lg:shrink-0">
                             <button type="button" onclick="generarBorradorPlazas()" class="rounded-xl border border-[#00594E] px-4 py-2.5 text-xs font-bold text-[#00594E] hover:bg-[#EAF2EF] transition">Generar borrador</button>
                             <button type="button" onclick="validarPlazasMasivo()" class="rounded-xl bg-[#00594E] px-4 py-2.5 text-xs font-bold text-white hover:brightness-110 transition">Validar plazas únicas</button>
                         </div>

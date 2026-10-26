@@ -10,8 +10,9 @@ use Tests\TestCase;
  * S14 — Fase E: lo que el flujo actual reasigna se vuelve a enlazar a la plaza
  * de la nueva persona; con el modelo activo, el cambio de ocupante de una plaza
  * pasa su trabajo abierto al ocupante vigente (relevo), salvo plaza vacante,
- * plaza con delegación vigente o evaluación ya en calificación. El fin de una
- * delegación toma como sucesor al ocupante vigente de la plaza.
+ * plaza con delegación vigente o evaluación ya en calificación. Las que están
+ * en calificación las decide TH caso por caso (relevos por decidir). El fin de
+ * una delegación toma como sucesor al ocupante vigente de la plaza.
  *
  * La prueba trabaja sobre la base configurada en el entorno y se ejecuta dentro
  * de una transacción que se revierte al terminar, de modo que no deja datos.
@@ -224,5 +225,65 @@ class SincronizadorPlazasTest extends TestCase
 
         $this->assertTrue(delegacionActivaTraslapada($this->v['nuevo'], '2099-02-10', '2099-02-15'));
         $this->assertFalse(delegacionActivaTraslapada($this->v['nuevo'], '2099-03-01', '2099-03-15'));
+    }
+
+    public function test_th_pasa_al_nuevo_ocupante_una_evaluacion_en_calificacion(): void
+    {
+        $this->modo('ACTIVO');
+        $enCalificacion = $this->evaluacion('e2', 4);
+        $this->sincronizar();
+        $this->relevarP1();
+        $this->sincronizar();
+
+        $relevos = app(SincronizadorPlazas::class)->relevosPorDecidir();
+        $this->assertSame([$enCalificacion], array_column($relevos, 'id_evaluacion'));
+        $this->assertTrue($relevos[0]['conservable']);
+
+        $this->withoutMiddleware(\Illuminate\Foundation\Http\Middleware\PreventRequestForgery::class);
+        session(['usuario_autenticado' => ['id_usuario' => $this->idUsuario, 'rol_activo' => 'admin', 'roles' => ['admin']]]);
+        $this->postJson("/admin/plazas/relevos/{$enCalificacion}", ['decision' => 'NUEVO_OCUPANTE'])->assertOk();
+
+        $this->assertSame($this->v['nuevo'], (int) DB::table('evaluacion')->where('id_evaluacion', $enCalificacion)->value('id_vinc_evaluador'));
+        $this->assertTrue(DB::table('evaluacion_evento')->where('id_evaluacion', $enCalificacion)->where('tipo_evento', 'CAMBIO_EVALUADOR')->exists());
+        $this->assertSame([], app(SincronizadorPlazas::class)->relevosPorDecidir());
+    }
+
+    public function test_th_deja_que_termine_quien_empezo_la_calificacion(): void
+    {
+        $this->modo('ACTIVO');
+        $enCalificacion = $this->evaluacion('e2', 4);
+        $this->sincronizar();
+        $this->relevarP1();
+
+        $this->assertNull(app(SincronizadorPlazas::class)->decidirRelevo($enCalificacion, 'CONSERVAR'));
+        $this->sincronizar();
+
+        $this->assertSame($this->v['jefe'], (int) DB::table('evaluacion')->where('id_evaluacion', $enCalificacion)->value('id_vinc_evaluador'));
+        $this->assertTrue(DB::table('evaluacion_evento')->where('id_evaluacion', $enCalificacion)->where('tipo_evento', 'RELEVO_CONSERVADO')->exists());
+        $this->assertSame([], app(SincronizadorPlazas::class)->relevosPorDecidir(), 'La decisión no se vuelve a pedir.');
+    }
+
+    public function test_no_se_deja_la_calificacion_a_quien_ya_no_esta_activo(): void
+    {
+        $this->modo('ACTIVO');
+        $enCalificacion = $this->evaluacion('e2', 4);
+        $this->sincronizar();
+        $this->relevarP1();
+        DB::table('vinculacion')->where('id_vinculacion', $this->v['jefe'])->update(['activa' => 0]);
+
+        $this->assertFalse(app(SincronizadorPlazas::class)->relevosPorDecidir()[0]['conservable']);
+        $this->assertNotNull(app(SincronizadorPlazas::class)->decidirRelevo($enCalificacion, 'CONSERVAR'));
+        $this->assertSame($this->v['jefe'], (int) DB::table('evaluacion')->where('id_evaluacion', $enCalificacion)->value('id_vinc_evaluador'));
+    }
+
+    public function test_los_relevos_solo_se_deciden_con_el_modelo_activo(): void
+    {
+        $this->modo('OBSERVACION');
+        $enCalificacion = $this->evaluacion('e2', 4);
+        $this->sincronizar();
+        $this->relevarP1();
+
+        $this->assertNotNull(app(SincronizadorPlazas::class)->decidirRelevo($enCalificacion, 'NUEVO_OCUPANTE'));
+        $this->assertSame($this->v['jefe'], (int) DB::table('evaluacion')->where('id_evaluacion', $enCalificacion)->value('id_vinc_evaluador'));
     }
 }

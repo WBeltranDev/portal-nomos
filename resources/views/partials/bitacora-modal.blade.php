@@ -14,6 +14,7 @@
             CAMBIO_EVALUADOR: 'Cambio de evaluador',
             CAMBIO_EVALUADOR_PROGRAMADO: 'Cambio de evaluador programado',
             CAMBIO_EVALUADOR_CANCELADO: 'Cambio de evaluador cancelado',
+            RELEVO_CONSERVADO: 'Relevo: la termina quien empezó la calificación',
             TRAMO_CERRADO: 'Tramo cerrado por cambio de evaluador',
             ANULADA_POR_TRASLADO: 'Anulada por traslado (tramo sin días)',
             IMPEDIMENTO_SOLICITADO: 'Impedimento o recusación solicitado',
