@@ -64,6 +64,7 @@ ejecutar() {
         --user "$(id -u):$(id -g)" \
         -e HOME=/tmp -e COMPOSER_HOME=/tmp/composer \
         -e APP_ENV=testing \
+        -e APP_PACKAGES_CACHE=/tmp/serag-packages.php -e APP_SERVICES_CACHE=/tmp/serag-services.php \
         -e DB_CONNECTION=mysql -e DB_HOST="$CONTENEDOR_BD" -e DB_PORT=3306 \
         -e DB_DATABASE="$BASE_PRUEBAS" \
         "$IMAGEN_DEV" "$@"

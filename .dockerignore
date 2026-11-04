@@ -9,3 +9,5 @@ storage/framework/sessions
 storage/framework/views
 npm-debug.log
 yarn-error.log
+# Cachés generadas en el equipo (p. ej. por las pruebas con dependencias de desarrollo):
+bootstrap/cache/*.php
