@@ -36,3 +36,10 @@ bootstrap/app.php
 
 # Configuración local de Docker (cada entorno mantiene la suya)
 docker-compose.yml
+
+# Datos de producción y documentos internos (contienen datos personales: no se suben a GitHub)
+*.sql
+*.sql.gz
+*.docx
+PLAN-CAMBIOS-SERAG.*
+/informes-fases/
