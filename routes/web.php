@@ -1854,33 +1854,32 @@ if (!function_exists('programarTraslado')) {
             }
         }
 
-        // El periodo de aplicación se determina por la fecha del traslado: se prioriza
-        // el periodo ABIERTO del sistema del funcionario cuyo rango contiene la fecha
-        // (ahí es donde trabajó). Si la fecha no cae en ningún periodo abierto, se
-        // conserva el fallback previo.
+        // El periodo de aplicación es el periodo ABIERTO del sistema del
+        // funcionario cuyo rango contiene la fecha del cambio (ahí es donde
+        // trabajó). Acta 29-10 (VII): antes, si ninguno la contenía, se tomaba
+        // otro periodo abierto del mismo sistema; así una delegación del segundo
+        // semestre quedó ligada a la evaluación ya calificada del primero y su
+        // nota desapareció de la matriz. Ahora, si hay periodos abiertos del
+        // sistema pero ninguno contiene la fecha, se exige abrir el que
+        // corresponde. Sin ningún periodo abierto, el traslado sigue siendo
+        // inmediato y sin tramo, como antes.
         $sistemaEvaluado = strtoupper(trim((string) ($evaluado->sistema_evaluacion ?? 'RENDIMIENTO_LABORAL')));
 
-        $periodo = DB::table('periodo')
+        $periodosAbiertos = DB::table('periodo')
             ->whereRaw('UPPER(TRIM(sistema)) = ?', [$sistemaEvaluado])
-            ->where('estado', 'ABIERTO')
+            ->where('estado', 'ABIERTO');
+
+        $periodo = (clone $periodosAbiertos)
             ->whereDate('fecha_inicio', '<=', $data['fecha_traslado'])
             ->whereDate('fecha_fin', '>=', $data['fecha_traslado'])
             ->orderByDesc('id_periodo')
             ->first();
 
-        if (! $periodo) {
-            $periodo = DB::table('evaluacion as ev')
-                ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
-                ->where('ev.id_vinc_evaluado', $data['id_vinc_funcionario'])
-                ->whereIn('ev.tipo_evaluacion', ['SEMESTRE_1', 'SEMESTRE_2'])
-                ->where('p.estado', 'ABIERTO')
-                ->orderByDesc('p.id_periodo')
-                ->select('p.*')
-                ->first();
-        }
+        if (! $periodo && $periodosAbiertos->exists()) {
+            $sistemaTexto = $sistemaEvaluado === 'ACUERDO_GESTION' ? 'Acuerdos de Gestión' : 'Rendimiento Laboral';
+            $fechaTexto = \Carbon\Carbon::parse($data['fecha_traslado'])->format('d/m/Y');
 
-        if (! $periodo) {
-            $periodo = resolveOpenPeriodForVinculacion((int) $data['id_vinc_funcionario']);
+            return ['error' => "No hay un período abierto de {$sistemaTexto} que contenga el {$fechaTexto} ({$nombre}). Abra primero ese período en «Períodos» y vuelva a registrar el cambio."];
         }
 
         // Aquí solo se programa: la evaluación del cargo nuevo se abre al confirmar.
