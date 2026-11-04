@@ -1040,6 +1040,7 @@
                                         @endif
                                     @endforeach
                                 </select>
+                                <p class="mt-1 text-[10px] text-slate-500">Si el cambio de evaluador es por un impedimento o una recusación, regístrelo en <b>Impedimentos y Recusaciones</b>: así se conserva la concertación ya firmada.</p>
                             </div>
                             <div class="grid gap-3 sm:grid-cols-2">
                                 <div>

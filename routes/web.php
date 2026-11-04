@@ -678,7 +678,8 @@ Route::post('/login', function (Request $request) {
         );
         $esDelegadoActivo = false;
         $tieneAsignacionesEvaluador = false;
-        
+        $tieneEvaluacionesACargo = false;
+
         if ($tieneVinculacionActiva) {
             $roles[] = 'evaluado';
             $vincIds = $vinculaciones->pluck('id_vinculacion')->all();
@@ -689,10 +690,16 @@ Route::post('/login', function (Request $request) {
             $tieneAsignacionesEvaluador = DB::table('evaluador_asignacion')
                 ->whereIn('id_vinc_evaluador', $vincIds)
                 ->exists();
+            // Acta 29-10 (P2/P5): quien recibe una evaluación por impedimento,
+            // recusación o recurso también actúa como evaluador, aunque no
+            // tenga la casilla ni asignaciones.
+            $tieneEvaluacionesACargo = DB::table('evaluacion')
+                ->whereIn('id_vinc_evaluador', $vincIds)
+                ->exists();
         }
 
         $esEvaluadorActivo = $user->rol === 'EVALUADOR';
-        if ($esEvaluadorActivo || $esEvaluadorPorVinculacion || $esDelegadoActivo || $tieneAsignacionesEvaluador) {
+        if ($esEvaluadorActivo || $esEvaluadorPorVinculacion || $esDelegadoActivo || $tieneAsignacionesEvaluador || $tieneEvaluacionesACargo) {
             $roles[] = 'evaluador';
         }
     }
@@ -1655,6 +1662,13 @@ if (!function_exists('confirmarTrasladoEnTransaccion')) {
                     'fecha_asignacion' => now(),
                 ]);
 
+                // Quien recibe la evaluación queda habilitado como evaluador
+                // (antes había que marcar la casilla a mano en la base).
+                DB::table('vinculacion')
+                    ->where('id_vinculacion', $traslado->id_vinc_evaluador_nuevo)
+                    ->where('es_evaluador', 0)
+                    ->update(['es_evaluador' => 1]);
+
                 // Actualizar dependencia/cargo en la vinculación activa
                 $vinculacionUpdate = [];
                 if (! empty($traslado->area_nuevo)) {
@@ -1784,14 +1798,18 @@ if (!function_exists('programarTraslado')) {
 
         $nombre = nombreFuncionarioVinc((int) $evaluado->id_vinculacion);
 
+        // Acta 29-10 (P2/P5): Talento Humano puede elegir como nuevo evaluador
+        // a cualquier vinculación activa, por ejemplo el superior jerárquico,
+        // aunque aún no tenga la casilla `es_evaluador`: se marca al confirmar
+        // el traslado. $exigirEvaluador ya no restringe; se conserva la firma
+        // de la función por sus llamadas existentes.
         $evaluadorNuevo = DB::table('vinculacion')
             ->where('id_vinculacion', $data['id_vinc_evaluador_nuevo'])
             ->where('activa', 1)
-            ->when($exigirEvaluador, fn ($q) => $q->where('es_evaluador', 1))
             ->first();
 
         if (! $evaluadorNuevo) {
-            return ['error' => 'El nuevo evaluador debe tener una vinculación activa' . ($exigirEvaluador ? ' como evaluador.' : '.')];
+            return ['error' => 'El nuevo evaluador debe tener una vinculación activa.'];
         }
 
         // Evaluador origen: el asignado actualmente al funcionario
