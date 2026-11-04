@@ -3976,12 +3976,18 @@ if (!function_exists('puedeDescargarInforme')) {
     function puedeDescargarInforme(int $idEvaluacion): bool
     {
         $auth = session('usuario_autenticado');
-        if (!$auth || empty($auth['id_funcionario'])) {
+        if (!$auth) {
             return false;
         }
 
+        // El rol se revisa primero: las cuentas de Talento Humano (th1, th2,
+        // th3) no tienen funcionario asociado y deben poder descargar todo.
         if (($auth['rol_activo'] ?? null) === 'admin') {
             return true;
+        }
+
+        if (empty($auth['id_funcionario'])) {
+            return false;
         }
 
         $idFuncionario = (int) $auth['id_funcionario'];
