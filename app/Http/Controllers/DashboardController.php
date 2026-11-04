@@ -480,6 +480,13 @@ class DashboardController extends Controller
                 ->orderByDesc('ev.id_evaluacion')
                 ->get();
 
+            // Acta 29-10 (VIII): el criterio sale de la escala institucional, como
+            // en evaluacionRequierePlanMejoramiento(). Antes quedaba el umbral
+            // `<= 80` de la escala 0-100 y listaba notas Buenas y Sobresalientes.
+            $bandasConPlan = collect(escalaCalificacionConfig()['bandas'])->where('aplica_plan_mejoramiento', true);
+            $nivelesConPlan = $bandasConPlan->pluck('nivel')->all();
+            $notaMaximaConPlan = (float) $bandasConPlan->max('hasta');
+
             $planesPendientesEvaluador = DB::table('evaluacion as ev')
                 ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
                 ->join('vinculacion as va', 'va.id_vinculacion', '=', 'ev.id_vinc_evaluador')
@@ -488,17 +495,13 @@ class DashboardController extends Controller
                 ->leftJoin('plan_mejoramiento as pm', 'pm.id_evaluacion', '=', 'ev.id_evaluacion')
                 ->where('va.id_funcionario', $usuario['id_funcionario'])
                 ->where('ev.estado', 'CALIFICADA')
-                ->where(function ($q) {
-                    $q->whereIn('ev.categoria_final', ['NO_SATISFACTORIO', 'APROBADO_MEJORA'])
-                      ->orWhere(function ($q2) {
-                          $q2->whereNotNull('ev.calificacion_final')
-                             ->where('ev.calificacion_final', '<=', 80)
-                             ->where('ev.calificacion_final', '>', 0);
-                      })
-                      ->orWhere(function ($q3) {
-                          $q3->whereNotNull('ev.calificacion_parcial')
-                             ->where('ev.calificacion_parcial', '<=', 80)
-                             ->where('ev.calificacion_parcial', '>', 0);
+                ->where(function ($q) use ($nivelesConPlan, $notaMaximaConPlan) {
+                    $q->whereIn('ev.categoria_final', $nivelesConPlan)
+                      // Sin categoría calculada: se decide por la nota con la misma escala.
+                      ->orWhere(function ($q2) use ($notaMaximaConPlan) {
+                          $q2->where(fn ($q3) => $q3->whereNull('ev.categoria_final')->orWhere('ev.categoria_final', ''))
+                             ->whereRaw('COALESCE(ev.calificacion_final, ev.calificacion_parcial) > 0')
+                             ->whereRaw('COALESCE(ev.calificacion_final, ev.calificacion_parcial) <= ?', [$notaMaximaConPlan]);
                       })
                       ->orWhereNotNull('pm.id_plan');
                 })
@@ -712,6 +715,17 @@ class DashboardController extends Controller
 
         // --- MATRIZ DE CALIFICACIONES (Solo Admin) ---
         $matrizCalificaciones = [];
+        // Año de la matriz: se elige en la pantalla. Antes era siempre el año en
+        // curso, así que en enero la matriz quedaba vacía aunque el semestre B
+        // del año anterior siguiera vigente.
+        $aniosMatriz = DB::table('periodo')->distinct()->pluck('anio')
+            ->map(fn ($a) => (int) $a)
+            ->push((int) date('Y'))
+            ->unique()->sortDesc()->values();
+        $anioMatriz = (int) request()->query('anio_matriz', date('Y'));
+        if (! $aniosMatriz->contains($anioMatriz)) {
+            $anioMatriz = (int) date('Y');
+        }
         if ($rolActivo === 'admin') {
             $empleadosMatriz = DB::table('vinculacion as v')
                 ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
@@ -719,8 +733,8 @@ class DashboardController extends Controller
                 ->select('v.id_vinculacion', 'v.area', 'v.sistema_evaluacion', 'f.nombres', 'f.apellidos', 'f.numero_doc')
                 ->orderBy('f.apellidos')
                 ->get();
-            
-            $anioActual = (int) date('Y');
+
+            $anioActual = $anioMatriz;
             
             // Evaluaciones del año actual y documentos firmados en lote
             $evaluacionesAnio = DB::table('evaluacion as ev')
@@ -857,7 +871,7 @@ class DashboardController extends Controller
             'evaluadoresDelegacion', 'delegadosDisponibles', 'impedimentos',
             'cargosCatalogo', 'dependenciasCatalogo', 'funcionariosNoCalificados', 'evaluacionesExtratiempo', 'historialExtratiempo',
             'vinculacionesJerarquia', 'jefesDisponibles',
-            'notificaciones', 'notificacionesNoLeidas', 'matrizCalificaciones',
+            'notificaciones', 'notificacionesNoLeidas', 'matrizCalificaciones', 'aniosMatriz', 'anioMatriz',
             'encuestaCapacitacion'
         );
 
@@ -888,15 +902,15 @@ class DashboardController extends Controller
                 $dias = max(1, (int) ceil(abs($diasRestantes)));
                 $existe = DB::table('notificacion')
                     ->where('tipo', 'PERIODO_CERCA')
-                    ->where('titulo', "Periodo {$p->sistema} - {$p->anio}/{$p->semestre}")
+                    ->where('titulo', "Período {$p->sistema} - {$p->anio}/{$p->semestre}")
                     ->where('created_at', '>=', $now->copy()->subDay()->toDateTimeString())
                     ->exists();
 
                 if (!$existe) {
                     DB::table('notificacion')->insert([
                         'tipo' => 'PERIODO_CERCA',
-                        'titulo' => "Periodo {$p->sistema} - {$p->anio}/{$p->semestre}",
-                        'mensaje' => "Faltan {$dias} día(s) para que cierre el periodo de evaluación.",
+                        'titulo' => "Período {$p->sistema} - {$p->anio}/{$p->semestre}",
+                        'mensaje' => "Faltan {$dias} día(s) para que cierre el período de evaluación.",
                         'seccion' => 'periodos',
                         'created_at' => $now,
                         'updated_at' => $now,

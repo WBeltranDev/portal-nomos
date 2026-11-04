@@ -30,7 +30,7 @@
         </button>
         <button type="button" class="sidebar-link w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-slate-700 transition" onclick="navegarMenu(this, 'periodos')">
             <span class="material-symbols-outlined">calendar_today</span>
-            Periodos
+            Períodos
         </button>
         <button type="button" class="sidebar-link w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-slate-700 transition" onclick="navegarMenu(this, 'ponderaciones')">
             <span class="material-symbols-outlined">settings</span>
@@ -87,7 +87,6 @@
         <div class="rounded-xl bg-[#EAF2EF] p-4">
             <p class="text-xs font-bold text-[#00594E] uppercase tracking-[0.18em]">Sesión activa</p>
             <p class="text-sm font-semibold text-slate-800 mt-1">{{ $usuario['nombres'] ?? '' }} {{ $usuario['apellidos'] ?? '' }}</p>
-            <p class="text-xs text-slate-500">{{ $usuario['correo'] ?? '' }}</p>
         </div>
     </div>
 </aside>

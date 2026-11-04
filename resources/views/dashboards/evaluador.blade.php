@@ -97,7 +97,7 @@
                                 <div id="apertura-dias-laborados" class="hidden">
                                     <label for="apertura-dias-laborados-input" class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Días laborados en el tramo</label>
                                     <input type="number" name="dias_laborados" id="apertura-dias-laborados-input" min="1" step="1" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Ej.: 120" />
-                                    <p class="text-[10px] text-slate-500 mt-1">Se precalcula desde las fechas del periodo parcial (inicio a fin). Ajusta solo si el funcionario no laboró todos esos días; no puede superar la duración del tramo.</p>
+                                    <p class="text-[10px] text-slate-500 mt-1">Se precalcula desde las fechas del período parcial (inicio a fin). Ajusta solo si el funcionario no laboró todos esos días; no puede superar la duración del tramo.</p>
                                 </div>
                                 <div id="apertura-ejes-misionales" class="hidden rounded-2xl border border-slate-100 bg-slate-50/50 p-4">
                                     <h4 class="text-xs font-bold text-slate-800 uppercase tracking-wide mb-2">Ejes misionales adicionales</h4>
@@ -174,7 +174,10 @@
                         <p class="text-xs text-slate-500 mb-4">Selecciona una Evaluación para redactar los compromisos del evaluado y firmar la concertación.</p>
                         <div class="space-y-3">
                             @forelse($evaluacionesEvaluador as $ev)
-                                <button type="button" class="evaluacion-evaluador-card w-full text-left p-4 rounded-2xl border border-slate-200 bg-white cursor-pointer hover:border-[#00594E] transition" data-id-evaluacion="{{ $ev->id_evaluacion }}" onclick="abrirConcertacionEvaluador(this, @js($ev))">
+                                {{-- La tarjeta es un div con rol de botón: lleva dentro el botón de
+                                     Bitácora, y un <button> dentro de otro es HTML inválido; el
+                                     navegador cerraba la tarjeta antes de tiempo y desarmaba el tablero. --}}
+                                <div role="button" tabindex="0" class="evaluacion-evaluador-card w-full text-left p-4 rounded-2xl border border-slate-200 bg-white cursor-pointer hover:border-[#00594E] transition" data-id-evaluacion="{{ $ev->id_evaluacion }}" onclick="abrirConcertacionEvaluador(this, @js($ev))" onkeydown="if (event.target === this && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); this.click(); }">
                                     <div class="flex items-start justify-between gap-3">
                                         <div class="min-w-0">
                                             <div class="flex items-center gap-2">
@@ -232,7 +235,7 @@
                                         </button>
                                         <span id="fase-label-evaluador-{{ $ev->id_evaluacion }}" class="text-[9px] uppercase tracking-wide font-bold text-slate-400">Fase {{ $ev->fase_actual }}: {{ match($ev->fase_actual) { 1 => 'Concertación Pendiente', 2 => 'Concertación Parcial', 3 => 'Subir Evidencias', 4 => 'Calificación', 5 => 'Nota Final', default => '' } }}</span>
                                     </div>
-                                </button>
+                                </div>
                             @empty
                                 <div class="py-8 text-center text-slate-500 text-xs">No tienes evaluaciones pendientes.</div>
                             @endforelse
@@ -538,7 +541,7 @@
                                                 <tr class="bg-slate-50 text-slate-500 uppercase tracking-wide">
                                                     <th class="px-4 py-2.5 font-black">Sistema</th>
                                                     <th class="px-4 py-2.5 font-black">Evaluación</th>
-                                                    <th class="px-4 py-2.5 font-black">Periodo</th>
+                                                    <th class="px-4 py-2.5 font-black">Período</th>
                                                     <th class="px-4 py-2.5 font-black">Nota</th>
                                                     <th class="px-4 py-2.5 font-black text-right">Descargar</th>
                                                 </tr>

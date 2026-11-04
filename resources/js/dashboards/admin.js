@@ -639,7 +639,7 @@ export function verAuditoriaPeriodo(btn) {
         })
         .then(items => {
             const registros = Array.isArray(items) ? items : [];
-            if (titulo) titulo.innerText = `Periodo #${id} · ${registros.length} registro(s)`;
+            if (titulo) titulo.innerText = `Período #${id} · ${registros.length} registro(s)`;
             if (!registros.length) {
                 lista.innerHTML = '<div class="text-slate-400 text-center py-4">Sin cambios registrados aún.</div>';
                 return;
@@ -936,7 +936,7 @@ export function renderNotificacionesDelegaciones(items) {
                                 <h3 class="text-base sm:text-lg font-black text-amber-950">Notificación de Retorno: Vencimiento en 1 Día</h3>
                                 <span class="bg-amber-500 text-white text-[10px] font-black uppercase px-2 py-0.5 rounded-full shadow-sm">Urgente</span>
                             </div>
-                            <p class="text-xs text-amber-800 mt-0.5">Los siguientes funcionarios titulares están a <b>1 día de vencer</b> su periodo de delegación y deben retornar a sus labores y evaluaciones.</p>
+                            <p class="text-xs text-amber-800 mt-0.5">Los siguientes funcionarios titulares están a <b>1 día de vencer</b> su período de delegación y deben retornar a sus labores y evaluaciones.</p>
                         </div>
                     </div>
                     <span class="inline-flex items-center gap-1.5 text-xs font-black rounded-full px-3.5 py-1.5 bg-amber-100 text-amber-900 border border-amber-300 self-start sm:self-auto">

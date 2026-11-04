@@ -215,7 +215,7 @@
 
 {{-- ============ RESULTADOS Y PONDERACIONES ============ --}}
 <table>
-    <tr><th colspan="4" class="cab">Resultados del Periodo</th></tr>
+    <tr><th colspan="4" class="cab">Resultados del Período</th></tr>
     <tr>
         <th style="width:40%;">Componente</th>
         <th style="width:20%;">Peso</th>

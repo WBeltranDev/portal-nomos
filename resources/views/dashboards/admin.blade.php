@@ -631,14 +631,14 @@
                     <div class="flex items-center justify-between gap-4 mb-4">
                         <div>
                             <p class="text-xs font-bold uppercase tracking-[0.22em] text-[#00594E]">Monitoreo</p>
-                            <h2 class="text-2xl font-black text-slate-900">Periodos y Evaluaciones Parciales</h2>
+                            <h2 class="text-2xl font-black text-slate-900">Períodos y Evaluaciones Parciales</h2>
                             <p class="text-xs text-slate-500 mt-1">Listado de tramos parciales abiertos y cerrados para funcionarios.</p>
                         </div>
                         <div class="flex items-center gap-2 shrink-0">
                             <span class="text-xs font-bold bg-[#EAF2EF] text-[#00594E] px-3 py-1 rounded-full">Total: {{ $periodosParciales->count() }}</span>
                             <button type="button" onclick="document.getElementById('form-periodo-parcial').classList.toggle('hidden')" class="inline-flex items-center gap-1.5 bg-[#00594E] text-white px-3 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition">
                                 <span class="material-symbols-outlined text-base">add</span>
-                                Abrir periodo parcial
+                                Abrir período parcial
                             </button>
                         </div>
                     </div>
@@ -646,16 +646,16 @@
                         @csrf
                         <div class="flex items-start gap-2 mb-4 text-xs text-[#00594E]">
                             <span class="material-symbols-outlined text-base shrink-0">info</span>
-                            <p>Habilita una evaluación parcial para un funcionario. El tramo debe pertenecer al periodo seleccionado; no hay duración mínima: su nota pondera por los días del tramo.</p>
+                            <p>Habilita una evaluación parcial para un funcionario. El tramo debe pertenecer al período seleccionado; no hay duración mínima: su nota pondera por los días del tramo.</p>
                         </div>
                         @error('periodo_parcial')
                             <p class="mb-3 rounded-lg bg-red-50 p-2 text-xs font-semibold text-red-700">{{ $message }}</p>
                         @enderror
                         <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                             <div>
-                                <label for="periodo-parcial-periodo" class="mb-1 block text-[10px] font-bold uppercase text-slate-500">Periodo base</label>
+                                <label for="periodo-parcial-periodo" class="mb-1 block text-[10px] font-bold uppercase text-slate-500">Período base</label>
                                 <select id="periodo-parcial-periodo" name="id_periodo" required onchange="actualizarFormularioPeriodoParcial()" class="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs outline-none focus:border-[#00594E]">
-                                    <option value="">Selecciona un periodo abierto</option>
+                                    <option value="">Selecciona un período abierto</option>
                                     @foreach($periodos->where('estado', 'ABIERTO') as $periodo)
                                         <option value="{{ $periodo->id_periodo }}" data-sistema="{{ $periodo->sistema }}" data-inicio="{{ $periodo->fecha_inicio }}" data-fin="{{ $periodo->fecha_fin }}">{{ $periodo->sistema === 'RENDIMIENTO_LABORAL' ? 'RL' : 'AG' }} · {{ $periodo->anio }}-{{ (int) $periodo->semestre === 1 ? 'A' : 'B' }} ({{ $periodo->fecha_inicio }} a {{ $periodo->fecha_fin }})</option>
                                     @endforeach
@@ -664,7 +664,7 @@
                             <div>
                                 <label for="periodo-parcial-funcionario" class="mb-1 block text-[10px] font-bold uppercase text-slate-500">Funcionario</label>
                                 <select id="periodo-parcial-funcionario" name="id_vinc_funcionario" required disabled class="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs outline-none focus:border-[#00594E] disabled:bg-slate-100">
-                                    <option value="">Primero selecciona un periodo</option>
+                                    <option value="">Primero selecciona un período</option>
                                     @foreach($funcionariosParaPeriodoParcial as $funcionario)
                                         <option value="{{ $funcionario->id_vinculacion }}" data-sistema="{{ $funcionario->sistema_evaluacion }}" hidden>{{ $funcionario->nombres }} {{ $funcionario->apellidos }} · {{ $funcionario->cargo }} · {{ $funcionario->area }}</option>
                                     @endforeach
@@ -684,7 +684,7 @@
                                 <label for="periodo-parcial-referencia" class="mb-1 block text-[10px] font-bold uppercase text-slate-500">Referencia o motivo</label>
                                 <input id="periodo-parcial-referencia" type="text" name="referencia" maxlength="200" placeholder="Ej.: ingreso posterior, traslado o licencia" class="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs outline-none focus:border-[#00594E]">
                             </div>
-                            <button type="submit" class="bg-[#00594E] px-4 py-2.5 text-xs font-bold text-white rounded-xl hover:brightness-110 transition">Crear periodo parcial</button>
+                            <button type="submit" class="bg-[#00594E] px-4 py-2.5 text-xs font-bold text-white rounded-xl hover:brightness-110 transition">Crear período parcial</button>
                         </div>
                     </form>
                     <div class="overflow-x-auto">
@@ -712,7 +712,7 @@
                                     </td>
                                 </tr>
                                 @empty
-                                <tr><td colspan="5" class="p-6 text-center text-slate-400">No hay periodos parciales registrados.</td></tr>
+                                <tr><td colspan="5" class="p-6 text-center text-slate-400">No hay períodos parciales registrados.</td></tr>
                                 @endforelse
                             </tbody>
                         </table>
@@ -725,7 +725,7 @@
                         <div>
                             <p class="text-xs font-bold uppercase tracking-[0.22em] text-red-600">Alerta de Seguimiento</p>
                             <h2 class="text-2xl font-black text-slate-900">Funcionarios Sin Concertación / No Calificados</h2>
-                            <p class="text-xs text-slate-500 mt-1">Funcionarios con vinculación activa que no registran concertación ni evaluación en el periodo actual.</p>
+                            <p class="text-xs text-slate-500 mt-1">Funcionarios con vinculación activa que no registran concertación ni evaluación en el período actual.</p>
                         </div>
                         <span class="text-xs font-bold bg-red-50 text-red-700 px-3 py-1 rounded-full">Total: {{ $funcionariosNoCalificados->count() }}</span>
                     </div>
@@ -768,7 +768,7 @@
             <section id="section-periodos" class="section-content hidden space-y-6">
                 <div class="grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
                     <div class="panel-card rounded-3xl p-6">
-                        <h2 class="text-2xl font-black text-slate-900 mb-6">Periodos de Evaluación</h2>
+                        <h2 class="text-2xl font-black text-slate-900 mb-6">Períodos de Evaluación</h2>
                         <div class="overflow-x-auto">
                             <table class="w-full text-sm text-left text-slate-500">
                                 <thead class="text-xs uppercase bg-[#EAF2EF] text-[#00594E] font-bold rounded-xl">
@@ -827,8 +827,8 @@
                         </div>
 
                         <div class="panel-card rounded-3xl p-6">
-                            <h3 class="text-lg font-bold text-slate-800 mb-2">Crear Periodo</h3>
-                            <p class="text-xs text-slate-500 mb-4">Abre un nuevo periodo semestral de evaluación.</p>
+                            <h3 class="text-lg font-bold text-slate-800 mb-2">Crear Período</h3>
+                            <p class="text-xs text-slate-500 mb-4">Abre un nuevo período semestral de evaluación.</p>
                             <form method="POST" action="{{ route('admin.periodos.store') }}" class="space-y-3">
                                 @csrf
                                 <div>
@@ -875,7 +875,7 @@
                                     <label class="block text-[10px] font-bold text-slate-600 uppercase">Descripción (Opcional)</label>
                                     <input type="text" name="descripcion" maxlength="200" placeholder="Ej: Primer semestre 2026 ordinario" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white">
                                 </div>
-                                <button type="submit" class="w-full bg-[#00594E] text-white rounded-xl py-2 text-xs font-bold hover:brightness-110 transition">Guardar Periodo</button>
+                                <button type="submit" class="w-full bg-[#00594E] text-white rounded-xl py-2 text-xs font-bold hover:brightness-110 transition">Guardar Período</button>
                             </form>
                         </div>
                     </aside>
@@ -1040,6 +1040,7 @@
                                         @endif
                                     @endforeach
                                 </select>
+                                <p class="mt-1 text-[10px] text-slate-500">Si el cambio de evaluador es por un impedimento o una recusación, regístrelo en <b>Impedimentos y Recusaciones</b>: así se conserva la concertación ya firmada.</p>
                             </div>
                             <div class="grid gap-3 sm:grid-cols-2">
                                 <div>
@@ -1229,7 +1230,7 @@
                                 <span class="material-symbols-outlined text-3xl">info</span>
                             </div>
                             <h3 class="text-base font-black text-slate-800">Sobre el Extratiempo</h3>
-                            <p class="text-xs text-slate-500">Al aprobar un extratiempo, el sistema registrará la observación y reabrirá la concertación para el evaluador y evaluado seleccionado, independientemente del cierre general del periodo.</p>
+                            <p class="text-xs text-slate-500">Al aprobar un extratiempo, el sistema registrará la observación y reabrirá la concertación para el evaluador y evaluado seleccionado, independientemente del cierre general del período.</p>
                         </div>
                     </div>
                 </div>
@@ -1278,7 +1279,7 @@
                     <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                         <input id="evaladmin-buscar" oninput="filtrarEvaluacionesAdmin()" class="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs shadow-sm outline-none focus:border-[#00594E] focus:ring-2 focus:ring-[#00594E]/10" type="text" placeholder="Buscar evaluado, evaluador o ID">
                         <select id="evaladmin-periodo" onchange="filtrarEvaluacionesAdmin()" class="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-[#00594E]">
-                            <option value="">Todos los periodos</option>
+                            <option value="">Todos los períodos</option>
                             @foreach($periodos->sortByDesc('id_periodo') as $p)
                                 <option value="{{ $p->anio }}-{{ $p->semestre }}">{{ $p->sistema === 'RENDIMIENTO_LABORAL' ? 'RL' : 'AG' }} · {{ $p->anio }}-{{ (int) $p->semestre === 1 ? 'A' : 'B' }}</option>
                             @endforeach
@@ -1312,7 +1313,7 @@
                                     <th class="p-3">Evaluado</th>
                                     <th class="p-3">Cargo / Dependencia</th>
                                     <th class="p-3">Evaluador</th>
-                                    <th class="p-3">Periodo</th>
+                                    <th class="p-3">Período</th>
                                     <th class="p-3 text-center">Sistema</th>
                                     <th class="p-3">Tipo</th>
                                     <th class="p-3">Fase</th>
@@ -1394,6 +1395,12 @@
                     </div>
                     
                     <div class="mt-4 flex gap-2">
+                        <label for="anio-matriz" class="sr-only">Año de la matriz</label>
+                        <select id="anio-matriz" onchange="cambiarAnioMatriz(this.value)" class="shrink-0 rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm font-bold text-slate-700 shadow-sm outline-none focus:border-[#00594E]" title="Año de la matriz">
+                            @foreach($aniosMatriz as $anio)
+                                <option value="{{ $anio }}" @selected($anio === $anioMatriz)>{{ $anio }}</option>
+                            @endforeach
+                        </select>
                         <input id="buscador-matriz" oninput="filtrarMatriz()" class="flex-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-[#00594E] focus:ring-2 focus:ring-[#00594E]/10" type="text" placeholder="Buscar por nombre, documento o dependencia">
                         <button onclick="exportarMatrizCSV()" class="flex items-center justify-center gap-2 rounded-2xl bg-[#00594E] px-4 py-3 text-sm font-bold text-white shadow-sm hover:bg-[#004a41] transition shrink-0">
                             <span class="material-symbols-outlined text-base">download</span>
@@ -1630,6 +1637,18 @@
             const vacio = document.getElementById('evaladmin-vacio');
             if (vacio) vacio.classList.toggle('hidden', visibles > 0);
         }
+
+        // La matriz se calcula por año en el servidor: al cambiarlo se recarga
+        // el tablero y se vuelve a abrir la matriz.
+        function cambiarAnioMatriz(anio) {
+            window.location.href = '/dashboard?anio_matriz=' + encodeURIComponent(anio) + '#matriz';
+        }
+        document.addEventListener('DOMContentLoaded', () => {
+            if (window.location.hash === '#matriz' && typeof window.navegarMenu === 'function') {
+                const boton = document.querySelector(".sidebar-link[onclick*=\"'matriz'\"]");
+                window.navegarMenu(boton, 'matriz');
+            }
+        });
 
         function filtrarMatriz() {
             const buscar = (document.getElementById('buscador-matriz')?.value || '').toLowerCase();

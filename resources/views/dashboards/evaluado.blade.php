@@ -376,6 +376,15 @@
                                     <span id="recursos-contador-evaluado" class="text-[10px] font-bold rounded-full px-2.5 py-1 bg-slate-100 text-slate-500">0</span>
                                 </div>
                                 <p class="text-[10px] text-slate-400 font-semibold">Disponibles para cualquier categoría de calificación, una vez firmada la notificación. Reposición: revisa el mismo evaluador. Apelación: conoce el superior jerárquico del evaluador. Ambos exigen soportes adjuntos.</p>
+                                <div id="aviso-revisar-calificacion" class="hidden">
+                                    <div class="flex flex-col gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+                                        <p class="text-xs text-amber-900"><b>Antes de interponer un recurso:</b> revisa y descarga el documento de calificación. Si consideras interponer un recurso, debe estar debidamente sustentado.</p>
+                                        <a id="aviso-revisar-calificacion-pdf" href="#" target="_blank" rel="noopener" class="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[#00594E] px-3 py-1.5 text-[11px] font-bold text-white hover:brightness-110 transition">
+                                            <span class="material-symbols-outlined text-sm">download</span>
+                                            Descargar calificación
+                                        </a>
+                                    </div>
+                                </div>
                                 <form id="form-recurso-evaluado" onsubmit="radicarRecurso(event)" class="grid gap-3 rounded-2xl border border-slate-100 bg-slate-50/50 p-4">
                                     <div class="grid sm:grid-cols-2 gap-3">
                                         <div>
@@ -462,7 +471,7 @@
                                     <tr class="bg-[#EAF2EF] text-[#00594E] uppercase tracking-wide">
                                         <th class="px-4 py-3 font-black">Sistema</th>
                                         <th class="px-4 py-3 font-black">Evaluación</th>
-                                        <th class="px-4 py-3 font-black">Periodo</th>
+                                        <th class="px-4 py-3 font-black">Período</th>
                                         <th class="px-4 py-3 font-black">Evaluador</th>
                                         <th class="px-4 py-3 font-black text-right">Descargar</th>
                                     </tr>
