@@ -4338,6 +4338,26 @@ Route::post('/evaluaciones/{id}/calcular-final', function (Request $request, int
         'fase' => ['antes' => (int) $evaluacion->fase_actual, 'despues' => 5],
     ], $evaluacion->estado, 'CALIFICADA');
 
+    // Acta 29-10 (II y IV): aviso al evaluado para que revise y descargue el
+    // documento de calificación antes de decidir si interpone un recurso. Solo
+    // la primera vez que queda calificada (un recálculo del admin no repite el aviso).
+    if ($evaluacion->estado !== 'CALIFICADA') {
+        $periodoAviso = DB::table('periodo')->where('id_periodo', $evaluacion->id_periodo)->first();
+        $periodoTxt = $periodoAviso
+            ? ($periodoAviso->sistema === 'ACUERDO_GESTION' ? 'Acuerdo de Gestión' : 'Rendimiento Laboral') . ' ' . $periodoAviso->anio . '-' . ((int) $periodoAviso->semestre === 1 ? 'A' : 'B')
+            : '';
+        $categoriaTxt = collect(escalaCalificacionConfig()['bandas'])->firstWhere('nivel', $calculo['categoria'])['etiqueta'] ?? $calculo['categoria'];
+        $notaTxt = number_format((float) $calculo['nota_definitiva'], 1, ',', '');
+
+        notificarVinculacion(
+            (int) $evaluacion->id_vinc_evaluado,
+            'EVALUACION_CALIFICADA',
+            'Tu evaluación fue calificada',
+            "Tu evaluación del período {$periodoTxt} quedó calificada con {$notaTxt} ({$categoriaTxt}). Revisa y descarga el documento de calificación. Si consideras interponer un recurso, debe estar debidamente sustentado.",
+            'evaluaciones'
+        );
+    }
+
     return response()->json([
         'success' => true,
         'calculo' => $calculo,

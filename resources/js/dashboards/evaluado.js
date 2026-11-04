@@ -705,6 +705,13 @@ export function cargarRecursosEvaluado(ev) {
             // servidor, y aquí solo se refleja para no mostrar el formulario.
             const puedeRadicar = estado === 'CALIFICADA' && !!payload.notificacion_firmada;
             if (tabBtnRecursos) tabBtnRecursos.classList.toggle('hidden', !puedeRadicar);
+            // Acta 29-10 (II y IV): antes de radicar, revisar y descargar la calificación.
+            const aviso = document.getElementById('aviso-revisar-calificacion');
+            if (aviso) {
+                aviso.classList.toggle('hidden', !puedeRadicar);
+                const enlace = document.getElementById('aviso-revisar-calificacion-pdf');
+                if (enlace) enlace.href = `/evaluaciones/${ev.id_evaluacion}/informe`;
+            }
             const form = document.getElementById('form-recurso-evaluado');
             if (form) {
                 form.classList.toggle('hidden', !puedeRadicar);
