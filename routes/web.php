@@ -993,7 +993,7 @@ Route::post('/evaluador/asignaciones', function (Request $request) {
         ->exists();
 
     if ($exists) {
-        return back()->withErrors(['asignaciones' => 'Ya existe una evaluacion para este funcionario en este perodo y ciclo.']);
+        return back()->withErrors(['asignaciones' => 'Ya existe una evaluacion para este funcionario en este período y ciclo.']);
     }
 
     // Nunca dos evaluaciones abiertas a la vez: la vigente del funcionario en
@@ -1006,7 +1006,7 @@ Route::post('/evaluador/asignaciones', function (Request $request) {
         ->exists();
 
     if ($tieneAbierta) {
-        return back()->withErrors(['asignaciones' => 'El funcionario ya tiene una evaluación abierta en este periodo. Debe calificarse antes de abrir otra.']);
+        return back()->withErrors(['asignaciones' => 'El funcionario ya tiene una evaluación abierta en este período. Debe calificarse antes de abrir otra.']);
     }
 
     // S6 — Bloqueo del flujo del evaluador: no se abre un nuevo ciclo si el
@@ -1036,7 +1036,7 @@ Route::post('/evaluador/asignaciones', function (Request $request) {
         });
 
         if (! $periodoParcial) {
-            return back()->withErrors(['asignaciones' => 'El funcionario no tiene un periodo parcial abierto. Debe crearlo el administrador en la sección de periodos.']);
+            return back()->withErrors(['asignaciones' => 'El funcionario no tiene un período parcial abierto. Debe crearlo el administrador en la sección de períodos.']);
         }
 
         if (! $referenciaEvaluacion) {
@@ -1053,7 +1053,7 @@ Route::post('/evaluador/asignaciones', function (Request $request) {
         }
 
         if ($diasLaborados === null) {
-            return back()->withErrors(['asignaciones' => 'No se pudo calcular los días laborados del tramo parcial. Verifica que el periodo parcial tenga fecha de inicio y de fin.']);
+            return back()->withErrors(['asignaciones' => 'No se pudo calcular los días laborados del tramo parcial. Verifica que el período parcial tenga fecha de inicio y de fin.']);
         }
 
         if ($diasTramo !== null && $diasLaborados > $diasTramo) {
@@ -1113,7 +1113,7 @@ Route::post('/admin/periodos', function (Request $request) {
         ->exists();
 
     if ($exists) {
-        return back()->withErrors(['periodo' => 'Este perido ya existe.']);
+        return back()->withErrors(['periodo' => 'Este período ya existe.']);
     }
 
     $traslape = DB::table('periodo')
@@ -1146,7 +1146,7 @@ Route::post('/admin/periodos', function (Request $request) {
         'fecha_fin' => $data['fecha_fin'],
     ]);
 
-    return back()->with('success_periodo', 'Perodo creado exitosamente.');
+    return back()->with('success_periodo', 'Período creado exitosamente.');
 })->name('admin.periodos.store');
 
 Route::post('/admin/periodos/{id}/toggle', function (int $id) {
@@ -1165,7 +1165,7 @@ Route::post('/admin/periodos/{id}/toggle', function (int $id) {
         'estado' => ['antes' => $periodo->estado, 'despues' => $nuevoEstado],
     ]);
 
-    return back()->with('success_periodo', 'Estado de perodo actualizado.');
+    return back()->with('success_periodo', 'Estado de período actualizado.');
 })->name('admin.periodos.toggle');
 
 // --- EDICION DE PERIODOS (S8): fechas, estado y descripcion con auditoria ---
@@ -1224,7 +1224,7 @@ Route::post('/admin/periodos/{id}', function (Request $request, int $id) {
         registrarAuditoriaPeriodo($id, $accion, $cambios);
     }
 
-    return back()->with('success_periodo', 'Periodo actualizado correctamente.');
+    return back()->with('success_periodo', 'Período actualizado correctamente.');
 })->name('admin.periodos.update');
 
 // --- GET: Historial de auditoria de un periodo (admin) ---
@@ -1272,7 +1272,7 @@ Route::post('/admin/periodos-parciales', function (Request $request) {
     abort_unless($funcionario, 403);
 
     if (strtoupper(trim((string) $funcionario->sistema_evaluacion)) !== strtoupper(trim((string) $periodo->sistema))) {
-        return back()->withErrors(['periodo_parcial' => 'El sistema de evaluación del funcionario no coincide con el del periodo base seleccionado.']);
+        return back()->withErrors(['periodo_parcial' => 'El sistema de evaluación del funcionario no coincide con el del período base seleccionado.']);
     }
 
     if ($data['fecha_inicio'] < $periodo->fecha_inicio || $data['fecha_fin'] > $periodo->fecha_fin) {
@@ -1287,7 +1287,7 @@ Route::post('/admin/periodos-parciales', function (Request $request) {
         ->exists();
 
     if ($existe) {
-        return back()->withErrors(['periodo_parcial' => 'El funcionario ya tiene un periodo parcial abierto en este semestre.']);
+        return back()->withErrors(['periodo_parcial' => 'El funcionario ya tiene un período parcial abierto en este semestre.']);
     }
 
     DB::table('periodo_parcial')->insert([
@@ -1300,7 +1300,7 @@ Route::post('/admin/periodos-parciales', function (Request $request) {
         'id_usuario_apertura' => session('usuario_autenticado.id_usuario') ?? null,
     ]);
 
-    return back()->with('success_periodo', 'Periodo parcial creado exitosamente.');
+    return back()->with('success_periodo', 'Período parcial creado exitosamente.');
 })->name('admin.periodos-parciales.store');
 
 Route::post('/admin/periodos-parciales/{id}/toggle', function (int $id) {
@@ -1313,7 +1313,7 @@ Route::post('/admin/periodos-parciales/{id}/toggle', function (int $id) {
 
     DB::table('periodo_parcial')->where('id_periodo_parcial', $id)->update(['estado' => $nuevoEstado]);
 
-    return back()->with('success_periodo', 'Estado del periodo parcial actualizado.');
+    return back()->with('success_periodo', 'Estado del período parcial actualizado.');
 })->name('admin.periodos-parciales.toggle');
 
 
@@ -1568,7 +1568,7 @@ if (!function_exists('confirmarTrasladoEnTransaccion')) {
                     ->exists();
 
                 if ($duplicada) {
-                    return 'El funcionario ya tiene una evaluación parcial con el evaluador de destino en este periodo.';
+                    return 'El funcionario ya tiene una evaluación parcial con el evaluador de destino en este período.';
                 }
             }
 
@@ -1875,7 +1875,7 @@ if (!function_exists('programarTraslado')) {
             $fechaTraslado = new \DateTime($data['fecha_traslado']);
 
             if ($fechaTraslado < $fechaInicio) {
-                return ['error' => 'La fecha del cambio no puede ser anterior al inicio del periodo vigente (' . $periodo->fecha_inicio . ').'];
+                return ['error' => 'La fecha del cambio no puede ser anterior al inicio del período vigente (' . $periodo->fecha_inicio . ').'];
             }
 
             // Un cambio posterior al cierre deja todo el periodo en el cargo de origen.
@@ -1893,7 +1893,7 @@ if (!function_exists('programarTraslado')) {
             $inicioTramo = $ultimoTraslado ? max($fechaInicio, new \DateTime($ultimoTraslado)) : $fechaInicio;
 
             if ($fechaTraslado < $inicioTramo) {
-                return ['error' => "La fecha del cambio de {$nombre} no puede ser anterior a su último traslado en este periodo (" . $inicioTramo->format('Y-m-d') . ').'];
+                return ['error' => "La fecha del cambio de {$nombre} no puede ser anterior a su último traslado en este período (" . $inicioTramo->format('Y-m-d') . ').'];
             }
 
             // Regla: la fecha registrada es el primer día en la nueva área;
@@ -2220,7 +2220,7 @@ Route::post('/admin/delegaciones', function (Request $request) {
         ->exists();
 
     if ($conflicto) {
-        return back()->withErrors(['delegaciones' => 'El delegado ya tiene evaluaciones abiertas con los mismos evaluados en el mismo periodo.']);
+        return back()->withErrors(['delegaciones' => 'El delegado ya tiene evaluaciones abiertas con los mismos evaluados en el mismo período.']);
     }
 
     $insertData = [
@@ -2745,7 +2745,7 @@ Route::post('/admin/impedimentos/{id}/resolver', function (Request $request, int
                     (int) $evaluacion->id_vinc_evaluado,
                     'CAMBIO_EVALUADOR',
                     'Cambio de evaluador',
-                    "Por {$articuloImp} {$tipoTxt} {$generoTxt}, tu evaluación del periodo {$periodoTxt} continúa con {$nombreNuevo}. Tus compromisos, evidencias y firmas se conservan.",
+                    "Por {$articuloImp} {$tipoTxt} {$generoTxt}, tu evaluación del período {$periodoTxt} continúa con {$nombreNuevo}. Tus compromisos, evidencias y firmas se conservan.",
                     'evaluaciones'
                 );
             }
@@ -3170,7 +3170,7 @@ Route::post('/evaluaciones/{id}/compromisos', function (Request $request, int $i
             : false;
 
         if (!$extratiempo) {
-            return response()->json(['error' => 'La fecha límite de concertación para este periodo ha finalizado (' . $periodo->fecha_fin_concertacion . '). Solicita a Talento Humano la habilitación de concertación extratiempo.'], 422);
+            return response()->json(['error' => 'La fecha límite de concertación para este período ha finalizado (' . $periodo->fecha_fin_concertacion . '). Solicita a Talento Humano la habilitación de concertación extratiempo.'], 422);
         }
     }
 
@@ -3806,7 +3806,7 @@ if (!function_exists('tramosEvaluadoPorPeriodo')) {
                     'dias' => $ev->dias_laborados,
                     'nota' => evaluacionTieneNota($ev) ? $ev->calificacion_final : null,
                     'motivo' => match (true) {
-                        ! $entrada => 'Inicio del periodo',
+                        ! $entrada => 'Inicio del período',
                         ($entrada->tipo ?? 'CAMBIO') === 'REANUDACION' => 'Regreso de ausencia',
                         ! empty($entrada->id_delegacion) => 'Delegación',
                         default => 'Traslado',

@@ -87,13 +87,13 @@ export function actualizarPeriodoSeleccionado(persona) {
         if (aperturaPeriodo) aperturaPeriodo.innerText = `${periodo.sistema} (${periodo.anio}-${Number(periodo.semestre) === 1 ? 'A' : 'B'})`;
         if (aperturaVigencia) aperturaVigencia.innerText = `${periodo.fecha_inicio || '-'} a ${periodo.fecha_fin || '-'}`;
         if (aperturaCiclo && cicloSelect) aperturaCiclo.innerText = cicloSelect.options[cicloSelect.selectedIndex].text;
-        if (aperturaAviso) aperturaAviso.innerText = 'El periodo se asigna automáticamente según el tipo de acuerdo y ciclo.';
+        if (aperturaAviso) aperturaAviso.innerText = 'El período se asigna automáticamente según el tipo de acuerdo y ciclo.';
     } else {
         if (aperturaIdPeriodo) aperturaIdPeriodo.value = '';
-        if (aperturaPeriodo) aperturaPeriodo.innerText = 'No hay periodo abierto para este sistema y ciclo';
+        if (aperturaPeriodo) aperturaPeriodo.innerText = 'No hay período abierto para este sistema y ciclo';
         if (aperturaVigencia) aperturaVigencia.innerText = '-';
         if (aperturaCiclo && cicloSelect) aperturaCiclo.innerText = cicloSelect.options[cicloSelect.selectedIndex].text;
-        if (aperturaAviso) aperturaAviso.innerText = 'No hay un periodo abierto activo para este ciclo. Pide al administrador que abra el periodo.';
+        if (aperturaAviso) aperturaAviso.innerText = 'No hay un período abierto activo para este ciclo. Pide al administrador que abra el período.';
     }
 }
 

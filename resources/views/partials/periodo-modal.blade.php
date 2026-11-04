@@ -5,7 +5,7 @@
             
             <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between shrink-0">
                 <div>
-                    <h3 class="text-lg font-black text-slate-900" id="editar-periodo-titulo">Editar Periodo</h3>
+                    <h3 class="text-lg font-black text-slate-900" id="editar-periodo-titulo">Editar Período</h3>
                     <p class="text-[10px] uppercase font-bold text-slate-400 mt-1">Ajuste de fechas y estados</p>
                 </div>
                 <button type="button" onclick="window.cerrarEditarPeriodo(event)" aria-label="Cerrar edición de período" class="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 transition">
@@ -18,11 +18,11 @@
                 
                 <div class="grid grid-cols-2 gap-4">
                     <div>
-                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Fecha Inicio Periodo</label>
+                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Fecha Inicio Período</label>
                         <input type="date" id="editar-periodo-inicio" name="fecha_inicio" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" required>
                     </div>
                     <div>
-                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Fecha Fin Periodo</label>
+                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Fecha Fin Período</label>
                         <input type="date" id="editar-periodo-fin" name="fecha_fin" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" required>
                     </div>
                 </div>

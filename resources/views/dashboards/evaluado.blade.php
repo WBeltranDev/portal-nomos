@@ -462,7 +462,7 @@
                                     <tr class="bg-[#EAF2EF] text-[#00594E] uppercase tracking-wide">
                                         <th class="px-4 py-3 font-black">Sistema</th>
                                         <th class="px-4 py-3 font-black">Evaluación</th>
-                                        <th class="px-4 py-3 font-black">Periodo</th>
+                                        <th class="px-4 py-3 font-black">Período</th>
                                         <th class="px-4 py-3 font-black">Evaluador</th>
                                         <th class="px-4 py-3 font-black text-right">Descargar</th>
                                     </tr>

@@ -406,7 +406,7 @@ class TrasladoDosPasosTest extends TestCase
         [$origen, $destino] = $periodos[0]['tramos'];
 
         $this->assertSame('Tmp Origen', $origen['evaluador']);
-        $this->assertSame('Inicio del periodo', $origen['motivo']);
+        $this->assertSame('Inicio del período', $origen['motivo']);
         $this->assertSame(Carbon::today()->subDay()->toDateString(), $origen['hasta']);
         $this->assertSame(self::DIAS_ORIGEN, (int) $origen['dias']);
 
@@ -680,6 +680,6 @@ class TrasladoDosPasosTest extends TestCase
             'id_periodo' => $this->idPeriodo,
             'id_vinc_evaluado' => $this->idVincEvaluado,
             'tipo_evaluacion' => 'SEMESTRE_2',
-        ])->assertSessionHasErrors(['asignaciones' => 'El funcionario ya tiene una evaluación abierta en este periodo. Debe calificarse antes de abrir otra.']);
+        ])->assertSessionHasErrors(['asignaciones' => 'El funcionario ya tiene una evaluación abierta en este período. Debe calificarse antes de abrir otra.']);
     }
 }

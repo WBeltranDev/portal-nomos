@@ -891,15 +891,15 @@ class DashboardController extends Controller
                 $dias = max(1, (int) ceil(abs($diasRestantes)));
                 $existe = DB::table('notificacion')
                     ->where('tipo', 'PERIODO_CERCA')
-                    ->where('titulo', "Periodo {$p->sistema} - {$p->anio}/{$p->semestre}")
+                    ->where('titulo', "Período {$p->sistema} - {$p->anio}/{$p->semestre}")
                     ->where('created_at', '>=', $now->copy()->subDay()->toDateTimeString())
                     ->exists();
 
                 if (!$existe) {
                     DB::table('notificacion')->insert([
                         'tipo' => 'PERIODO_CERCA',
-                        'titulo' => "Periodo {$p->sistema} - {$p->anio}/{$p->semestre}",
-                        'mensaje' => "Faltan {$dias} día(s) para que cierre el periodo de evaluación.",
+                        'titulo' => "Período {$p->sistema} - {$p->anio}/{$p->semestre}",
+                        'mensaje' => "Faltan {$dias} día(s) para que cierre el período de evaluación.",
                         'seccion' => 'periodos',
                         'created_at' => $now,
                         'updated_at' => $now,

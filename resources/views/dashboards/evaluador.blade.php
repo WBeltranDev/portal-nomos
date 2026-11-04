@@ -97,7 +97,7 @@
                                 <div id="apertura-dias-laborados" class="hidden">
                                     <label for="apertura-dias-laborados-input" class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Días laborados en el tramo</label>
                                     <input type="number" name="dias_laborados" id="apertura-dias-laborados-input" min="1" step="1" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Ej.: 120" />
-                                    <p class="text-[10px] text-slate-500 mt-1">Se precalcula desde las fechas del periodo parcial (inicio a fin). Ajusta solo si el funcionario no laboró todos esos días; no puede superar la duración del tramo.</p>
+                                    <p class="text-[10px] text-slate-500 mt-1">Se precalcula desde las fechas del período parcial (inicio a fin). Ajusta solo si el funcionario no laboró todos esos días; no puede superar la duración del tramo.</p>
                                 </div>
                                 <div id="apertura-ejes-misionales" class="hidden rounded-2xl border border-slate-100 bg-slate-50/50 p-4">
                                     <h4 class="text-xs font-bold text-slate-800 uppercase tracking-wide mb-2">Ejes misionales adicionales</h4>
@@ -538,7 +538,7 @@
                                                 <tr class="bg-slate-50 text-slate-500 uppercase tracking-wide">
                                                     <th class="px-4 py-2.5 font-black">Sistema</th>
                                                     <th class="px-4 py-2.5 font-black">Evaluación</th>
-                                                    <th class="px-4 py-2.5 font-black">Periodo</th>
+                                                    <th class="px-4 py-2.5 font-black">Período</th>
                                                     <th class="px-4 py-2.5 font-black">Nota</th>
                                                     <th class="px-4 py-2.5 font-black text-right">Descargar</th>
                                                 </tr>
