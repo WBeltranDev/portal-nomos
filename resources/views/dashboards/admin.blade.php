@@ -1395,6 +1395,12 @@
                     </div>
                     
                     <div class="mt-4 flex gap-2">
+                        <label for="anio-matriz" class="sr-only">Año de la matriz</label>
+                        <select id="anio-matriz" onchange="cambiarAnioMatriz(this.value)" class="shrink-0 rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm font-bold text-slate-700 shadow-sm outline-none focus:border-[#00594E]" title="Año de la matriz">
+                            @foreach($aniosMatriz as $anio)
+                                <option value="{{ $anio }}" @selected($anio === $anioMatriz)>{{ $anio }}</option>
+                            @endforeach
+                        </select>
                         <input id="buscador-matriz" oninput="filtrarMatriz()" class="flex-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-[#00594E] focus:ring-2 focus:ring-[#00594E]/10" type="text" placeholder="Buscar por nombre, documento o dependencia">
                         <button onclick="exportarMatrizCSV()" class="flex items-center justify-center gap-2 rounded-2xl bg-[#00594E] px-4 py-3 text-sm font-bold text-white shadow-sm hover:bg-[#004a41] transition shrink-0">
                             <span class="material-symbols-outlined text-base">download</span>
@@ -1631,6 +1637,18 @@
             const vacio = document.getElementById('evaladmin-vacio');
             if (vacio) vacio.classList.toggle('hidden', visibles > 0);
         }
+
+        // La matriz se calcula por año en el servidor: al cambiarlo se recarga
+        // el tablero y se vuelve a abrir la matriz.
+        function cambiarAnioMatriz(anio) {
+            window.location.href = '/dashboard?anio_matriz=' + encodeURIComponent(anio) + '#matriz';
+        }
+        document.addEventListener('DOMContentLoaded', () => {
+            if (window.location.hash === '#matriz' && typeof window.navegarMenu === 'function') {
+                const boton = document.querySelector(".sidebar-link[onclick*=\"'matriz'\"]");
+                window.navegarMenu(boton, 'matriz');
+            }
+        });
 
         function filtrarMatriz() {
             const buscar = (document.getElementById('buscador-matriz')?.value || '').toLowerCase();

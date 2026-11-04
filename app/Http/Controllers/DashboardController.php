@@ -715,6 +715,17 @@ class DashboardController extends Controller
 
         // --- MATRIZ DE CALIFICACIONES (Solo Admin) ---
         $matrizCalificaciones = [];
+        // Año de la matriz: se elige en la pantalla. Antes era siempre el año en
+        // curso, así que en enero la matriz quedaba vacía aunque el semestre B
+        // del año anterior siguiera vigente.
+        $aniosMatriz = DB::table('periodo')->distinct()->pluck('anio')
+            ->map(fn ($a) => (int) $a)
+            ->push((int) date('Y'))
+            ->unique()->sortDesc()->values();
+        $anioMatriz = (int) request()->query('anio_matriz', date('Y'));
+        if (! $aniosMatriz->contains($anioMatriz)) {
+            $anioMatriz = (int) date('Y');
+        }
         if ($rolActivo === 'admin') {
             $empleadosMatriz = DB::table('vinculacion as v')
                 ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
@@ -722,8 +733,8 @@ class DashboardController extends Controller
                 ->select('v.id_vinculacion', 'v.area', 'v.sistema_evaluacion', 'f.nombres', 'f.apellidos', 'f.numero_doc')
                 ->orderBy('f.apellidos')
                 ->get();
-            
-            $anioActual = (int) date('Y');
+
+            $anioActual = $anioMatriz;
             
             // Evaluaciones del año actual y documentos firmados en lote
             $evaluacionesAnio = DB::table('evaluacion as ev')
@@ -860,7 +871,7 @@ class DashboardController extends Controller
             'evaluadoresDelegacion', 'delegadosDisponibles', 'impedimentos',
             'cargosCatalogo', 'dependenciasCatalogo', 'funcionariosNoCalificados', 'evaluacionesExtratiempo', 'historialExtratiempo',
             'vinculacionesJerarquia', 'jefesDisponibles',
-            'notificaciones', 'notificacionesNoLeidas', 'matrizCalificaciones',
+            'notificaciones', 'notificacionesNoLeidas', 'matrizCalificaciones', 'aniosMatriz', 'anioMatriz',
             'encuestaCapacitacion'
         );
 
