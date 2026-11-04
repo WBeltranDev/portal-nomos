@@ -480,6 +480,13 @@ class DashboardController extends Controller
                 ->orderByDesc('ev.id_evaluacion')
                 ->get();
 
+            // Acta 29-10 (VIII): el criterio sale de la escala institucional, como
+            // en evaluacionRequierePlanMejoramiento(). Antes quedaba el umbral
+            // `<= 80` de la escala 0-100 y listaba notas Buenas y Sobresalientes.
+            $bandasConPlan = collect(escalaCalificacionConfig()['bandas'])->where('aplica_plan_mejoramiento', true);
+            $nivelesConPlan = $bandasConPlan->pluck('nivel')->all();
+            $notaMaximaConPlan = (float) $bandasConPlan->max('hasta');
+
             $planesPendientesEvaluador = DB::table('evaluacion as ev')
                 ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
                 ->join('vinculacion as va', 'va.id_vinculacion', '=', 'ev.id_vinc_evaluador')
@@ -488,17 +495,13 @@ class DashboardController extends Controller
                 ->leftJoin('plan_mejoramiento as pm', 'pm.id_evaluacion', '=', 'ev.id_evaluacion')
                 ->where('va.id_funcionario', $usuario['id_funcionario'])
                 ->where('ev.estado', 'CALIFICADA')
-                ->where(function ($q) {
-                    $q->whereIn('ev.categoria_final', ['NO_SATISFACTORIO', 'APROBADO_MEJORA'])
-                      ->orWhere(function ($q2) {
-                          $q2->whereNotNull('ev.calificacion_final')
-                             ->where('ev.calificacion_final', '<=', 80)
-                             ->where('ev.calificacion_final', '>', 0);
-                      })
-                      ->orWhere(function ($q3) {
-                          $q3->whereNotNull('ev.calificacion_parcial')
-                             ->where('ev.calificacion_parcial', '<=', 80)
-                             ->where('ev.calificacion_parcial', '>', 0);
+                ->where(function ($q) use ($nivelesConPlan, $notaMaximaConPlan) {
+                    $q->whereIn('ev.categoria_final', $nivelesConPlan)
+                      // Sin categoría calculada: se decide por la nota con la misma escala.
+                      ->orWhere(function ($q2) use ($notaMaximaConPlan) {
+                          $q2->where(fn ($q3) => $q3->whereNull('ev.categoria_final')->orWhere('ev.categoria_final', ''))
+                             ->whereRaw('COALESCE(ev.calificacion_final, ev.calificacion_parcial) > 0')
+                             ->whereRaw('COALESCE(ev.calificacion_final, ev.calificacion_parcial) <= ?', [$notaMaximaConPlan]);
                       })
                       ->orWhereNotNull('pm.id_plan');
                 })
