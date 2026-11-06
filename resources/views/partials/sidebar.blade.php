@@ -83,10 +83,4 @@
         @endif
     </nav>
 
-    <div class="p-4 border-t border-slate-100">
-        <div class="rounded-xl bg-[#EAF2EF] p-4">
-            <p class="text-xs font-bold text-[#00594E] uppercase tracking-[0.18em]">Sesión activa</p>
-            <p class="text-sm font-semibold text-slate-800 mt-1">{{ $usuario['nombres'] ?? '' }} {{ $usuario['apellidos'] ?? '' }}</p>
-        </div>
-    </div>
 </aside>
