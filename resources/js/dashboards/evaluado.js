@@ -674,6 +674,22 @@ export function renderTarjetaRecurso(r, contexto) {
                 </a>`).join('')}
         </div>`
         : '';
+    const decisionInfo = r.decision !== 'PENDIENTE' ? `
+        <div class="pt-2 border-t border-slate-100 space-y-1.5 text-xs">
+            ${r.nota_antes_recurso ? `
+                <p class="text-[11px] font-semibold text-amber-800"><span class="font-bold">Nota antes del recurso:</span> ${r.nota_antes_recurso}${r.categoria_antes_recurso ? ' (' + escapeHtml(r.categoria_antes_recurso) + ')' : ''}</p>
+            ` : ''}
+            ${r.url_oficio_decision ? `
+                <a href="${escapeHtml(r.url_oficio_decision)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 text-[#00594E] hover:underline font-bold">
+                    <span class="material-symbols-outlined text-sm">description</span> Ver oficio de respuesta
+                </a>
+            ` : ''}
+            ${r.url_evidencia_decision ? `
+                <a href="${escapeHtml(r.url_evidencia_decision)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 text-[#00594E] hover:underline font-bold">
+                    <span class="material-symbols-outlined text-sm">attach_file</span> Ver evidencia / sustento (CEDP)
+                </a>
+            ` : ''}
+        </div>` : '';
     return `
         <div class="rounded-2xl border border-slate-100 bg-white p-4 space-y-2">
             <div class="flex items-center justify-between gap-3">
@@ -688,6 +704,7 @@ export function renderTarjetaRecurso(r, contexto) {
             </div>
             <p class="text-xs text-slate-600 whitespace-pre-wrap">${escapeHtml(r.motivacion || '')}</p>
             ${evidencias}
+            ${decisionInfo}
         </div>`;
 }
 

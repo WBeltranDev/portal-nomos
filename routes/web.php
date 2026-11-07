@@ -474,7 +474,12 @@ function pendientesDelegacion(int $idDelegacion): array {
                 ? DB::table('evaluacion')->where('id_evaluacion', $t->id_evaluacion_origen)->first()
                 : buscarEvaluacionVigenteTraslado((int) $t->id_periodo, (int) $t->id_vinc_funcionario, (int) $t->id_vinc_evaluador_origen);
 
-            return ! $origen || ! evaluacionTieneNota($origen);
+            $tieneRecursoPendiente = $origen && DB::table('recurso')
+                ->where('id_evaluacion', $origen->id_evaluacion)
+                ->where('decision', 'PENDIENTE')
+                ->exists();
+
+            return ! $origen || ! evaluacionTieneNota($origen) || $tieneRecursoPendiente;
         })
         ->map(fn ($t) => nombreFuncionarioVinc((int) $t->id_vinc_funcionario))
         ->values()
@@ -1560,6 +1565,19 @@ if (!function_exists('confirmarTrasladoEnTransaccion')) {
 
                     if (! $origen || ! evaluacionTieneNota($origen)) {
                         return 'El evaluador de origen debe concertar y calificar la evaluación del tramo antes de confirmar el traslado.';
+                    }
+
+                    // Acta 29-10 (notas, punto I): el traslado no se confirma si el tramo de origen
+                    // tiene recursos radicados sin decidir.
+                    $recursoPendiente = DB::table('recurso')
+                        ->where('id_evaluacion', $origen->id_evaluacion)
+                        ->where('decision', 'PENDIENTE')
+                        ->first();
+
+                    if ($recursoPendiente) {
+                        $tipoRecurso = $recursoPendiente->tipo_recurso === 'REPOSICION' ? 'reposición' : 'apelación';
+                        $radicado = $recursoPendiente->numero_radicado ?: ('#' . $recursoPendiente->id_recurso);
+                        return "El tramo de origen tiene un recurso de {$tipoRecurso} pendiente por decidir ({$radicado}). Debe resolverse antes de confirmar el traslado.";
                     }
                 }
 
@@ -4009,7 +4027,7 @@ if (!function_exists('puedeDescargarInforme')) {
 
         $idFuncionario = (int) $auth['id_funcionario'];
 
-        return DB::table('evaluacion as ev')
+        $evaluacion = DB::table('evaluacion as ev')
             ->join('vinculacion as ve', 've.id_vinculacion', '=', 'ev.id_vinc_evaluado')
             ->join('vinculacion as va', 'va.id_vinculacion', '=', 'ev.id_vinc_evaluador')
             ->where('ev.id_evaluacion', $idEvaluacion)
@@ -4017,7 +4035,23 @@ if (!function_exists('puedeDescargarInforme')) {
                 $q->where('ve.id_funcionario', $idFuncionario)
                     ->orWhere('va.id_funcionario', $idFuncionario);
             })
-            ->exists();
+            ->select('ev.id_evaluacion', 'ev.estado', 've.id_funcionario as id_func_evaluado')
+            ->first();
+
+        if (! $evaluacion) {
+            return false;
+        }
+
+        // Acta 29-10 (punto 4): el evaluado solo puede descargar el informe de su calificación
+        // si ya firmó la notificación correspondiente (constancia de haber sido notificado).
+        if ((int) $evaluacion->id_func_evaluado === $idFuncionario) {
+            if (in_array($evaluacion->estado, ['CALIFICADA', 'APELACION', 'CERRADA'], true)
+                && ! notificacionCalificacionFirmada($idEvaluacion)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
 
@@ -5102,7 +5136,14 @@ Route::post('/recursos/{id}/decision', function (Request $request, int $id) {
     $data = $request->validate([
         'decision' => ['required', 'in:APROBADO,NEGADO'],
         'motivacion' => ['required', 'string', 'max:3000'],
+        'url_oficio_decision' => ['required', 'url', 'max:1000'],
+        'url_evidencia_decision' => ['required', 'url', 'max:1000'],
         'id_vinc_nuevo_evaluador' => ['nullable', 'integer', 'exists:vinculacion,id_vinculacion'],
+    ], [
+        'url_oficio_decision.required' => 'El enlace del oficio de respuesta es obligatorio.',
+        'url_oficio_decision.url' => 'El enlace del oficio de respuesta debe ser una URL válida (ej. https://...).',
+        'url_evidencia_decision.required' => 'El enlace de la evidencia de la decisión es obligatorio.',
+        'url_evidencia_decision.url' => 'El enlace de la evidencia de la decisión debe ser una URL válida (ej. https://...).',
     ]);
 
     // Se conserva la motivación del solicitante y se anexa la de la decisión.
@@ -5115,11 +5156,28 @@ Route::post('/recursos/{id}/decision', function (Request $request, int $id) {
 
     $estadoAntesRecurso = DB::table('evaluacion')->where('id_evaluacion', $recurso->id_evaluacion)->value('estado');
 
-    DB::table('recurso')->where('id_recurso', $id)->update([
+    $recursoUpdate = [
         'decision' => $data['decision'],
         'motivacion' => $motivacionFinal,
         'fecha_decision' => date('Y-m-d'),
-    ]);
+    ];
+
+    if (Schema::hasColumn('recurso', 'url_oficio_decision')) {
+        $recursoUpdate['url_oficio_decision'] = $data['url_oficio_decision'] ?? null;
+    }
+    if (Schema::hasColumn('recurso', 'url_evidencia_decision')) {
+        $recursoUpdate['url_evidencia_decision'] = $data['url_evidencia_decision'] ?? null;
+    }
+    if ($data['decision'] === 'APROBADO') {
+        if (Schema::hasColumn('recurso', 'nota_antes_recurso')) {
+            $recursoUpdate['nota_antes_recurso'] = $evaluacion->calificacion_final;
+        }
+        if (Schema::hasColumn('recurso', 'categoria_antes_recurso')) {
+            $recursoUpdate['categoria_antes_recurso'] = $evaluacion->categoria_final;
+        }
+    }
+
+    DB::table('recurso')->where('id_recurso', $id)->update($recursoUpdate);
 
     if ($data['decision'] === 'APROBADO') {
         $updatePayload = [
@@ -5135,12 +5193,29 @@ Route::post('/recursos/{id}/decision', function (Request $request, int $id) {
     }
 
     $evaluacionRecurso = DB::table('evaluacion')->where('id_evaluacion', $recurso->id_evaluacion)->first();
-    registrarEventoEvaluacion((int) $recurso->id_evaluacion, 'RECURSO_DECIDIDO', array_filter([
+    $datosEvento = [
         'id_recurso' => $id,
         'tipo_recurso' => $recurso->tipo_recurso,
         'decision' => $data['decision'],
-        'id_vinc_evaluador_nuevo' => ! empty($data['id_vinc_nuevo_evaluador']) && $data['decision'] === 'APROBADO' ? (int) $data['id_vinc_nuevo_evaluador'] : null,
-    ], fn ($v) => $v !== null), $estadoAntesRecurso, $evaluacionRecurso->estado);
+        'nota_antes_recurso' => $evaluacion->calificacion_final,
+        'categoria_antes_recurso' => $evaluacion->categoria_final,
+        'nota_compromisos' => $evaluacion->nota_compromisos,
+        'nota_competencias' => $evaluacion->nota_competencias,
+        'nota_ejes_misionales' => $evaluacion->nota_ejes_misionales,
+        'url_oficio_decision' => $data['url_oficio_decision'] ?? null,
+        'url_evidencia_decision' => $data['url_evidencia_decision'] ?? null,
+    ];
+    if (! empty($data['id_vinc_nuevo_evaluador']) && $data['decision'] === 'APROBADO') {
+        $datosEvento['id_vinc_evaluador_nuevo'] = (int) $data['id_vinc_nuevo_evaluador'];
+    }
+
+    registrarEventoEvaluacion(
+        (int) $recurso->id_evaluacion,
+        'RECURSO_DECIDIDO',
+        array_filter($datosEvento, fn ($v) => $v !== null),
+        $estadoAntesRecurso,
+        $evaluacionRecurso->estado
+    );
 
     $mensaje = $data['decision'] === 'APROBADO'
         ? 'Decisión favorable registrada correctamente. La evaluación ha sido reabierta para su modificación y nuevo cálculo.'
@@ -5741,7 +5816,12 @@ Route::get('/evaluaciones/{id}/informe', function (int $id) {
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
 
-    abort_unless(puedeDescargarInforme($id), 403, 'No tienes permisos para descargar el informe de esta evaluación.');
+    if (! puedeDescargarInforme($id)) {
+        if (session('usuario_autenticado.rol_activo') === 'evaluado' && ! notificacionCalificacionFirmada($id)) {
+            abort(403, 'Firma la notificación de tu calificación para descargar el informe y, si lo consideras, interponer un recurso.');
+        }
+        abort(403, 'No tienes permisos para descargar el informe de esta evaluación.');
+    }
 
     $info = prepararInformeSemestral($id);
     $nombre = 'Informe_Evaluacion_Semestral_' . $id . '.pdf';
@@ -5756,7 +5836,12 @@ Route::get('/evaluaciones/{id}/informe-anual', function (int $id) {
     $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $id)->first();
     abort_unless($evaluacion, 404);
 
-    abort_unless(puedeDescargarInforme($id), 403, 'No tienes permisos para descargar el informe de esta evaluación.');
+    if (! puedeDescargarInforme($id)) {
+        if (session('usuario_autenticado.rol_activo') === 'evaluado' && ! notificacionCalificacionFirmada($id)) {
+            abort(403, 'Firma la notificación de tu calificación para descargar el informe y, si lo consideras, interponer un recurso.');
+        }
+        abort(403, 'No tienes permisos para descargar el informe de esta evaluación.');
+    }
 
     // El consolidado anual es el promedio de los dos semestres: en el semestre 1
     // no aplica, por eso la opción no se ofrece y aquí se bloquea la descarga.

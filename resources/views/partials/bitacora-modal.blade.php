@@ -62,6 +62,8 @@
             concertacion_completa: 'Concertación completa', descripcion_modificada: 'Cambió la descripción',
             confirmada: 'Confirmada', nueva_firma: 'Primera firma', investigacion: 'Investigación', proyeccion_social: 'Proyección social',
             componente: 'Componente', compromisos: 'Compromisos', cambios: 'Cambios',
+            nota_antes_recurso: 'Nota antes del recurso', categoria_antes_recurso: 'Categoría antes del recurso',
+            url_oficio_decision: 'Oficio de respuesta', url_evidencia_decision: 'Evidencia de la decisión',
         };
 
         const valor = (v) => {
@@ -76,6 +78,9 @@
                 .filter(([k]) => !k.startsWith('id_') || k.startsWith('id_vinc_'))
                 .map(([k, v]) => {
                     const etiqueta = ETIQUETAS[k] || k;
+                    if (k.startsWith('url_') || (typeof v === 'string' && (v.startsWith('http://') || v.startsWith('https://')))) {
+                        return `<p><span class="font-semibold text-slate-600">${esc(etiqueta)}:</span> <a href="${esc(v)}" target="_blank" rel="noopener noreferrer" class="text-[#00594E] hover:underline font-bold inline-flex items-center gap-1"><span class="material-symbols-outlined text-xs">open_in_new</span> Ver enlace</a></p>`;
+                    }
                     let texto;
                     if (k.startsWith('id_vinc_')) {
                         texto = vinculaciones[v] || `#${v}`;

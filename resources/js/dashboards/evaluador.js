@@ -829,14 +829,46 @@ export function renderTarjetaRecurso(r, contexto) {
     let acciones = '';
     if (contexto === 'evaluador' && r.decision === 'PENDIENTE') {
         acciones = `
-            <div class="mt-3 grid grid-cols-2 gap-2">
-                <select id="decision-${r.id_recurso}" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white outline-none focus:border-[#00594E]">
-                    <option value="APROBADO">Aprobado</option>
-                    <option value="NEGADO">Negado</option>
-                </select>
-                <button onclick="decidirRecurso(${r.id_recurso}, ${r.tipo_recurso === 'APELACION'}, ${r.id_vinc_receptor ?? 'null'})" class="bg-[#00594E] text-white px-3 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition" type="button">Decidir</button>
+            <div class="mt-3 pt-2 border-t border-slate-100 space-y-2">
+                <div class="space-y-1">
+                    <label class="block text-[10px] font-bold uppercase text-slate-500">Motivación de la decisión</label>
+                    <textarea id="motivacion-${r.id_recurso}" rows="2" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white outline-none focus:border-[#00594E]" placeholder="Argumentos de la decisión..."></textarea>
+                </div>
+                <div class="grid sm:grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-[10px] font-bold uppercase text-slate-500 mb-0.5">Enlace del oficio de respuesta (URL)</label>
+                        <input type="url" id="url-oficio-${r.id_recurso}" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white outline-none focus:border-[#00594E]" placeholder="https://drive.google.com/..." required />
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold uppercase text-slate-500 mb-0.5">Enlace de evidencia / sustento (URL)</label>
+                        <input type="url" id="url-evidencia-${r.id_recurso}" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white outline-none focus:border-[#00594E]" placeholder="https://drive.google.com/..." required />
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-2 pt-1">
+                    <select id="decision-${r.id_recurso}" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white outline-none focus:border-[#00594E]">
+                        <option value="APROBADO">Aprobado</option>
+                        <option value="NEGADO" selected>Negado</option>
+                    </select>
+                    <button onclick="decidirRecurso(${r.id_recurso}, ${r.tipo_recurso === 'APELACION'}, ${r.id_vinc_receptor ?? 'null'})" class="bg-[#00594E] text-white px-3 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition" type="button">Decidir</button>
+                </div>
             </div>`;
     }
+    const decisionInfo = r.decision !== 'PENDIENTE' ? `
+        <div class="pt-2 border-t border-slate-100 space-y-1.5 text-xs">
+            ${r.nota_antes_recurso ? `
+                <p class="text-[11px] font-semibold text-amber-800"><span class="font-bold">Nota antes del recurso:</span> ${r.nota_antes_recurso}${r.categoria_antes_recurso ? ' (' + escapeHtml(r.categoria_antes_recurso) + ')' : ''}</p>
+            ` : ''}
+            ${r.url_oficio_decision ? `
+                <a href="${escapeHtml(r.url_oficio_decision)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 text-[#00594E] hover:underline font-bold">
+                    <span class="material-symbols-outlined text-sm">description</span> Ver oficio de respuesta
+                </a>
+            ` : ''}
+            ${r.url_evidencia_decision ? `
+                <a href="${escapeHtml(r.url_evidencia_decision)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 text-[#00594E] hover:underline font-bold">
+                    <span class="material-symbols-outlined text-sm">attach_file</span> Ver evidencia / sustento (CEDP)
+                </a>
+            ` : ''}
+        </div>` : '';
     const evidencias = Array.isArray(r.evidencias) && r.evidencias.length
         ? `<div class="pt-2 border-t border-slate-100 space-y-1.5">
             <p class="text-[10px] font-bold uppercase text-slate-500 flex items-center gap-1"><span class="material-symbols-outlined text-xs">link</span> Evidencias</p>
@@ -873,6 +905,7 @@ export function renderTarjetaRecurso(r, contexto) {
             ${r.evaluado_nombres ? `<p class="text-[10px] font-bold text-slate-500 uppercase">Evaluado: ${escapeHtml(r.evaluado_nombres)} ${escapeHtml(r.evaluado_apellidos || '')}</p>` : ''}
             <p class="text-xs text-slate-600 whitespace-pre-wrap">${escapeHtml(r.motivacion || '')}</p>
             ${evidencias}
+            ${decisionInfo}
             ${detalleConcertacion}
             ${acciones}
         </div>`;
@@ -980,13 +1013,15 @@ export function cargarRecursosMiosEvaluador() {
         .catch(() => {});
 }
 
-export function enviarDecisionRecurso(id, decision, motivacion, id_vinc_nuevo_evaluador = null) {
+export function enviarDecisionRecurso(id, decision, motivacion, url_oficio_decision, url_evidencia_decision, id_vinc_nuevo_evaluador = null) {
     fetchJson(`/recursos/${id}/decision`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             decision,
             motivacion,
+            url_oficio_decision,
+            url_evidencia_decision,
             ...(id_vinc_nuevo_evaluador ? { id_vinc_nuevo_evaluador } : {}),
         }),
     })
@@ -1015,11 +1050,17 @@ export function enviarDecisionRecurso(id, decision, motivacion, id_vinc_nuevo_ev
 
 export function decidirRecurso(id, esApelacion = false, idVincReceptor = null) {
     const decision = document.getElementById(`decision-${id}`)?.value;
-    const motivacion = prompt('Escribe la motivación de tu decisión sobre el recurso:');
-    if (motivacion === null) return;
+    const motivacion = document.getElementById(`motivacion-${id}`)?.value || '';
     if (!motivacion.trim()) { alert('La motivación es obligatoria para decidir el recurso.'); return; }
+
+    const urlOficio = document.getElementById(`url-oficio-${id}`)?.value || '';
+    if (!urlOficio.trim()) { alert('El enlace del oficio de respuesta es obligatorio.'); return; }
+
+    const urlEvidencia = document.getElementById(`url-evidencia-${id}`)?.value || '';
+    if (!urlEvidencia.trim()) { alert('El enlace de la evidencia de sustento de la decisión es obligatorio.'); return; }
+
     const idVincNuevoEvaluador = esApelacion && decision === 'APROBADO' ? idVincReceptor : null;
-    enviarDecisionRecurso(id, decision, motivacion, idVincNuevoEvaluador);
+    enviarDecisionRecurso(id, decision, motivacion.trim(), urlOficio.trim(), urlEvidencia.trim(), idVincNuevoEvaluador);
 }
 
 export function renderFirmasPlan(plan) {
