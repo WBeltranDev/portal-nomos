@@ -181,7 +181,12 @@ class NotificacionCalificacionTest extends TestCase
         // Talento Humano la ve y la decide.
         session(['usuario_autenticado' => ['id_usuario' => $this->idUsuario, 'rol_activo' => 'admin', 'roles' => ['admin']]]);
         $this->getJson('/recursos')->assertOk()->assertJsonFragment(['id_recurso' => $recurso->id_recurso]);
-        $this->postJson("/recursos/{$recurso->id_recurso}/decision", ['decision' => 'NEGADO', 'motivacion' => 'Decisión de Talento Humano.'])->assertOk();
+        $this->postJson("/recursos/{$recurso->id_recurso}/decision", [
+            'decision' => 'NEGADO',
+            'motivacion' => 'Decisión de Talento Humano.',
+            'url_oficio_decision' => 'https://drive.google.com/oficio-123.pdf',
+            'url_evidencia_decision' => 'https://drive.google.com/evidencia-123.pdf',
+        ])->assertOk();
     }
 
     public function test_sin_superior_registrado_la_apelacion_tambien_va_a_talento_humano(): void
