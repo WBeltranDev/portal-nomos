@@ -491,13 +491,19 @@
                                             <td class="px-4 py-3 text-slate-600">{{ $ev->evaluador_nombres }} {{ $ev->evaluador_apellidos }}</td>
                                             <td class="px-4 py-3">
                                                 <div class="flex justify-end gap-2">
-                                                    <a href="/evaluaciones/{{ $ev->id_evaluacion }}/informe" class="inline-flex items-center gap-1.5 rounded-lg bg-[#00594E] text-white px-3 py-1.5 text-[11px] font-bold hover:brightness-110 transition">
-                                                        <span class="material-symbols-outlined text-sm">picture_as_pdf</span> PDF semestral
-                                                    </a>
-                                                    @if($ev->tiene_informe_anual)
-                                                        <a href="/evaluaciones/{{ $ev->id_evaluacion }}/informe-anual" class="inline-flex items-center gap-1.5 rounded-lg bg-[#B5A160] text-white px-3 py-1.5 text-[11px] font-bold hover:brightness-110 transition">
-                                                            <span class="material-symbols-outlined text-sm">picture_as_pdf</span> PDF anual
+                                                    @if(!empty($ev->notificacion_firmada))
+                                                        <a href="/evaluaciones/{{ $ev->id_evaluacion }}/informe" class="inline-flex items-center gap-1.5 rounded-lg bg-[#00594E] text-white px-3 py-1.5 text-[11px] font-bold hover:brightness-110 transition">
+                                                            <span class="material-symbols-outlined text-sm">picture_as_pdf</span> PDF semestral
                                                         </a>
+                                                        @if($ev->tiene_informe_anual)
+                                                            <a href="/evaluaciones/{{ $ev->id_evaluacion }}/informe-anual" class="inline-flex items-center gap-1.5 rounded-lg bg-[#B5A160] text-white px-3 py-1.5 text-[11px] font-bold hover:brightness-110 transition">
+                                                                <span class="material-symbols-outlined text-sm">picture_as_pdf</span> PDF anual
+                                                            </a>
+                                                        @endif
+                                                    @else
+                                                        <span class="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200/60 rounded-lg px-2.5 py-1" title="Firma la notificación de tu calificación para descargar el informe">
+                                                            <span class="material-symbols-outlined text-sm">lock</span> Firma de notificación pendiente
+                                                        </span>
                                                     @endif
                                                 </div>
                                             </td>
