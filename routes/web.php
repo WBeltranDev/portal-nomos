@@ -1116,7 +1116,28 @@ Route::post('/admin/periodos', function (Request $request) {
         'semestre' => ['required', 'integer', 'in:1,2'],
         'fecha_inicio' => ['required', 'date'],
         'fecha_fin' => ['required', 'date', 'after:fecha_inicio'],
+        'fecha_fin_concertacion' => ['nullable', 'date'],
+        'fecha_fin_calificacion' => ['nullable', 'date'],
+        'descripcion' => ['nullable', 'string', 'max:200'],
     ]);
+
+    if (!empty($data['fecha_fin_concertacion'])) {
+        if ($data['fecha_fin_concertacion'] < $data['fecha_inicio'] || $data['fecha_fin_concertacion'] > $data['fecha_fin']) {
+            return back()->withErrors(['periodo' => 'La fecha límite de concertación debe estar dentro del período (entre fecha de inicio y fin).'])->withInput();
+        }
+    }
+
+    if (!empty($data['fecha_fin_calificacion'])) {
+        if ($data['fecha_fin_calificacion'] > $data['fecha_fin']) {
+            return back()->withErrors(['periodo' => 'La fecha límite de calificación no puede ser posterior al fin del período.'])->withInput();
+        }
+        if (!empty($data['fecha_fin_concertacion']) && $data['fecha_fin_calificacion'] < $data['fecha_fin_concertacion']) {
+            return back()->withErrors(['periodo' => 'La fecha límite de calificación debe ser igual o posterior a la fecha límite de concertación.'])->withInput();
+        }
+        if (empty($data['fecha_fin_concertacion']) && $data['fecha_fin_calificacion'] < $data['fecha_inicio']) {
+            return back()->withErrors(['periodo' => 'La fecha límite de calificación debe ser igual o posterior a la fecha de inicio del período.'])->withInput();
+        }
+    }
 
     $exists = DB::table('periodo')
         ->where('sistema', $data['sistema'])
@@ -1147,6 +1168,9 @@ Route::post('/admin/periodos', function (Request $request) {
         'semestre' => $data['semestre'],
         'fecha_inicio' => $data['fecha_inicio'],
         'fecha_fin' => $data['fecha_fin'],
+        'fecha_fin_concertacion' => $data['fecha_fin_concertacion'] ?? null,
+        'fecha_fin_calificacion' => $data['fecha_fin_calificacion'] ?? null,
+        'descripcion' => $data['descripcion'] ?? null,
         'estado' => 'ABIERTO',
     ]);
 
@@ -1156,6 +1180,8 @@ Route::post('/admin/periodos', function (Request $request) {
         'semestre' => $data['semestre'],
         'fecha_inicio' => $data['fecha_inicio'],
         'fecha_fin' => $data['fecha_fin'],
+        'fecha_fin_concertacion' => $data['fecha_fin_concertacion'] ?? null,
+        'fecha_fin_calificacion' => $data['fecha_fin_calificacion'] ?? null,
     ]);
 
     return back()->with('success_periodo', 'Período creado exitosamente.');
@@ -1190,9 +1216,29 @@ Route::post('/admin/periodos/{id}', function (Request $request, int $id) {
     $data = $request->validate([
         'fecha_inicio' => ['required', 'date'],
         'fecha_fin' => ['required', 'date', 'after:fecha_inicio'],
+        'fecha_fin_concertacion' => ['nullable', 'date'],
+        'fecha_fin_calificacion' => ['nullable', 'date'],
         'estado' => ['required', 'in:ABIERTO,CERRADO'],
         'descripcion' => ['nullable', 'string', 'max:200'],
     ]);
+
+    if (!empty($data['fecha_fin_concertacion'])) {
+        if ($data['fecha_fin_concertacion'] < $data['fecha_inicio'] || $data['fecha_fin_concertacion'] > $data['fecha_fin']) {
+            return back()->withErrors(['periodo' => 'La fecha límite de concertación debe estar dentro del período (entre fecha de inicio y fin).'])->withInput();
+        }
+    }
+
+    if (!empty($data['fecha_fin_calificacion'])) {
+        if ($data['fecha_fin_calificacion'] > $data['fecha_fin']) {
+            return back()->withErrors(['periodo' => 'La fecha límite de calificación no puede ser posterior al fin del período.'])->withInput();
+        }
+        if (!empty($data['fecha_fin_concertacion']) && $data['fecha_fin_calificacion'] < $data['fecha_fin_concertacion']) {
+            return back()->withErrors(['periodo' => 'La fecha límite de calificación debe ser igual o posterior a la fecha límite de concertación.'])->withInput();
+        }
+        if (empty($data['fecha_fin_concertacion']) && $data['fecha_fin_calificacion'] < $data['fecha_inicio']) {
+            return back()->withErrors(['periodo' => 'La fecha límite de calificación debe ser igual o posterior a la fecha de inicio del período.'])->withInput();
+        }
+    }
 
     $semestreContrario = $periodo->semestre == 1 ? 2 : 1;
     $solape = DB::table('periodo')
@@ -1211,12 +1257,16 @@ Route::post('/admin/periodos/{id}', function (Request $request, int $id) {
     $antes = [
         'fecha_inicio' => $periodo->fecha_inicio,
         'fecha_fin' => $periodo->fecha_fin,
+        'fecha_fin_concertacion' => $periodo->fecha_fin_concertacion ?? null,
+        'fecha_fin_calificacion' => $periodo->fecha_fin_calificacion ?? null,
         'estado' => $periodo->estado,
         'descripcion' => $periodo->descripcion,
     ];
     $despues = [
         'fecha_inicio' => $data['fecha_inicio'],
         'fecha_fin' => $data['fecha_fin'],
+        'fecha_fin_concertacion' => $data['fecha_fin_concertacion'] ?: null,
+        'fecha_fin_calificacion' => $data['fecha_fin_calificacion'] ?: null,
         'estado' => $data['estado'],
         'descripcion' => $data['descripcion'] ?: null,
     ];
@@ -2161,13 +2211,17 @@ Route::post('/admin/evaluaciones/{id}/extratiempo', function (Request $request, 
     abort_unless($evaluacion, 404);
 
     $data = $request->validate([
+        'tipo' => ['nullable', 'in:CONCERTACION,CALIFICACION'],
         'justificacion' => ['required', 'string', 'max:1000'],
         'fecha_limite' => ['required', 'date', 'after_or_equal:today'],
     ]);
 
+    $tipo = $data['tipo'] ?? 'CONCERTACION';
+
     if (Schema::hasTable('concertacion_extratiempo')) {
         DB::table('concertacion_extratiempo')->insert([
             'id_evaluacion' => $id,
+            'tipo' => $tipo,
             'justificacion' => trim($data['justificacion']),
             'autorizado_por' => session('usuario_autenticado.nombre_completo') ?? 'Talento Humano',
             'fecha_limite' => $data['fecha_limite'],
@@ -2177,9 +2231,15 @@ Route::post('/admin/evaluaciones/{id}/extratiempo', function (Request $request, 
         ]);
     }
 
-    registrarEventoEvaluacion($id, 'EXTRATIEMPO_HABILITADO', ['fecha_limite' => $data['fecha_limite']]);
+    $evento = $tipo === 'CALIFICACION' ? 'EXTRATIEMPO_CALIFICACION_HABILITADO' : 'EXTRATIEMPO_HABILITADO';
+    registrarEventoEvaluacion($id, $evento, [
+        'tipo' => $tipo,
+        'fecha_limite' => $data['fecha_limite'],
+        'justificacion' => trim($data['justificacion']),
+    ]);
 
-    return back()->with('success', 'Concertación en extratiempo habilitada correctamente.');
+    $tipoTexto = $tipo === 'CALIFICACION' ? 'Calificación' : 'Concertación';
+    return back()->with('success', "{$tipoTexto} en extratiempo habilitada correctamente.");
 })->name('admin.evaluaciones.extratiempo');
 
 
@@ -3201,6 +3261,9 @@ Route::post('/evaluaciones/{id}/compromisos', function (Request $request, int $i
                 ->where('id_evaluacion', $id)
                 ->where('activo', 1)
                 ->where('fecha_limite', '>=', date('Y-m-d'))
+                ->where(function ($q) {
+                    $q->where('tipo', 'CONCERTACION')->orWhereNull('tipo');
+                })
                 ->exists()
             : false;
 
@@ -4153,6 +4216,41 @@ Route::get('/evaluaciones/{id}/calculo', function (int $id) {
 })->name('evaluaciones.calculo');
 
 
+if (!function_exists('verificarBloqueoCalificacionPorPlazo')) {
+    function verificarBloqueoCalificacionPorPlazo(int $idEvaluacion): ?string
+    {
+        $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $idEvaluacion)->first();
+        if (!$evaluacion) {
+            return null;
+        }
+
+        $periodo = DB::table('periodo')->where('id_periodo', $evaluacion->id_periodo)->first();
+        if (!$periodo || empty($periodo->fecha_fin_calificacion)) {
+            return null;
+        }
+
+        if (date('Y-m-d') <= $periodo->fecha_fin_calificacion) {
+            return null;
+        }
+
+        $extratiempo = Schema::hasTable('concertacion_extratiempo')
+            ? DB::table('concertacion_extratiempo')
+                ->where('id_evaluacion', $idEvaluacion)
+                ->where('tipo', 'CALIFICACION')
+                ->where('activo', 1)
+                ->where('fecha_limite', '>=', date('Y-m-d'))
+                ->exists()
+            : false;
+
+        if (!$extratiempo) {
+            return 'La fecha límite de calificación para este período ha finalizado (' . $periodo->fecha_fin_calificacion . '). Solicita a Talento Humano la habilitación de calificación extratiempo.';
+        }
+
+        return null;
+    }
+}
+
+
 // --- POST: Guardar calificación de compromisos (evaluador) ---
 Route::post('/evaluaciones/{id}/calificar-compromisos', function (Request $request, int $id) {
     abort_unless(session('usuario_autenticado.rol_activo') === 'evaluador', 403);
@@ -4162,6 +4260,11 @@ Route::post('/evaluaciones/{id}/calificar-compromisos', function (Request $reque
     abort_unless($evaluacion->concertacion_firmada, 403, 'La concertación debe estar firmada antes de calificar.');
     abort_if($evaluacion->estado === 'CALIFICADA', 422, 'Esta evaluación ya fue calificada y calculada; las notas quedaron congeladas y no se pueden modificar.');
     abort_if((int) $evaluacion->fase_actual < 4, 422, 'No puedes calificar mientras la fase esté en ' . $evaluacion->fase_actual . '. El evaluado debe confirmar sus evidencias para habilitar la calificación.');
+
+    $errorPlazo = verificarBloqueoCalificacionPorPlazo($id);
+    if ($errorPlazo) {
+        return response()->json(['error' => $errorPlazo, 'message' => $errorPlazo], 422);
+    }
 
     $evidenciasPendientes = DB::table('evidencia')
         ->where('id_evaluacion', $id)
@@ -4236,6 +4339,11 @@ Route::post('/evaluaciones/{id}/calificar-competencias', function (Request $requ
     abort_unless($evaluacion->concertacion_firmada, 403, 'La concertación debe estar firmada antes de calificar.');
     abort_if($evaluacion->estado === 'CALIFICADA', 422, 'Esta evaluación ya fue calificada y calculada; las notas quedaron congeladas y no se pueden modificar.');
     abort_if((int) $evaluacion->fase_actual < 4, 422, 'No puedes calificar mientras la fase esté en ' . $evaluacion->fase_actual . '. El evaluado debe confirmar sus evidencias para habilitar la calificación.');
+
+    $errorPlazo = verificarBloqueoCalificacionPorPlazo($id);
+    if ($errorPlazo) {
+        return response()->json(['error' => $errorPlazo, 'message' => $errorPlazo], 422);
+    }
 
     $evidenciasPendientes = DB::table('evidencia')
         ->where('id_evaluacion', $id)
@@ -4329,6 +4437,13 @@ Route::post('/evaluaciones/{id}/calcular-final', function (Request $request, int
     // (evaluación ya calificada, o calificaciones incompletas). El evaluador no puede.
     if ($rolActivo === 'evaluador') {
         abort_if($evaluacion->estado === 'CALIFICADA', 422, 'Esta evaluación ya fue calificada y calculada; no se puede volver a calcular.');
+        $errorPlazo = verificarBloqueoCalificacionPorPlazo($id);
+        if ($errorPlazo) {
+            if ($request->wantsJson() || $request->ajax()) {
+                return response()->json(['error' => $errorPlazo, 'message' => $errorPlazo], 422);
+            }
+            return back()->withErrors(['error' => $errorPlazo]);
+        }
     }
 
     if ($rolActivo === 'evaluador') {
@@ -4501,6 +4616,11 @@ Route::post('/evaluaciones/{id}/calificar-ejes', function (Request $request, int
     abort_unless($evaluacion->concertacion_firmada, 403, 'La concertación debe estar firmada antes de calificar ejes misionales.');
     abort_if($evaluacion->estado === 'CALIFICADA', 422, 'Esta evaluación ya fue calificada y calculada; las notas quedaron congeladas y no se pueden modificar.');
     abort_if((int) $evaluacion->fase_actual < 4, 422, 'No puedes calificar mientras la fase esté en ' . $evaluacion->fase_actual . '. El evaluado debe confirmar sus evidencias para habilitar la calificación.');
+
+    $errorPlazo = verificarBloqueoCalificacionPorPlazo($id);
+    if ($errorPlazo) {
+        return response()->json(['error' => $errorPlazo, 'message' => $errorPlazo], 422);
+    }
 
     $evidenciasPendientes = DB::table('evidencia')
         ->where('id_evaluacion', $id)
