@@ -21,6 +21,7 @@
             IMPEDIMENTO_RESUELTO: 'Impedimento o recusación resuelto',
             DESACUERDO_REGISTRADO: 'Desacuerdo del evaluado',
             EXTRATIEMPO_HABILITADO: 'Concertación en extratiempo habilitada',
+            EXTRATIEMPO_CALIFICACION_HABILITADO: 'Calificación en extratiempo habilitada',
             EJES_DEFINIDOS: 'Ejes misionales definidos',
             COMPROMISOS_COPIADOS: 'Compromisos copiados de un tramo anterior',
             COMPROMISO_CREADO: 'Compromiso creado',

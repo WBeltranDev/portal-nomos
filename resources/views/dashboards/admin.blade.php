@@ -863,12 +863,12 @@
                                 </div>
                                 <div class="grid grid-cols-2 gap-2">
                                     <div>
-                                        <label class="block text-[10px] font-bold text-slate-600 uppercase text-[#00594E]">Inicio Concertación (Opcional)</label>
-                                        <input type="date" name="fecha_inicio_concertacion" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white focus:border-[#00594E] outline-none">
+                                        <label class="block text-[10px] font-bold text-slate-600 uppercase text-[#00594E]">Cierre Concertación (Opcional)</label>
+                                        <input type="date" name="fecha_fin_concertacion" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white focus:border-[#00594E] outline-none">
                                     </div>
                                     <div>
-                                        <label class="block text-[10px] font-bold text-slate-600 uppercase text-red-600">Cierre Concertación</label>
-                                        <input type="date" name="fecha_fin_concertacion" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white focus:border-red-500 outline-none" required>
+                                        <label class="block text-[10px] font-bold text-slate-600 uppercase text-amber-600">Cierre Calificación (Opcional)</label>
+                                        <input type="date" name="fecha_fin_calificacion" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white focus:border-amber-500 outline-none">
                                     </div>
                                 </div>
                                 <div>
@@ -1192,9 +1192,9 @@
                     <div class="panel-card rounded-3xl p-6">
                         <div class="flex items-center gap-2 mb-1">
                             <span class="material-symbols-outlined text-[#00594E]">history_toggle_off</span>
-                            <h2 class="text-2xl sm:text-3xl font-black text-slate-900">Concertación Extratiempo</h2>
+                            <h2 class="text-2xl sm:text-3xl font-black text-slate-900">Gestión de Extratiempo</h2>
                         </div>
-                        <p class="text-sm text-slate-500 mb-6">Autoriza tiempo adicional justificado para aquellas evaluaciones que no lograron concertarse en los plazos establecidos.</p>
+                        <p class="text-sm text-slate-500 mb-6">Autoriza tiempo adicional justificado para concertar compromisos o calificar evaluaciones fuera de los plazos ordinarios.</p>
 
                         <form method="POST" action="" id="form-extratiempo" class="space-y-4">
                             @csrf
@@ -1210,11 +1210,18 @@
                                 </select>
                             </div>
                             <div>
+                                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Tipo de Extratiempo</label>
+                                <select name="tipo" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" required>
+                                    <option value="CONCERTACION">Concertación de compromisos</option>
+                                    <option value="CALIFICACION">Calificación de evaluación</option>
+                                </select>
+                            </div>
+                            <div>
                                 <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Justificación / Observación Oficial</label>
                                 <textarea name="justificacion" rows="3" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Ej. Permiso sindical certificado, incapacidad médica radicada, etc." required></textarea>
                             </div>
                             <div>
-                                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Nueva Fecha Límite para Concertar</label>
+                                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Nueva Fecha Límite</label>
                                 <input type="date" name="fecha_limite" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" required>
                             </div>
                             <button type="submit" class="w-full bg-[#B5A160] hover:brightness-110 text-white rounded-xl py-2.5 text-xs font-bold transition shadow-md shadow-[#B5A160]/20 flex items-center justify-center gap-2">
@@ -1230,7 +1237,7 @@
                                 <span class="material-symbols-outlined text-3xl">info</span>
                             </div>
                             <h3 class="text-base font-black text-slate-800">Sobre el Extratiempo</h3>
-                            <p class="text-xs text-slate-500">Al aprobar un extratiempo, el sistema registrará la observación y reabrirá la concertación para el evaluador y evaluado seleccionado, independientemente del cierre general del período.</p>
+                            <p class="text-xs text-slate-500">Al aprobar un extratiempo de concertación o calificación, el sistema registrará la auditoría y reabrirá la acción para el evaluador y evaluado seleccionado, independientemente del cierre general del período.</p>
                         </div>
                     </div>
                 </div>
@@ -1245,7 +1252,12 @@
                             <div class="rounded-2xl border border-slate-100 bg-white p-4 space-y-2 relative">
                                 <div class="flex items-start justify-between gap-3">
                                     <div class="min-w-0">
-                                        <p class="text-xs font-black text-slate-800">{{ $hx->nombres }} {{ $hx->apellidos }}</p>
+                                        <div class="flex items-center gap-2">
+                                            <p class="text-xs font-black text-slate-800">{{ $hx->nombres }} {{ $hx->apellidos }}</p>
+                                            <span class="text-[10px] font-bold uppercase rounded-full px-2 py-0.5 {{ ($hx->tipo ?? 'CONCERTACION') === 'CALIFICACION' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800' }}">
+                                                {{ ($hx->tipo ?? 'CONCERTACION') === 'CALIFICACION' ? 'Calificación' : 'Concertación' }}
+                                            </span>
+                                        </div>
                                         <p class="text-[10px] text-slate-400">Cargo: {{ $hx->cargo }}</p>
                                     </div>
                                     <span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 {{ $hx->activo ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500' }}">{{ $hx->activo ? 'Vigente' : 'Inactivo/Cerrado' }}</span>
