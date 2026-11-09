@@ -3,8 +3,10 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
 
 if (!function_exists('getTargetCompromisosWeight')) {
@@ -634,39 +636,77 @@ Route::get('/', function () {
 });
 
 Route::post('/login', function (Request $request) {
-    $credentials = $request->validate([
-        'correo' => ['required', 'email'],
-        'password' => ['required', 'string'],
-    ]);
+    // Fase 6 (6.2): Búsqueda por documento_login, admitiendo correo por compatibilidad
+    $loginInput = trim((string) ($request->input('documento') ?? $request->input('correo') ?? ''));
+    $password = (string) $request->input('password', '');
 
-    $correo = strtolower(trim($credentials['correo']));
+    if ($loginInput === '' || $password === '') {
+        return back()->withErrors(['login' => 'El número de documento y la contraseña son obligatorios.'])->withInput();
+    }
 
-    $user = DB::table('usuario as u')
-        ->where(DB::raw('LOWER(TRIM(u.username))'), $correo)
-        ->where('u.activo', 1)
-        ->first();
+    // Límite de intentos: throttle de 5 intentos por minuto
+    $throttleKey = Str::transliterate(Str::lower($loginInput) . '|' . $request->ip());
 
-    if (! $user) {
+    if (RateLimiter::tooManyAttempts($throttleKey, 5)) {
+        $seconds = RateLimiter::availableIn($throttleKey);
+        return back()->withErrors([
+            'login' => "Demasiados intentos fallidos de inicio de sesión. Por favor espera {$seconds} segundos antes de volver a intentar.",
+        ])->onlyInput('documento', 'correo');
+    }
+
+    $docLimpio = preg_replace('/[^0-9]/', '', $loginInput);
+
+    // 1. Búsqueda por documento_login (si tiene dígitos)
+    $user = null;
+    if ($docLimpio !== '' && Schema::hasColumn('usuario', 'documento_login')) {
         $user = DB::table('usuario as u')
-            ->where(function ($q) use ($correo) {
-                $q->where(DB::raw('LOWER(TRIM(u.username))'), $correo . '@unitropico.edu.co')
-                  ->orWhere(DB::raw('LOWER(TRIM(u.username))'), 'LIKE', $correo . '@%');
-            })
+            ->where('u.documento_login', $docLimpio)
             ->where('u.activo', 1)
             ->first();
     }
 
+    // 2. Transición / compatibilidad: búsqueda por username (correo)
     if (! $user) {
-        return back()->withErrors(['login' => 'Correo institucional o contraseña incorrectos.'])->onlyInput('correo');
+        $correo = strtolower($loginInput);
+        $user = DB::table('usuario as u')
+            ->where(DB::raw('LOWER(TRIM(u.username))'), $correo)
+            ->where('u.activo', 1)
+            ->first();
+
+        if (! $user && ! str_contains($correo, '@')) {
+            $user = DB::table('usuario as u')
+                ->where(function ($q) use ($correo) {
+                    $q->where(DB::raw('LOWER(TRIM(u.username))'), $correo . '@unitropico.edu.co')
+                      ->orWhere(DB::raw('LOWER(TRIM(u.username))'), 'LIKE', $correo . '@%');
+                })
+                ->where('u.activo', 1)
+                ->first();
+        }
+    }
+
+    if (! $user) {
+        RateLimiter::hit($throttleKey, 60);
+        return back()->withErrors(['login' => 'Documento o contraseña incorrectos.'])->onlyInput('documento', 'correo');
     }
 
     $storedPassword = (string) $user->password;
     $passwordValid = str_starts_with($storedPassword, '$2y$') || str_starts_with($storedPassword, '$argon2')
-        ? Hash::check($credentials['password'], $storedPassword)
-        : hash_equals($storedPassword, $credentials['password']);
+        ? Hash::check($password, $storedPassword)
+        : hash_equals($storedPassword, $password);
 
     if (! $passwordValid) {
-        return back()->withErrors(['login' => 'Correo institucional o contraseña incorrectos.'])->onlyInput('correo');
+        RateLimiter::hit($throttleKey, 60);
+        return back()->withErrors(['login' => 'Documento o contraseña incorrectos.'])->onlyInput('documento', 'correo');
+    }
+
+    // Ingreso exitoso: limpiar throttle
+    RateLimiter::clear($throttleKey);
+
+    // Fase 6 (6.2): Migración transparente de contraseña en texto plano a hash seguro
+    if (! (str_starts_with($storedPassword, '$2y$') || str_starts_with($storedPassword, '$argon2'))) {
+        DB::table('usuario')
+            ->where('id_usuario', $user->id_usuario)
+            ->update(['password' => Hash::make($password)]);
     }
 
     $funcionario = DB::table('funcionario')
@@ -728,6 +768,7 @@ Route::post('/login', function (Request $request) {
     $request->session()->put('usuario_autenticado', [
         'id_usuario' => $user->id_usuario,
         'correo' => $user->username,
+        'documento' => $user->documento_login ?? $funcionario->numero_doc ?? null,
         'id_funcionario' => $funcionario->id_funcionario ?? null,
         'nombres' => $funcionario->nombres ?? 'Usuario',
         'apellidos' => $funcionario->apellidos ?? 'Admin',

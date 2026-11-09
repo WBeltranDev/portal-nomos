@@ -51,9 +51,14 @@
                 </p>
             </div>
 
+            <div class="mb-6 flex items-center gap-3 p-3.5 bg-[#EAF2EF] border border-primary/20 rounded-2xl text-xs sm:text-sm text-primary font-medium">
+                <span class="material-symbols-outlined text-primary text-lg flex-shrink-0">info</span>
+                <span><strong>Aviso:</strong> Ahora ingresa con tu número de documento.</span>
+            </div>
+
             <div id="login-error" class="{{ $errors->has('login') ? '' : 'hidden' }} w-full mb-6 flex items-start gap-3 p-3 bg-error-container border border-error/20 rounded-lg text-xs text-on-error-container">
                 <span class="material-symbols-outlined text-sm mt-0.5">error</span>
-                <p>{{ $errors->first('login', 'Correo institucional o contraseña incorrectos.') }}</p>
+                <p>{{ $errors->first('login', 'Documento o contraseña incorrectos.') }}</p>
             </div>
 
             <form id="form-login" class="w-full space-y-6 sm:space-y-8" method="POST" action="{{ route('login.store') }}">
@@ -61,9 +66,9 @@
 
                 <div class="space-y-5 sm:space-y-6">
                     <div class="relative group">
-                        <input class="peer w-full rounded-2xl border border-slate-200 bg-white px-4 py-4 sm:px-5 sm:py-4 text-base sm:text-lg text-on-surface transition-all placeholder-transparent focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 shadow-sm" id="correo" name="correo" placeholder=" " required type="email" value="{{ old('correo') }}" />
-                        <label class="absolute left-4 top-4 text-slate-400 text-sm sm:text-base transition-all duration-200 pointer-events-none bg-white px-1 peer-placeholder-shown:top-4 peer-placeholder-shown:text-base peer-focus:-top-2 peer-focus:text-xs peer-focus:text-primary peer-[:not(:placeholder-shown)]:-top-2 peer-[:not(:placeholder-shown)]:text-xs peer-[:not(:placeholder-shown)]:text-primary" for="correo">
-                            Correo institucional
+                        <input class="peer w-full rounded-2xl border border-slate-200 bg-white px-4 py-4 sm:px-5 sm:py-4 text-base sm:text-lg text-on-surface transition-all placeholder-transparent focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 shadow-sm" id="documento" name="documento" inputmode="numeric" pattern="[0-9]+" placeholder=" " required type="text" value="{{ old('documento', old('correo')) }}" />
+                        <label class="absolute left-4 top-4 text-slate-400 text-sm sm:text-base transition-all duration-200 pointer-events-none bg-white px-1 peer-placeholder-shown:top-4 peer-placeholder-shown:text-base peer-focus:-top-2 peer-focus:text-xs peer-focus:text-primary peer-[:not(:placeholder-shown)]:-top-2 peer-[:not(:placeholder-shown)]:text-xs peer-[:not(:placeholder-shown)]:text-primary" for="documento">
+                            Número de documento
                         </label>
                     </div>
                     <div class="relative group">
