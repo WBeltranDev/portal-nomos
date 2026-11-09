@@ -40,16 +40,11 @@
                                     <div class="rounded-xl bg-slate-50 p-3"><p class="text-slate-400 uppercase font-bold text-[10px]">ID</p><p class="font-semibold text-slate-800">#{{ $u->id_usuario }}</p></div>
                                     <div class="rounded-xl bg-slate-50 p-3"><p class="text-slate-400 uppercase font-bold text-[10px]">Documento</p><p class="font-semibold text-slate-800">{{ $u->documento_identidad ?? '-' }}</p></div>
                                 </div>
-                                <div class="mt-4 flex gap-2">
-                                    <form method="POST" action="{{ route('usuarios.reset-password', $u->id_usuario) }}" class="flex-1">
+                                <div class="mt-4">
+                                    <form method="POST" action="{{ route('usuarios.reset-password', $u->id_usuario) }}">
                                         @csrf
                                         <button class="w-full rounded-xl bg-slate-900 text-white py-2 text-xs font-bold hover:bg-slate-800 transition" type="submit">Generar contraseña temporal</button>
                                     </form>
-                                    @if($u->documento_identidad)
-                                    <button type="button" onclick="navigator.clipboard.writeText('{{ $u->documento_identidad }}').then(() => alert('Contraseña inicial (Cédula: {{ $u->documento_identidad }}) copiada al portapapeles'))" class="px-3 py-2 bg-[#EAF2EF] hover:bg-[#d5e7e1] text-[#00594E] rounded-xl text-xs font-bold transition flex items-center gap-1" title="Copiar contraseña inicial (cédula)">
-                                        <span class="material-symbols-outlined text-sm">content_copy</span>
-                                    </button>
-                                    @endif
                                 </div>
                             </article>
                         @endforeach
