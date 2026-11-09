@@ -239,3 +239,71 @@ Artisan::command('delegaciones:revisar-abiertas', function () {
 
 \Illuminate\Support\Facades\Schedule::command('delegaciones:revisar-abiertas')->dailyAt('02:05')->withoutOverlapping();
 
+// Limpieza de datos transaccionales de prueba
+Artisan::command('serag:limpiar-pruebas {--force : Ejecutar sin confirmación interactiva}', function () {
+    if (! $this->option('force') && ! $this->confirm('¿Deseas limpiar todos los datos transaccionales de prueba (evaluaciones, compromisos, firmas, recursos)? Los funcionarios, usuarios, vinculaciones, cargos y catálogos NO serán modificados.')) {
+        $this->warn('Operación cancelada.');
+        return 0;
+    }
+
+    $tablas = [
+        'compromiso_observacion',
+        'compromiso_meta',
+        'evidencia',
+        'firma',
+        'compromiso',
+        'competencia_evaluada',
+        'evaluacion_eje',
+        'eje_misional_calificacion',
+        'plan_mejoramiento',
+        'recurso_evidencia',
+        'recurso',
+        'impedimento_recusacion',
+        'evaluacion_evento',
+        'evaluacion',
+        'traslado',
+        'delegacion',
+        'periodo_parcial',
+        'periodo_auditoria',
+        'concertacion_extratiempo',
+        'bitacora_modificacion_compromiso',
+        'solicitud_modificacion_compromiso',
+        'tema_capacitacion',
+        'notificacion_documento',
+        'notificacion',
+        'puesto_discrepancia',
+        'modelo_puestos_cambio',
+        'carga_planta_pendiente',
+        'carga_planta',
+    ];
+
+    \Illuminate\Support\Facades\DB::statement('SET FOREIGN_KEY_CHECKS = 0;');
+
+    foreach ($tablas as $tabla) {
+        if (\Illuminate\Support\Facades\Schema::hasTable($tabla)) {
+            \Illuminate\Support\Facades\DB::table($tabla)->delete();
+            try {
+                \Illuminate\Support\Facades\DB::statement("ALTER TABLE `{$tabla}` AUTO_INCREMENT = 1;");
+            } catch (\Throwable $e) {
+                // Silencioso si no aplica
+            }
+        }
+    }
+
+    \Illuminate\Support\Facades\DB::statement('SET FOREIGN_KEY_CHECKS = 1;');
+
+    $this->info('✓ Datos transaccionales de prueba eliminados exitosamente.');
+    $this->line('  • Usuarios y cuentas de acceso: INTACTOS');
+    $this->line('  • Funcionarios y datos personales: INTACTOS');
+    $this->line('  • Vinculaciones y cargos asignados: INTACTOS');
+    $this->line('  • Catálogos de dependencias y cargos: INTACTOS');
+    $this->line('  • Ponderaciones RL / AG y competencias: INTACTAS');
+    $this->line('  • Períodos del sistema: INTACTOS');
+
+    \Illuminate\Support\Facades\Artisan::call('optimize:clear');
+    $this->info('✓ Cachés del sistema limpiadas.');
+
+    return 0;
+})->purpose('Limpia las evaluaciones y compromisos de prueba conservando usuarios, funcionarios y catálogos');
+
+
