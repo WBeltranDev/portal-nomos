@@ -42,6 +42,7 @@
                                                 <p class="text-[11px] text-slate-500">
                                                     {{ \Carbon\Carbon::parse($tramo['desde'])->format('d/m/Y') }} → {{ \Carbon\Carbon::parse($tramo['hasta'])->format('d/m/Y') }}
                                                     @if($tramo['dias']) · {{ $tramo['dias'] }} días @endif
+                                                    @if(isset($tramo['peso_porcentaje'])) · <span class="font-bold text-slate-700">{{ number_format((float) $tramo['peso_porcentaje'], 1) }}% de peso</span> @endif
                                                 </p>
                                                 <p class="text-[11px] font-semibold {{ $tramo['nota'] !== null ? 'text-[#00594E]' : 'text-amber-700' }}">
                                                     {{ $tramo['nota'] !== null ? 'Nota: ' . number_format((float) $tramo['nota'], 1) : 'Sin calificar' }}
@@ -55,6 +56,12 @@
                                             </div>
                                         @endforeach
                                     </div>
+                                    @if(!empty($periodoTramos['formula_explicita']))
+                                        <div class="mt-3 pt-2.5 border-t border-slate-200/60 flex flex-wrap items-center justify-between gap-2 text-xs">
+                                            <span class="text-slate-500 font-medium">Ponderación por días:</span>
+                                            <span class="font-mono bg-white px-2.5 py-1 rounded-lg border border-slate-200 text-slate-800 text-[11px] font-bold">{{ $periodoTramos['formula_explicita'] }}</span>
+                                        </div>
+                                    @endif
                                 </div>
                             @endforeach
                         </div>

@@ -256,6 +256,34 @@
     </tr>
 </table>
 
+{{-- ============ DETALLE DE TRAMOS DE EVALUACIÓN (PONDERACIÓN SEMESTRAL) ============ --}}
+@if (!empty($info['tramos_info']) && count($info['tramos_info']['parciales']) > 1)
+<table style="margin-bottom: 8px;">
+    <tr><th colspan="4" class="cab">Ponderación Semestral por Tramos de Evaluación</th></tr>
+    <tr>
+        <th style="width:25%;">Tramo</th>
+        <th style="width:25%;">Días Laborados</th>
+        <th style="width:25%;">% de Peso</th>
+        <th style="width:25%;">Nota del Tramo</th>
+    </tr>
+    @foreach ($info['tramos_info']['parciales'] as $idx => $tr)
+    <tr>
+        <td class="centro">Tramo {{ $idx + 1 }}</td>
+        <td class="centro">{{ $tr['dias_laborados'] }} días</td>
+        <td class="centro">{{ number_format((float) ($tr['peso_porcentaje'] ?? 0), 1) }}%</td>
+        <td class="centro negrita">{{ $tr['nota_final'] !== null ? number_format((float) $tr['nota_final'], 1) : '-' }}</td>
+    </tr>
+    @endforeach
+    @if (!empty($info['tramos_info']['formula_explicita']))
+    <tr>
+        <td colspan="4" class="info-cell" style="background:#F8FAFC; font-size:8px;">
+            <b>Fórmula explícita de ponderación:</b> {{ $info['tramos_info']['formula_explicita'] }}
+        </td>
+    </tr>
+    @endif
+</table>
+@endif
+
 {{-- ============ NOTIFICACIÓN DE LA CALIFICACIÓN ============ --}}
 <table>
     <tr><th colspan="2" class="cab">Notificación de la Calificación</th></tr>

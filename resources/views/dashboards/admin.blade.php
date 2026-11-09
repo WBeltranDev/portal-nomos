@@ -1117,7 +1117,7 @@
                                 <select name="id_vinc_delegante" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
                                     <option value="">Selecciona el evaluador titular</option>
                                     @foreach($evaluadoresDelegacion as $ed)
-                                        <option value="{{ $ed->id_vinculacion }}">{{ $ed->nombres }} {{ $ed->apellidos }} - {{ $ed->cargo }} ({{ $ed->area }})</option>
+                                        <option value="{{ $ed->id_vinculacion }}">{{ !empty($ed->es_vacante) ? '[VACANTE] ' : '' }}{{ $ed->nombres }} {{ $ed->apellidos }} - {{ $ed->cargo }} ({{ $ed->area }})</option>
                                     @endforeach
                                 </select>
                             </div>
@@ -1138,13 +1138,27 @@
                                 <div>
                                     <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Fecha fin (opcional)</label>
                                     <input type="date" name="fecha_fin" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" />
-                                    <p class="text-[9px] text-slate-400 mt-0.5">Vacío = vigencia abierta</p>
+                                    <p class="text-[9px] text-slate-400 mt-0.5">Vacío = vigencia abierta (arranca corta; al día 31 se convierte a larga)</p>
                                 </div>
                             </div>
-                            <div class="rounded-xl border border-amber-100 bg-amber-50/60 p-3 space-y-2">
-                                <p class="text-[11px] text-amber-800"><b>Más de 30 días o vigencia abierta:</b> el titular debe calificar el tramo de todas sus personas a cargo y el evaluador del delegado debe calificar su tramo antes de confirmar el inicio. Con 30 días o menos, el delegado atiende las mismas evaluaciones sin tramos.</p>
+                            <div class="rounded-xl border border-amber-100 bg-amber-50/60 p-3 space-y-3">
+                                <p class="text-[11px] text-amber-800"><b>Regla de Oro (Fase 5):</b> El delegado nunca se autoevalúa ni es evaluado por el cargo que suple; se evalúa por su cargo original.</p>
                                 <div>
-                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Superior que evaluará al delegado (si supera 30 días)</label>
+                                    <label class="block text-[10px] font-bold text-slate-700 uppercase mb-1.5">¿El delegado necesita nuevo evaluador mientras ejerce?</label>
+                                    <div class="flex flex-wrap items-center gap-4 text-xs">
+                                        <label class="inline-flex items-center gap-1.5 cursor-pointer">
+                                            <input type="radio" name="necesita_nuevo_evaluador" value="0" checked onchange="document.getElementById('bloque-superior-delegado').classList.add('hidden')" class="text-[#00594E] focus:ring-[#00594E]">
+                                            <span class="font-medium text-slate-700"><b>No</b> (continúa con su evaluador habitual y su evaluación original)</span>
+                                        </label>
+                                        <label class="inline-flex items-center gap-1.5 cursor-pointer">
+                                            <input type="radio" name="necesita_nuevo_evaluador" value="1" onchange="document.getElementById('bloque-superior-delegado').classList.remove('hidden')" class="text-[#00594E] focus:ring-[#00594E]">
+                                            <span class="font-medium text-slate-700"><b>Sí</b> (asignar superior temporal)</span>
+                                        </label>
+                                    </div>
+                                    <p class="text-[10px] text-slate-500 mt-1">El sistema forzará "Sí" si el evaluador habitual del delegado es el titular ausente, o si el cargo delegado está vacante.</p>
+                                </div>
+                                <div id="bloque-superior-delegado" class="hidden pt-1 border-t border-amber-200/60">
+                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Superior que evaluará al delegado</label>
                                     <select name="id_vinc_superior_delegado" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white">
                                         <option value="">Selecciona el nuevo superior del delegado</option>
                                         @foreach($evaluadoresDelegacion as $ed)
