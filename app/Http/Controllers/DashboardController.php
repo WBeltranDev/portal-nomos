@@ -321,13 +321,13 @@ class DashboardController extends Controller
                 ->orderBy('f.apellidos')
                 ->get();
 
-            // Evaluadores disponibles para delegación (S8)
+            // Evaluadores disponibles para delegación (S8 / Fase 5: incluye cargos vacantes con personal a cargo)
             $idsEvaluadoresDelegacion = DB::table('evaluador_asignacion')->distinct()->pluck('id_vinc_evaluador')->all();
             $evaluadoresDelegacion = DB::table('vinculacion as v')
                 ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
-                ->where('v.activa', 1)
+                ->where(fn ($q) => $q->where('v.activa', 1)->orWhere('v.es_vacante', 1))
                 ->whereIn('v.id_vinculacion', $idsEvaluadoresDelegacion)
-                ->select('v.id_vinculacion', 'v.cargo', 'v.area', 'v.nivel_jerarquico', 'v.sistema_evaluacion', 'f.nombres', 'f.apellidos')
+                ->select('v.id_vinculacion', 'v.cargo', 'v.area', 'v.nivel_jerarquico', 'v.sistema_evaluacion', 'v.es_vacante', 'f.nombres', 'f.apellidos')
                 ->orderBy('f.apellidos')
                 ->get();
 
