@@ -3,6 +3,7 @@
 namespace Tests\Concerns;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Datos ficticios mínimos para las pruebas de SERAG. Se usan dentro de una
@@ -40,13 +41,18 @@ trait CreaDatosSerag
     protected function crearFuncionarioPrueba(string $nombres, string $apellidos, string $rol = 'EVALUADO'): array
     {
         $idUsuario = $this->crearUsuarioPrueba($rol);
+        $numDoc = (string) ($this->sufijoDatos . (++$this->consecutivoDatos));
         $idFuncionario = DB::table('funcionario')->insertGetId([
             'id_usuario' => $idUsuario,
             'tipo_documento' => 'CEDULA_CIUDADANIA',
-            'numero_doc' => $this->sufijoDatos . (++$this->consecutivoDatos),
+            'numero_doc' => $numDoc,
             'nombres' => $nombres,
             'apellidos' => $apellidos,
         ]);
+
+        if (Schema::hasColumn('usuario', 'documento_login')) {
+            DB::table('usuario')->where('id_usuario', $idUsuario)->update(['documento_login' => $numDoc]);
+        }
 
         return [$idFuncionario, $idUsuario];
     }
