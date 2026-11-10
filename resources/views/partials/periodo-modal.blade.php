@@ -39,6 +39,11 @@
                 </div>
 
                 <div>
+                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1 text-red-600">Cierre Calificación</label>
+                    <input type="date" id="editar-periodo-fin-calificacion" name="fecha_fin_calificacion" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-red-500">
+                </div>
+
+                <div>
                     <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Descripción</label>
                     <input type="text" id="editar-periodo-descripcion" name="descripcion" maxlength="200" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]">
                 </div>
@@ -68,6 +73,7 @@
         document.getElementById('editar-periodo-fin').value = p.fecha_fin ? p.fecha_fin.substring(0, 10) : '';
         document.getElementById('editar-periodo-inicio-concertacion').value = p.fecha_inicio_concertacion ? p.fecha_inicio_concertacion.substring(0, 10) : '';
         document.getElementById('editar-periodo-fin-concertacion').value = p.fecha_fin_concertacion ? p.fecha_fin_concertacion.substring(0, 10) : '';
+        document.getElementById('editar-periodo-fin-calificacion').value = p.fecha_fin_calificacion ? p.fecha_fin_calificacion.substring(0, 10) : '';
         document.getElementById('editar-periodo-descripcion').value = p.descripcion || '';
         document.getElementById('editar-periodo-estado').value = p.estado;
         document.getElementById('editar-periodo-titulo').innerText = `${p.sistema} · ${p.anio}-${Number(p.semestre) === 1 ? 'A' : 'B'}`;

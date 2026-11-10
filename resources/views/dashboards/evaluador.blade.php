@@ -57,7 +57,6 @@
                             </div>
                             <div class="mt-6 grid gap-3 text-sm">
                                 <div class="flex justify-between gap-4 py-2 border-b border-slate-100"><span class="text-slate-500">Cédula</span><span id="empleado-documento" class="font-medium text-slate-800 text-right">-</span></div>
-                                <div class="flex justify-between gap-4 py-2 border-b border-slate-100"><span class="text-slate-500">Correo</span><span id="empleado-correo" class="font-medium text-slate-800 text-right">-</span></div>
                                 <div class="flex justify-between gap-4 py-2 border-b border-slate-100"><span class="text-slate-500">Área</span><span id="empleado-area" class="font-medium text-slate-800 text-right">-</span></div>
                                 <div class="flex justify-between gap-4 py-2 border-b border-slate-100"><span class="text-slate-500">Cargo</span><span id="empleado-cargo-vinc" class="font-medium text-slate-800 text-right">-</span></div>
                                 <div class="flex justify-between gap-4 py-2 border-b border-slate-100"><span class="text-slate-500">Tipo de vinculación</span><span id="empleado-vinculacion" class="font-medium text-slate-800 text-right">-</span></div>
@@ -174,7 +173,7 @@
                         <p class="text-xs text-slate-500 mb-4">Selecciona una Evaluación para redactar los compromisos del evaluado y firmar la concertación.</p>
                         <div class="space-y-3">
                             @forelse($evaluacionesEvaluador as $ev)
-                                <button type="button" class="evaluacion-evaluador-card w-full text-left p-4 rounded-2xl border border-slate-200 bg-white cursor-pointer hover:border-[#00594E] transition" data-id-evaluacion="{{ $ev->id_evaluacion }}" onclick="abrirConcertacionEvaluador(this, @js($ev))">
+                                <div role="button" tabindex="0" class="evaluacion-evaluador-card w-full text-left p-4 rounded-2xl border border-slate-200 bg-white cursor-pointer hover:border-[#00594E] transition" data-id-evaluacion="{{ $ev->id_evaluacion }}" onclick="abrirConcertacionEvaluador(this, @js($ev))" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }">
                                     <div class="flex items-start justify-between gap-3">
                                         <div class="min-w-0">
                                             <div class="flex items-center gap-2">
@@ -185,10 +184,10 @@
                                                         Traslado
                                                     </span>
                                                 @endif
-                                                @if($ev->tipo_nombre === 'PARCIAL')
+                                                @if($ev->tipo_nombre === 'PARCIAL' || $ev->tramo)
                                                     <span class="inline-flex items-center gap-1 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-sky-100 text-sky-700" title="Evaluación correspondiente a un tramo parcial">
                                                         <span class="material-symbols-outlined text-[13px]">timelapse</span>
-                                                        Parcial
+                                                        {{ $ev->tramo ? 'Parcial ' . $ev->tramo['numero'] . ' de ' . $ev->tramo['total'] : 'Parcial' }}
                                                     </span>
                                                 @endif
                                                 @if($ev->id_vinc_suplente)
@@ -205,7 +204,7 @@
                                             @if($ev->es_traslado)
                                                 <p class="mt-1 text-[10px] font-semibold text-slate-600">Traslado registrado: esta evaluación es solo de consulta.</p>
                                             @endif
-                                            @if($ev->tipo_nombre === 'PARCIAL')
+                                            @if($ev->tipo_nombre === 'PARCIAL' || $ev->tramo)
                                                 <p class="mt-1 text-[10px] font-semibold text-sky-700">Evaluación parcial por tramo de servicio{{ $ev->referencia ? ': ' . $ev->referencia : '.' }}</p>
                                             @endif
                                             @if($ev->id_vinc_suplente)
@@ -216,7 +215,11 @@
                                             @endif
                                             <div class="mt-2 space-y-0.5 text-[10px] text-slate-500">
                                                 <p><span class="font-semibold text-slate-600">Período de evaluación:</span> {{ $ev->anio }}-{{ (int) $ev->semestre === 1 ? 'A' : 'B' }}</p>
-                                                <p><span class="font-semibold text-slate-600">Fechas de calificación:</span> {{ \Carbon\Carbon::parse($ev->fecha_inicio)->format('d/m/Y') }} al {{ \Carbon\Carbon::parse($ev->fecha_fin)->format('d/m/Y') }}</p>
+                                                @if($ev->tramo)
+                                            <p><span class="font-semibold text-slate-600">Tramo:</span> {{ \Carbon\Carbon::parse($ev->tramo['desde'])->format('d/m/Y') }} al {{ \Carbon\Carbon::parse($ev->tramo['hasta'])->format('d/m/Y') }} · {{ $ev->tramo['dias'] }} {{ $ev->tramo['dias'] === 1 ? 'día' : 'días' }}</p>
+                                        @else
+                                            <p><span class="font-semibold text-slate-600">Fechas de calificación:</span> {{ \Carbon\Carbon::parse($ev->fecha_inicio)->format('d/m/Y') }} al {{ \Carbon\Carbon::parse($ev->fecha_fin)->format('d/m/Y') }}</p>
+                                        @endif
                                             </div>
                                         </div>
                                         <span class="text-[10px] font-bold uppercase px-2 py-1 rounded-full {{ $ev->evaluador_firmado ? 'bg-[#EAF2EF] text-[#00594E]' : 'bg-amber-50 text-amber-700' }}">
@@ -232,7 +235,7 @@
                                         </button>
                                         <span id="fase-label-evaluador-{{ $ev->id_evaluacion }}" class="text-[9px] uppercase tracking-wide font-bold text-slate-400">Fase {{ $ev->fase_actual }}: {{ match($ev->fase_actual) { 1 => 'Concertación Pendiente', 2 => 'Concertación Parcial', 3 => 'Subir Evidencias', 4 => 'Calificación', 5 => 'Nota Final', default => '' } }}</span>
                                     </div>
-                                </button>
+                                </div>
                             @empty
                                 <div class="py-8 text-center text-slate-500 text-xs">No tienes evaluaciones pendientes.</div>
                             @endforelse

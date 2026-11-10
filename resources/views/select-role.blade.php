@@ -13,7 +13,7 @@
             </div>
             <h1 class="text-3xl sm:text-4xl font-bold text-primary">Selecciona cómo ingresar</h1>
             <p class="mt-3 text-sm sm:text-base text-slate-600 max-w-lg leading-relaxed">
-                Tu correo tiene más de un perfil disponible. Elige el acceso que deseas usar.
+                Tu cuenta tiene más de un perfil disponible. Elige el acceso que deseas usar.
             </p>
         </div>
 

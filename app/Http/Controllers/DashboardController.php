@@ -42,8 +42,10 @@ class DashboardController extends Controller
                     ->where('activa', 1)
                     ->get();
                 if ($vinculaciones->isNotEmpty()) {
-                    $roles[] = 'evaluado';
                     $vincIds = $vinculaciones->pluck('id_vinculacion')->all();
+                    if (esEvaluableAlgunaVinculacion($vincIds)) {
+                        $roles[] = 'evaluado';
+                    }
                     $esEvaluadorPorVinculacion = $vinculaciones->contains(
                         fn ($v) => (bool) $v->es_evaluador
                     );
@@ -53,7 +55,8 @@ class DashboardController extends Controller
                         ->exists();
                     $tieneAsignacionesEvaluador = DB::table('evaluador_asignacion')
                         ->whereIn('id_vinc_evaluador', $vincIds)
-                        ->exists();
+                        ->exists()
+                        || esEvaluadorDeAlgunaEvaluacion($vincIds);
                     $esEvaluadorActivo = $rolUsuario === 'EVALUADOR';
                     if ($esEvaluadorActivo || $esEvaluadorPorVinculacion || $esDelegadoActivo || $tieneAsignacionesEvaluador) {
                         $roles[] = 'evaluador';
@@ -88,6 +91,7 @@ class DashboardController extends Controller
         $vinculacionesReemplazo = collect();
         $evaluadoresDelegacion = collect();
         $delegadosDisponibles = collect();
+        $plazasDelegables = collect();
         $impedimentos = collect();
         $cargosCatalogo = collect();
         $dependenciasCatalogo = collect();
@@ -331,6 +335,52 @@ class DashboardController extends Controller
                 ->orderBy('f.apellidos')
                 ->get();
 
+            // Cargos (plazas) delegables: ocupados y con personas a cargo. Quien delega
+            // es el cargo; se muestra su ocupante actual.
+            $plazasDelegables = Schema::hasTable('puesto_ocupacion')
+                ? DB::table('puesto as p')
+                    ->join('puesto_ocupacion as po', function ($j) {
+                        $j->on('po.id_puesto', '=', 'p.id_puesto')->where('po.estado', 'VIGENTE');
+                    })
+                    ->join('vinculacion as v', 'v.id_vinculacion', '=', 'po.id_vinculacion')
+                    ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
+                    ->join('dependencia as d', 'd.id_dependencia', '=', 'p.id_dependencia')
+                    ->join('cargo as c', 'c.id_cargo', '=', 'p.id_cargo')
+                    ->where('v.activa', 1)
+                    ->whereExists(fn ($q) => $q->select(DB::raw(1))->from('evaluador_asignacion as ea')->whereColumn('ea.id_vinc_evaluador', 'v.id_vinculacion'))
+                    ->orderBy('d.nombre')->orderBy('c.nombre')
+                    ->get(['p.id_puesto', 'p.codigo_plaza', 'c.nombre as cargo', 'd.nombre as dependencia', 'f.nombres', 'f.apellidos'])
+                    ->each(function ($pz) {
+                        $pz->vacante = false;
+                    })
+                : collect();
+
+            // Cargos vacantes que dejaron personas a cargo: se delegan a nombre de su
+            // último ocupante y no hay tramo que calificar.
+            if (Schema::hasTable('puesto_ocupacion')) {
+                $vacantesDelegables = DB::table('puesto as p')
+                    ->join('dependencia as d', 'd.id_dependencia', '=', 'p.id_dependencia')
+                    ->join('cargo as c', 'c.id_cargo', '=', 'p.id_cargo')
+                    ->whereNotExists(fn ($q) => $q->select(DB::raw(1))->from('puesto_ocupacion as v')->whereColumn('v.id_puesto', 'p.id_puesto')->where('v.estado', 'VIGENTE'))
+                    ->where('p.estado', '!=', 'INACTIVA')
+                    ->get(['p.id_puesto', 'p.codigo_plaza', 'c.nombre as cargo', 'd.nombre as dependencia'])
+                    ->map(function ($pz) {
+                        $ultimo = ultimoOcupanteDeVacante((int) $pz->id_puesto);
+                        if (! $ultimo || ! DB::table('evaluador_asignacion')->where('id_vinc_evaluador', $ultimo)->exists()) {
+                            return null;
+                        }
+                        $persona = DB::table('vinculacion as v')->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
+                            ->where('v.id_vinculacion', $ultimo)->first(['f.nombres', 'f.apellidos']);
+                        $pz->nombres = $persona->nombres ?? '';
+                        $pz->apellidos = $persona->apellidos ?? '';
+                        $pz->vacante = true;
+
+                        return $pz;
+                    })
+                    ->filter();
+                $plazasDelegables = $plazasDelegables->concat($vacantesDelegables)->values();
+            }
+
             // Delegado: cualquier funcionario activo disponible
             $delegadosDisponibles = DB::table('vinculacion as v')
                 ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
@@ -490,16 +540,6 @@ class DashboardController extends Controller
                 ->where('ev.estado', 'CALIFICADA')
                 ->where(function ($q) {
                     $q->whereIn('ev.categoria_final', ['NO_SATISFACTORIO', 'APROBADO_MEJORA'])
-                      ->orWhere(function ($q2) {
-                          $q2->whereNotNull('ev.calificacion_final')
-                             ->where('ev.calificacion_final', '<=', 80)
-                             ->where('ev.calificacion_final', '>', 0);
-                      })
-                      ->orWhere(function ($q3) {
-                          $q3->whereNotNull('ev.calificacion_parcial')
-                             ->where('ev.calificacion_parcial', '<=', 80)
-                             ->where('ev.calificacion_parcial', '>', 0);
-                      })
                       ->orWhereNotNull('pm.id_plan');
                 })
                 ->where(function ($q) {
@@ -523,6 +563,7 @@ class DashboardController extends Controller
                 $idsEvaluadosAsignados = collect(getEvaluadorAsignaciones())
                     ->where('id_vinc_evaluador', $miVinculacionEvaluador->id_vinculacion)
                     ->pluck('id_vinc_evaluado')
+                    ->diff(evaluadosCedidosPorImpedimento((int) $miVinculacionEvaluador->id_vinculacion))
                     ->unique()
                     ->values()
                     ->all();
@@ -846,6 +887,10 @@ class DashboardController extends Controller
             'activa' => function_exists('getConfiguracion') ? ((string) getConfiguracion('encuesta_capacitacion_activa', '1') === '1') : true,
         ];
 
+        foreach ([$evaluacionesAdmin, $evaluacionesEvaluador, $evaluacionesEvaluado] as $lista) {
+            adjuntarTramosEvaluaciones($lista);
+        }
+
         $viewData = compact(
             'usuario', 'rolActivo', 'usuarios', 'empleados', 'evaluaciones',
             'evaluacionesAdmin',
@@ -854,7 +899,7 @@ class DashboardController extends Controller
             'ponderacionesConfig', 'planesPendientesEvaluador', 'escalaCalificacion',
             'vacantes',
             'periodosParciales', 'funcionariosParaPeriodoParcial', 'vinculacionesReemplazo',
-            'evaluadoresDelegacion', 'delegadosDisponibles', 'impedimentos',
+            'evaluadoresDelegacion', 'delegadosDisponibles', 'plazasDelegables', 'impedimentos',
             'cargosCatalogo', 'dependenciasCatalogo', 'funcionariosNoCalificados', 'evaluacionesExtratiempo', 'historialExtratiempo',
             'vinculacionesJerarquia', 'jefesDisponibles',
             'notificaciones', 'notificacionesNoLeidas', 'matrizCalificaciones',

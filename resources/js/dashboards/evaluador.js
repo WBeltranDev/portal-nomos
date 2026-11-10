@@ -1,7 +1,7 @@
 /**
  * Evaluador Dashboard JS Module
  */
-import { escapeHtml, fetchJson, parseErrorMessage, showInlineMessage, navegarMenu, renderResultado, actualizarFaseLabel, getEscala } from './common.js';
+import { escapeHtml, fetchJson, parseErrorMessage, showInlineMessage, navegarMenu, renderResultado, actualizarFaseLabel, getEscala, renderEnlacesRecurso, abrirModalDecisionRecurso } from './common.js';
 
 /**
  * Atributos min/max/step de los campos de nota, derivados de la escala
@@ -135,7 +135,6 @@ export function seleccionarPersonaEvaluador(card, persona) {
     setText('empleado-avatar', ((persona.nombres?.[0] || '') + (persona.apellidos?.[0] || '')).toUpperCase() || '--');
     setText('empleado-nombre', nombreCompleto || 'Selecciona una persona');
     setText('empleado-cargo', `${persona.cargo || 'Sin cargo'} - ${persona.area || 'Sin área'}`);
-    setText('empleado-correo', persona.correo_cargo || '-');
     setText('empleado-documento', persona.numero_doc || persona.codigo_cargo || '-');
     setText('empleado-area', persona.area || '-');
     setText('empleado-cargo-vinc', persona.cargo || '-');
@@ -837,16 +836,7 @@ export function renderTarjetaRecurso(r, contexto) {
                 <button onclick="decidirRecurso(${r.id_recurso}, ${r.tipo_recurso === 'APELACION'}, ${r.id_vinc_receptor ?? 'null'})" class="bg-[#00594E] text-white px-3 py-2 rounded-xl text-xs font-bold hover:brightness-110 transition" type="button">Decidir</button>
             </div>`;
     }
-    const evidencias = Array.isArray(r.evidencias) && r.evidencias.length
-        ? `<div class="pt-2 border-t border-slate-100 space-y-1.5">
-            <p class="text-[10px] font-bold uppercase text-slate-500 flex items-center gap-1"><span class="material-symbols-outlined text-xs">link</span> Evidencias</p>
-            ${r.evidencias.map(ev => `
-                <a href="${escapeHtml(ev.url)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 text-xs text-[#00594E] hover:underline min-w-0">
-                    <span class="material-symbols-outlined text-sm shrink-0">open_in_new</span>
-                    <span class="truncate">${escapeHtml(ev.descripcion || ev.url)}</span>
-                </a>`).join('')}
-        </div>`
-        : '';
+    const evidencias = renderEnlacesRecurso(r);
 
     const puedeVerDetalle = contexto === 'evaluador' && r.tipo_recurso === 'APELACION' && r.decision === 'PENDIENTE';
     const detalleConcertacion = puedeVerDetalle ? `
@@ -980,13 +970,13 @@ export function cargarRecursosMiosEvaluador() {
         .catch(() => {});
 }
 
-export function enviarDecisionRecurso(id, decision, motivacion, id_vinc_nuevo_evaluador = null) {
+export function enviarDecisionRecurso(id, decision, datos, id_vinc_nuevo_evaluador = null) {
     fetchJson(`/recursos/${id}/decision`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             decision,
-            motivacion,
+            ...datos,
             ...(id_vinc_nuevo_evaluador ? { id_vinc_nuevo_evaluador } : {}),
         }),
     })
@@ -1015,11 +1005,11 @@ export function enviarDecisionRecurso(id, decision, motivacion, id_vinc_nuevo_ev
 
 export function decidirRecurso(id, esApelacion = false, idVincReceptor = null) {
     const decision = document.getElementById(`decision-${id}`)?.value;
-    const motivacion = prompt('Escribe la motivación de tu decisión sobre el recurso:');
-    if (motivacion === null) return;
-    if (!motivacion.trim()) { alert('La motivación es obligatoria para decidir el recurso.'); return; }
     const idVincNuevoEvaluador = esApelacion && decision === 'APROBADO' ? idVincReceptor : null;
-    enviarDecisionRecurso(id, decision, motivacion, idVincNuevoEvaluador);
+    abrirModalDecisionRecurso({
+        decision,
+        onConfirmar: datos => enviarDecisionRecurso(id, decision, datos, idVincNuevoEvaluador),
+    });
 }
 
 export function renderFirmasPlan(plan) {
@@ -1440,7 +1430,7 @@ export function calcularNotaFinal() {
         .then(async res => {
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo calcular la nota final.'));
-            showInlineMessage(msgId, `${data.message || 'Nota final calculada.'} El evaluado ya puede revisar su nota final y radicar los recursos cuando corresponda.`);
+            showInlineMessage(msgId, `${data.message || 'Nota final calculada.'} Se notificó al evaluado para que revise y descargue el documento de calificación; podrá radicar un recurso debidamente sustentado cuando corresponda.`);
             if (selectedEvaluacionData) {
                 selectedEvaluacionData = { ...selectedEvaluacionData, estado: 'CALIFICADA', fase_actual: 5 };
                 actualizarFaseLabel(selectedEvaluacionId, 5, 'evaluador');

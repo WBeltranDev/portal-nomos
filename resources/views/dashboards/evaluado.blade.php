@@ -68,7 +68,7 @@
                             @forelse($evaluacionesEvaluado as $ev)
                                 <div class="evaluacion-card p-4 rounded-2xl border border-slate-200 bg-white cursor-pointer hover:border-[#00594E] transition" onclick="abrirConcertacionEvaluado(this, @js($ev))">
                                     <div class="flex items-center gap-2">
-                                        <h4 class="font-bold text-slate-900 text-sm leading-snug">{{ $ev->tipo_nombre }}</h4>
+                                        <h4 class="font-bold text-slate-900 text-sm leading-snug">{{ $ev->tramo ? 'Parcial ' . $ev->tramo['numero'] . ' de ' . $ev->tramo['total'] : $ev->tipo_nombre }}</h4>
                                         @if($ev->es_traslado)
                                             <span class="inline-flex items-center gap-1 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-200 text-slate-600" title="Evaluación bloqueada por traslado">
                                                 <span class="material-symbols-outlined text-[13px]">swap_horiz</span>
@@ -107,7 +107,7 @@
                                     @if($ev->es_traslado)
                                         <p class="mt-1 text-[10px] font-semibold text-slate-600">Traslado registrado: esta evaluación es solo de consulta.</p>
                                     @endif
-                                    @if($ev->tipo_nombre === 'PARCIAL')
+                                    @if($ev->tipo_nombre === 'PARCIAL' || $ev->tramo)
                                         <p class="mt-1 text-[10px] font-semibold text-sky-700">Evaluación parcial por tramo de servicio{{ $ev->referencia ? ': ' . $ev->referencia : '.' }}</p>
                                     @endif
                                     @if($ev->tipo_nombre === 'PARCIAL' && $ev->referencia)
@@ -116,7 +116,11 @@
                                     <p class="text-xs text-slate-500 mt-0.5">Quién lo evaluó: {{ $ev->evaluador_nombres ?? 'Mi Evaluador' }} {{ $ev->evaluador_apellidos ?? '' }}@if($ev->id_vinc_suplente) (en delegación de {{ $ev->suplente_nombres }} {{ $ev->suplente_apellidos }})@endif</p>
                                     <div class="mt-2 space-y-0.5 text-[10px] text-slate-500">
                                         <p><span class="font-semibold text-slate-600">Período de evaluación:</span> {{ $ev->anio }}-{{ (int) $ev->semestre === 1 ? 'A' : 'B' }}</p>
-                                        <p><span class="font-semibold text-slate-600">Fechas de calificación:</span> {{ \Carbon\Carbon::parse($ev->fecha_inicio)->format('d/m/Y') }} al {{ \Carbon\Carbon::parse($ev->fecha_fin)->format('d/m/Y') }}</p>
+                                        @if($ev->tramo)
+                                            <p><span class="font-semibold text-slate-600">Tramo:</span> {{ \Carbon\Carbon::parse($ev->tramo['desde'])->format('d/m/Y') }} al {{ \Carbon\Carbon::parse($ev->tramo['hasta'])->format('d/m/Y') }} · {{ $ev->tramo['dias'] }} {{ $ev->tramo['dias'] === 1 ? 'día' : 'días' }}</p>
+                                        @else
+                                            <p><span class="font-semibold text-slate-600">Fechas de calificación:</span> {{ \Carbon\Carbon::parse($ev->fecha_inicio)->format('d/m/Y') }} al {{ \Carbon\Carbon::parse($ev->fecha_fin)->format('d/m/Y') }}</p>
+                                        @endif
                                     </div>
                                     <div class="flex justify-between items-center mt-3">
                                         <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#EAF2EF] text-[#00594E]">
@@ -377,6 +381,11 @@
                                 </div>
                                 <p class="text-[10px] text-slate-400 font-semibold">Disponibles para cualquier categoría de calificación, una vez firmada la notificación. Reposición: revisa el mismo evaluador. Apelación: conoce el superior jerárquico del evaluador. Ambos exigen soportes adjuntos.</p>
                                 <form id="form-recurso-evaluado" onsubmit="radicarRecurso(event)" class="grid gap-3 rounded-2xl border border-slate-100 bg-slate-50/50 p-4">
+                                    <div class="rounded-xl border border-[#B5A160]/40 bg-[#FBF7EC] p-3 flex items-start gap-2">
+                                        <span class="material-symbols-outlined text-base text-[#B5A160] shrink-0">info</span>
+                                        <p class="text-xs text-slate-700"><b>Antes de radicar:</b> revisa y descarga el documento de calificación. Interpón el recurso solo si consideras que debes hacerlo y puedes sustentarlo debidamente.</p>
+                                    </div>
+
                                     <div class="grid sm:grid-cols-2 gap-3">
                                         <div>
                                             <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Tipo de recurso</label>

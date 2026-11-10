@@ -181,7 +181,69 @@ class NotificacionCalificacionTest extends TestCase
         // Talento Humano la ve y la decide.
         session(['usuario_autenticado' => ['id_usuario' => $this->idUsuario, 'rol_activo' => 'admin', 'roles' => ['admin']]]);
         $this->getJson('/recursos')->assertOk()->assertJsonFragment(['id_recurso' => $recurso->id_recurso]);
-        $this->postJson("/recursos/{$recurso->id_recurso}/decision", ['decision' => 'NEGADO', 'motivacion' => 'Decisión de Talento Humano.'])->assertOk();
+        $this->postJson("/recursos/{$recurso->id_recurso}/decision", ['decision' => 'NEGADO', 'motivacion' => 'Decisión de Talento Humano.', 'url_oficio' => 'https://unitropico.edu.co/oficio-th'])->assertOk();
+    }
+
+    private function comoAdmin(): void
+    {
+        session(['usuario_autenticado' => ['id_usuario' => $this->idUsuario, 'rol_activo' => 'admin', 'roles' => ['admin']]]);
+    }
+
+    public function test_al_calcular_la_nota_el_evaluado_recibe_el_aviso_de_revisar_el_documento(): void
+    {
+        DB::table('evaluacion')->where('id_evaluacion', $this->idEvaluacion)->update(['estado' => 'EN_PROCESO', 'fase_actual' => 4]);
+        $this->comoAdmin();
+
+        $this->postJson("/evaluaciones/{$this->idEvaluacion}/calcular-final")->assertOk();
+
+        $idUsuarioEvaluado = DB::table('funcionario')->where('id_funcionario', $this->idEvaluado)->value('id_usuario');
+        $aviso = DB::table('notificacion')->where('id_usuario_destino', $idUsuarioEvaluado)->where('tipo', 'NOTA_CALIFICADA')->first();
+
+        $this->assertNotNull($aviso);
+        $this->assertStringContainsString('documento de calificación', $aviso->mensaje);
+        $this->assertStringContainsString('recurso debidamente sustentado', $aviso->mensaje);
+    }
+
+    public function test_decidir_un_recurso_exige_el_enlace_del_oficio(): void
+    {
+        $recurso = $this->radicarApelacion();
+        $this->comoAdmin();
+
+        $this->postJson("/recursos/{$recurso->id_recurso}/decision", ['decision' => 'NEGADO', 'motivacion' => 'Sin oficio.'])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('url_oficio');
+        $this->assertSame('PENDIENTE', DB::table('recurso')->where('id_recurso', $recurso->id_recurso)->value('decision'));
+
+        $this->postJson("/recursos/{$recurso->id_recurso}/decision", ['decision' => 'NEGADO', 'motivacion' => 'Oficio inválido.', 'url_oficio' => 'no-es-un-enlace'])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('url_oficio');
+    }
+
+    public function test_la_decision_guarda_el_oficio_y_los_soportes_aparte_de_la_radicacion(): void
+    {
+        $recurso = $this->radicarApelacion();
+        $this->comoAdmin();
+
+        $this->postJson("/recursos/{$recurso->id_recurso}/decision", [
+            'decision' => 'NEGADO',
+            'motivacion' => 'Se niega con soporte.',
+            'url_oficio' => 'https://unitropico.edu.co/oficio-1',
+            'soportes' => [
+                ['url' => 'https://unitropico.edu.co/acta-cedp', 'descripcion' => 'Acta CEDP'],
+                ['url' => 'https://unitropico.edu.co/otro'],
+            ],
+        ])->assertOk();
+
+        $this->assertSame('https://unitropico.edu.co/oficio-1', DB::table('recurso')->where('id_recurso', $recurso->id_recurso)->value('url_oficio'));
+        $this->assertSame(
+            ['https://unitropico.edu.co/acta-cedp', 'https://unitropico.edu.co/otro'],
+            DB::table('recurso_evidencia')->where('id_recurso', $recurso->id_recurso)->where('origen', 'DECISION')->orderBy('id_recurso_evidencia')->pluck('url')->all()
+        );
+        $this->assertSame(1, DB::table('recurso_evidencia')->where('id_recurso', $recurso->id_recurso)->where('origen', 'RADICACION')->count());
+
+        $this->postJson("/recursos/{$recurso->id_recurso}/decision", [
+            'decision' => 'NEGADO', 'motivacion' => 'x', 'url_oficio' => 'https://unitropico.edu.co/o', 'soportes' => [['url' => 'basura']],
+        ])->assertStatus(422);
     }
 
     public function test_sin_superior_registrado_la_apelacion_tambien_va_a_talento_humano(): void
@@ -229,6 +291,23 @@ class NotificacionCalificacionTest extends TestCase
         $this->postJson("/evaluaciones/{$this->idEvaluacion}/firmar-notificacion")->assertStatus(422);
 
         $this->assertFalse($this->notificacionFirmada());
+    }
+
+    public function test_el_evaluado_ve_su_nota_solo_cuando_el_evaluador_la_confirma(): void
+    {
+        $this->getJson("/evaluaciones/{$this->idEvaluacion}/calculo")->assertOk();
+
+        DB::table('evaluacion')->where('id_evaluacion', $this->idEvaluacion)->update(['estado' => 'EN_PROCESO', 'fase_actual' => 4]);
+        $this->getJson("/evaluaciones/{$this->idEvaluacion}/calculo")->assertStatus(403);
+
+        // El evaluador sí ve el cálculo mientras califica.
+        session(['usuario_autenticado' => [
+            'id_usuario' => $this->idUsuario,
+            'id_funcionario' => $this->idEvaluador,
+            'rol_activo' => 'evaluador',
+            'roles' => ['evaluador'],
+        ]]);
+        $this->getJson("/evaluaciones/{$this->idEvaluacion}/calculo")->assertOk();
     }
 
     public function test_el_evaluador_no_firma_la_notificacion_del_evaluado(): void

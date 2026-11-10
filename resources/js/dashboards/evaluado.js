@@ -1,7 +1,7 @@
 /**
  * Evaluado Dashboard JS Module
  */
-import { escapeHtml, fetchJson, parseErrorMessage, showInlineMessage, navegarMenu, renderResultado, actualizarFaseLabel } from './common.js';
+import { escapeHtml, fetchJson, parseErrorMessage, showInlineMessage, navegarMenu, renderResultado, actualizarFaseLabel, renderEnlacesRecurso } from './common.js';
 
 let selectedEvaluacionId = null;
 let selectedEvaluacionData = null;
@@ -140,6 +140,18 @@ export function abrirConcertacionEvaluado(card, ev) {
     if (card) card.classList.add('ring-2', 'ring-[#00594E]');
 }
 
+function mostrarAvisoEnCalificacion(resultado) {
+    resultado.classList.remove('hidden');
+    resultado.innerHTML = `
+        <div class="rounded-2xl border border-sky-100 bg-sky-50/60 p-4 flex items-start gap-3">
+            <span class="material-symbols-outlined text-sky-700">hourglass_top</span>
+            <div>
+                <p class="text-sm font-bold text-slate-800">Tu evaluación está en calificación</p>
+                <p class="text-xs text-slate-600 mt-1">Tu evaluador está revisando tus evidencias y calificando. Verás tu nota y su desglose cuando la confirme.</p>
+            </div>
+        </div>`;
+}
+
 export function cargarResultadoEvaluado(ev) {
     const firmarSec = document.getElementById('firma-evaluado-seccion');
     if (firmarSec) firmarSec.classList.toggle('hidden', !!ev.concertacion_firmada || ev.estado === 'CALIFICADA');
@@ -171,8 +183,13 @@ export function cargarResultadoEvaluado(ev) {
 
     const resultado = document.getElementById('resultado-calculo-evaluado');
     if (!resultado) return;
-    const visible = (ev.concertacion_firmada && Number(ev.fase_actual || 3) >= 4) || ev.estado === 'CALIFICADA';
-    if (!visible) {
+    // La nota se muestra cuando el evaluador la confirma; mientras califica, solo
+    // un aviso (una nota parcial podría leerse como la definitiva).
+    if (ev.estado === 'EN_PROCESO' && ev.concertacion_firmada && Number(ev.fase_actual || 3) >= 4) {
+        mostrarAvisoEnCalificacion(resultado);
+        return;
+    }
+    if (ev.estado === 'EN_PROCESO') {
         resultado.classList.add('hidden');
         return;
     }
@@ -615,7 +632,7 @@ export function cargarCompetenciasEvaluado() {
                         <p class="text-xs font-bold text-slate-800">${escapeHtml(c.nombre_competencia || c.competencia)}</p>
                         <p class="text-[10px] text-slate-400 uppercase">${c.tipo}</p>
                     </div>
-                    <span class="text-xs font-black px-2.5 py-1 rounded-lg bg-[#EAF2EF] text-[#00594E]">${c.calificacion_definitiva ?? '-'}</span>
+                    <span class="text-xs font-black px-2.5 py-1 rounded-lg bg-[#EAF2EF] text-[#00594E]">${selectedEvaluacionData?.estado === 'EN_PROCESO' ? '-' : (c.calificacion_definitiva ?? '-')}</span>
                 </div>
             `).join('');
         })
@@ -633,6 +650,10 @@ export function cargarEjesEvaluado(ev) {
         INVESTIGACION: 'Horas de Investigación',
         PROYECCION_SOCIAL: 'Proyección Social',
     };
+    if (ev.estado === 'EN_PROCESO') {
+        contenedor.innerHTML = '<div class="rounded-xl border border-slate-100 bg-slate-50/50 p-4 text-xs text-slate-500 text-center">Las calificaciones de los ejes misionales se publican con la nota final.</div>';
+        return;
+    }
     fetchJson(`/evaluaciones/${ev.id_evaluacion}/calculo`)
         .then(res => res.json())
         .then(calculo => {
@@ -664,16 +685,7 @@ export function cargarEjesEvaluado(ev) {
 
 export function renderTarjetaRecurso(r, contexto) {
     const tipo = r.tipo_recurso === 'REPOSICION' ? 'Reposición' : 'Apelación';
-    const evidencias = Array.isArray(r.evidencias) && r.evidencias.length
-        ? `<div class="pt-2 border-t border-slate-100 space-y-1.5">
-            <p class="text-[10px] font-bold uppercase text-slate-500 flex items-center gap-1"><span class="material-symbols-outlined text-xs">link</span> Evidencias</p>
-            ${r.evidencias.map(ev => `
-                <a href="${escapeHtml(ev.url)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 text-xs text-[#00594E] hover:underline min-w-0">
-                    <span class="material-symbols-outlined text-sm shrink-0">open_in_new</span>
-                    <span class="truncate">${escapeHtml(ev.descripcion || ev.url)}</span>
-                </a>`).join('')}
-        </div>`
-        : '';
+    const evidencias = renderEnlacesRecurso(r);
     return `
         <div class="rounded-2xl border border-slate-100 bg-white p-4 space-y-2">
             <div class="flex items-center justify-between gap-3">
@@ -965,14 +977,7 @@ export function confirmarEvidenciasEvaluado() {
             const bloqueConfirmar = document.getElementById('confirmar-evidencias-bloque-evaluado');
             if (bloqueConfirmar) bloqueConfirmar.classList.add('hidden');
             const resultado = document.getElementById('resultado-calculo-evaluado');
-            if (resultado) {
-                resultado.classList.remove('hidden');
-                resultado.innerHTML = '<div class="text-xs text-slate-400">Cargando resultado...</div>';
-                fetchJson(`/evaluaciones/${selectedEvaluacionId}/calculo`)
-                    .then(res => res.json())
-                    .then(calculo => renderResultado(calculo, 'resultado-calculo-evaluado', 'evaluado', selectedEvaluacionId))
-                    .catch(() => {});
-            }
+            if (resultado) mostrarAvisoEnCalificacion(resultado);
             showInlineMessage(mensajeId, data.message || 'Evidencias confirmadas. La calificación ya está habilitada para el evaluador.');
             if (selectedEvaluacionData) cargarCompromisosEvaluado(selectedEvaluacionData);
         })

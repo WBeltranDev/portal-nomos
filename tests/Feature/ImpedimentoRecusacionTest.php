@@ -138,6 +138,59 @@ class ImpedimentoRecusacionTest extends TestCase
         $this->assertFalse(evaluacionBloqueadaPorImpedimento($this->idEvaluacion));
     }
 
+    private function idFuncionarioDe(int $idVinc): int
+    {
+        return (int) DB::table('vinculacion')->where('id_vinculacion', $idVinc)->value('id_funcionario');
+    }
+
+    public function test_el_superior_sin_marca_de_evaluador_recibe_el_rol_al_aprobar_el_impedimento(): void
+    {
+        $idVincSuperior = $this->crearVinculacion($this->crearFuncionario('T' . random_int(10000, 99999) . 'S'), false);
+        $idFuncionarioSuperior = $this->idFuncionarioDe($idVincSuperior);
+        $this->assertFalse(esEvaluadorDeAlgunaEvaluacion([$idVincSuperior]));
+
+        $this->resolver(['estado' => 'APROBADO', 'id_vinc_nuevo_evaluador' => $idVincSuperior])->assertOk();
+
+        $this->assertTrue(esEvaluadorDeAlgunaEvaluacion([$idVincSuperior]));
+
+        // Sesión sin roles: el tablero los recalcula y ahora incluye evaluador.
+        session(['usuario_autenticado' => [
+            'id_usuario' => (int) DB::table('funcionario')->where('id_funcionario', $idFuncionarioSuperior)->value('id_usuario'),
+            'id_funcionario' => $idFuncionarioSuperior,
+            'rol_activo' => 'evaluador',
+            'roles' => [],
+        ]]);
+        $this->get('/dashboard');
+        $this->assertContains('evaluador', session('usuario_autenticado.roles'));
+    }
+
+    public function test_el_evaluador_inicial_no_puede_abrir_de_nuevo_la_evaluacion_cedida(): void
+    {
+        $idVincEvaluado = (int) DB::table('evaluacion')->where('id_evaluacion', $this->idEvaluacion)->value('id_vinc_evaluado');
+        DB::table('evaluador_asignacion')->insert(['id_vinc_evaluador' => $this->idVincEvaluador, 'id_vinc_evaluado' => $idVincEvaluado, 'fecha_asignacion' => now()]);
+
+        $this->assertSame([], evaluadosCedidosPorImpedimento($this->idVincEvaluador));
+
+        $this->resolver(['estado' => 'APROBADO', 'id_vinc_nuevo_evaluador' => $this->idVincNuevoEvaluador])->assertOk();
+
+        $this->assertSame([$idVincEvaluado], evaluadosCedidosPorImpedimento($this->idVincEvaluador));
+        $this->assertSame([], evaluadosCedidosPorImpedimento($this->idVincNuevoEvaluador));
+
+        $idFuncionario = $this->idFuncionarioDe($this->idVincEvaluador);
+        session(['usuario_autenticado' => [
+            'id_usuario' => (int) DB::table('funcionario')->where('id_funcionario', $idFuncionario)->value('id_usuario'),
+            'id_funcionario' => $idFuncionario,
+            'rol_activo' => 'evaluador',
+            'roles' => ['evaluador'],
+        ]]);
+
+        $this->post('/evaluador/asignaciones', ['id_vinc_evaluado' => $idVincEvaluado, 'tipo_evaluacion' => 'SEMESTRE_1'])
+            ->assertSessionHasErrors(['asignaciones' => 'La evaluación de este funcionario fue reasignada a otro evaluador por un impedimento o recusación aprobados; ya no la puedes abrir.']);
+
+        // La asignación general se conserva: el reemplazo vale solo para esa evaluación.
+        $this->assertTrue(evaluadorTieneEvaluadoAsignado($this->idVincEvaluador, $idVincEvaluado));
+    }
+
     public function test_no_se_aprueba_sin_elegir_nuevo_evaluador(): void
     {
         $this->resolver(['estado' => 'APROBADO'])

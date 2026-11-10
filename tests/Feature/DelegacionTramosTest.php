@@ -146,7 +146,8 @@ class DelegacionTramosTest extends TestCase
         DB::table('evaluacion')->where('id_evaluacion', $idEvaluacion)->update(['estado' => 'CALIFICADA', 'fase_actual' => 5]);
     }
 
-    private function registrar(int $diasVigencia, ?int $superior = null)
+    /** Por defecto el delegado conserva su evaluador; con superior se registra como cambio excepcional. */
+    private function registrar(int $diasVigencia, ?int $superior = null, ?bool $delegadoCambia = null)
     {
         return $this->post('/admin/delegaciones', array_filter([
             'id_vinc_delegante' => $this->titular,
@@ -155,7 +156,8 @@ class DelegacionTramosTest extends TestCase
             'fecha_fin' => Carbon::today()->addDays($diasVigencia - 1)->toDateString(),
             'motivo' => 'Licencia',
             'id_vinc_superior_delegado' => $superior,
-        ]));
+            'delegado_cambia_evaluador' => ($delegadoCambia ?? $superior !== null) ? 1 : 0,
+        ], fn ($v) => $v !== null));
     }
 
     private function delegacion(): ?object
@@ -191,9 +193,9 @@ class DelegacionTramosTest extends TestCase
 
     // --- Delegación de más de 30 días ---
 
-    public function test_la_delegacion_larga_exige_el_superior_del_delegado(): void
+    public function test_si_el_delegado_cambia_de_evaluador_la_delegacion_larga_exige_su_superior(): void
     {
-        $this->registrar(60)->assertSessionHasErrors('delegaciones');
+        $this->registrar(60, null, true)->assertSessionHasErrors('delegaciones');
         $this->assertNull($this->delegacion());
     }
 
@@ -311,6 +313,228 @@ class DelegacionTramosTest extends TestCase
     }
 
     // --- Delegación de 30 días o menos ---
+
+    // --- El delegado conserva su evaluador (regla general) ---
+
+    public function test_por_defecto_el_delegado_conserva_su_evaluador_y_asume_las_personas_del_titular(): void
+    {
+        DB::table('evaluador_asignacion')->where('id_vinc_evaluado', $this->delegado)->update(['id_vinc_evaluador' => $this->superior]);
+        $this->registrar(90)->assertSessionHasNoErrors();
+
+        $delegacion = $this->delegacion();
+        $this->assertSame('PROGRAMADA', $delegacion->estado);
+        $this->assertSame(0, (int) $delegacion->delegado_cambia_evaluador);
+        $this->assertNull($delegacion->id_vinc_superior_delegado);
+
+        // Solo cambian las personas a cargo del titular; el delegado no tiene cambio propio.
+        $cambios = DB::table('traslado')->where('id_delegacion', $delegacion->id_delegacion)->get()->keyBy('id_vinc_funcionario');
+        $this->assertEqualsCanonicalizing([$this->evaluado1, $this->evaluado2], $cambios->keys()->map(fn ($k) => (int) $k)->all());
+        $this->assertSame($this->delegado, (int) $cambios[$this->evaluado1]->id_vinc_evaluador_nuevo);
+        $this->assertFalse(DB::table('traslado')->where('id_vinc_funcionario', $this->delegado)->exists());
+    }
+
+    public function test_sin_cambio_de_evaluador_la_delegacion_empieza_sin_calificar_el_tramo_del_delegado(): void
+    {
+        $idEvaluacionDelegado = $this->evaluaciones[$this->delegado];
+        DB::table('evaluacion')->where('id_evaluacion', $idEvaluacionDelegado)->update(['id_vinc_evaluador' => $this->superior]);
+        DB::table('evaluador_asignacion')->where('id_vinc_evaluado', $this->delegado)->update(['id_vinc_evaluador' => $this->superior]);
+
+        $this->registrar(90)->assertSessionHasNoErrors();
+        // Solo se califican los tramos de las dos personas del titular; la evaluación del delegado sigue abierta con su evaluador.
+        $this->calificar($this->evaluaciones[$this->evaluado1]);
+        $this->calificar($this->evaluaciones[$this->evaluado2]);
+        $this->postJson('/admin/delegaciones/' . $this->delegacion()->id_delegacion . '/confirmar')->assertOk();
+
+        $this->assertSame('ACTIVA', $this->delegacion()->estado);
+        $this->assertSame($this->delegado, $this->evaluadorDe($this->evaluado1));
+        $this->assertSame($this->superior, $this->evaluadorDe($this->delegado), 'El delegado sigue con su evaluador.');
+        $evaluacionDelegado = DB::table('evaluacion')->where('id_evaluacion', $idEvaluacionDelegado)->first();
+        $this->assertSame('EN_PROCESO', $evaluacionDelegado->estado);
+        $this->assertSame($this->superior, (int) $evaluacionDelegado->id_vinc_evaluador);
+    }
+
+    public function test_si_el_titular_evalua_al_delegado_este_debe_cambiar_de_evaluador(): void
+    {
+        // En esta prueba el delegado es una persona a cargo del titular que se ausenta.
+        $this->registrar(90, null, false)->assertSessionHasErrors(['delegaciones' => 'El delegado es evaluado por el titular que se ausenta: necesita un nuevo evaluador. Indica que el delegado cambia de evaluador y elige su superior.']);
+        $this->assertNull($this->delegacion());
+    }
+
+    public function test_al_finalizar_sin_cambio_del_delegado_solo_regresan_las_personas_a_cargo(): void
+    {
+        DB::table('evaluador_asignacion')->where('id_vinc_evaluado', $this->delegado)->update(['id_vinc_evaluador' => $this->superior]);
+
+        $this->registrar(90)->assertSessionHasNoErrors();
+        $this->calificar($this->evaluaciones[$this->evaluado1]);
+        $this->calificar($this->evaluaciones[$this->evaluado2]);
+        $id = $this->delegacion()->id_delegacion;
+        $this->postJson("/admin/delegaciones/{$id}/confirmar")->assertOk();
+
+        $this->postJson("/admin/delegaciones/{$id}/finalizar")->assertOk();
+
+        $cambios = DB::table('traslado')->where('id_delegacion', $id)->where('estado', 'PROGRAMADO')->get();
+        $this->assertFalse($cambios->contains(fn ($t) => (int) $t->id_vinc_funcionario === $this->delegado), 'El delegado no tiene cambio de regreso.');
+    }
+
+    public function test_una_misma_persona_puede_ser_delegada_de_dos_titulares_sin_cambiar_de_evaluador(): void
+    {
+        // César Rolando: delegado de Rectoría y de la Oficina Jurídica a la vez.
+        DB::table('evaluador_asignacion')->where('id_vinc_evaluado', $this->delegado)->update(['id_vinc_evaluador' => $this->superior]);
+        $otroTitular = $this->crearVinculacion('Z' . random_int(10000, 99999), true);
+        $otroEvaluado = $this->crearVinculacion('Y' . random_int(10000, 99999), false);
+        DB::table('evaluador_asignacion')->insert(['id_vinc_evaluador' => $otroTitular, 'id_vinc_evaluado' => $otroEvaluado, 'fecha_asignacion' => now()]);
+
+        $this->registrar(90)->assertSessionHasNoErrors();
+        $this->post('/admin/delegaciones', [
+            'id_vinc_delegante' => $otroTitular, 'id_vinc_delegado' => $this->delegado,
+            'fecha_inicio' => Carbon::today()->toDateString(), 'fecha_fin' => Carbon::today()->addDays(89)->toDateString(),
+            'delegado_cambia_evaluador' => 0,
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame(2, DB::table('delegacion')->where('id_vinc_delegado', $this->delegado)->count());
+        $this->assertSame($this->superior, $this->evaluadorDe($this->delegado));
+    }
+
+    // --- Ajuste manual de quién califica dentro de una delegación vigente ---
+
+    private function ajustar(int $idDelegacion, array $payload)
+    {
+        return $this->postJson("/admin/delegaciones/{$idDelegacion}/ajustar-evaluador", $payload);
+    }
+
+    /** Delegación corta vigente: el delegado ya atiende las evaluaciones de las dos personas del titular. */
+    private function delegacionCortaVigente(): object
+    {
+        DB::table('evaluador_asignacion')->where('id_vinc_evaluado', $this->delegado)->update(['id_vinc_evaluador' => $this->otroEvaluador]);
+        $this->registrar(15)->assertSessionHasNoErrors();
+
+        return $this->delegacion();
+    }
+
+    public function test_th_cambia_quien_califica_a_una_persona_sin_cancelar_la_delegacion(): void
+    {
+        $delegacion = $this->delegacionCortaVigente();
+        $this->assertSame($this->delegado, (int) DB::table('evaluacion')->where('id_evaluacion', $this->evaluaciones[$this->evaluado1])->value('id_vinc_evaluador'));
+
+        $this->ajustar($delegacion->id_delegacion, [
+            'id_vinc_evaluado' => $this->evaluado1, 'id_vinc_evaluador_nuevo' => $this->superior, 'motivo' => 'El delegado no puede calificarlo.',
+        ])->assertOk();
+
+        $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $this->evaluaciones[$this->evaluado1])->first();
+        $this->assertSame($this->superior, (int) $evaluacion->id_vinc_evaluador);
+        $this->assertNull($evaluacion->id_vinc_suplente);
+        // La delegación sigue vigente, la otra persona sigue con el delegado y el titular conserva su asignación.
+        $this->assertSame('ACTIVA', DB::table('delegacion')->where('id_delegacion', $delegacion->id_delegacion)->value('estado'));
+        $this->assertSame($this->delegado, (int) DB::table('evaluacion')->where('id_evaluacion', $this->evaluaciones[$this->evaluado2])->value('id_vinc_evaluador'));
+        $this->assertEqualsCanonicalizing(
+            [$this->titular, $this->superior],
+            DB::table('evaluador_asignacion')->where('id_vinc_evaluado', $this->evaluado1)->pluck('id_vinc_evaluador')->map(fn ($v) => (int) $v)->all()
+        );
+
+        $evento = DB::table('evaluacion_evento')->where('id_evaluacion', $this->evaluaciones[$this->evaluado1])->where('tipo_evento', 'CAMBIO_EVALUADOR')->orderByDesc('id_evento')->first();
+        $datos = json_decode($evento->datos, true);
+        $this->assertSame('AJUSTE_DELEGACION', $datos['origen']);
+        $this->assertSame('El delegado no puede calificarlo.', $datos['motivo']);
+        $this->assertSame($this->delegado, $datos['id_vinc_evaluador_anterior']);
+
+        $detalle = json_decode(DB::table('delegacion')->where('id_delegacion', $delegacion->id_delegacion)->value('detalle_transferencia'), true);
+        $this->assertSame($this->superior, $detalle['ajustes'][0]['id_vinc_evaluador_nuevo']);
+        $this->assertSame(['CAMBIO_EVALUADOR'], $this->avisos($this->evaluado1));
+        $this->assertContains('EVALUACION_REASIGNADA', $this->avisos($this->superior));
+    }
+
+    public function test_al_finalizar_la_persona_ajustada_conserva_su_nuevo_evaluador_y_la_otra_vuelve_al_titular(): void
+    {
+        $delegacion = $this->delegacionCortaVigente();
+        $this->ajustar($delegacion->id_delegacion, [
+            'id_vinc_evaluado' => $this->evaluado1, 'id_vinc_evaluador_nuevo' => $this->superior, 'motivo' => 'Cambio acordado.',
+        ])->assertOk();
+
+        $this->postJson("/admin/delegaciones/{$delegacion->id_delegacion}/finalizar")->assertOk();
+
+        $this->assertSame($this->superior, (int) DB::table('evaluacion')->where('id_evaluacion', $this->evaluaciones[$this->evaluado1])->value('id_vinc_evaluador'));
+        $this->assertSame($this->titular, (int) DB::table('evaluacion')->where('id_evaluacion', $this->evaluaciones[$this->evaluado2])->value('id_vinc_evaluador'));
+        $this->assertContains($this->titular, DB::table('evaluador_asignacion')->where('id_vinc_evaluado', $this->evaluado1)->pluck('id_vinc_evaluador')->map(fn ($v) => (int) $v)->all(), 'El titular conserva su asignación.');
+    }
+
+    public function test_th_cambia_quien_califica_al_delegado(): void
+    {
+        $delegacion = $this->delegacionCortaVigente();
+        $evalDelegado = DB::table('evaluacion')->where('id_vinc_evaluado', $this->delegado)->value('id_evaluacion');
+        DB::table('evaluacion')->where('id_evaluacion', $evalDelegado)->update(['id_vinc_evaluador' => $this->otroEvaluador]);
+
+        $this->ajustar($delegacion->id_delegacion, [
+            'id_vinc_evaluado' => $this->delegado, 'id_vinc_evaluador_nuevo' => $this->superior, 'motivo' => 'Ahora lo califica el superior.',
+        ])->assertOk();
+
+        $this->assertSame([$this->superior], DB::table('evaluador_asignacion')->where('id_vinc_evaluado', $this->delegado)->pluck('id_vinc_evaluador')->map(fn ($v) => (int) $v)->all());
+        $this->assertSame($this->superior, (int) DB::table('evaluacion')->where('id_evaluacion', $evalDelegado)->value('id_vinc_evaluador'));
+    }
+
+    public function test_el_ajuste_exige_motivo_y_valida_a_las_personas_y_al_evaluador(): void
+    {
+        $delegacion = $this->delegacionCortaVigente();
+        $id = $delegacion->id_delegacion;
+        $base = ['id_vinc_evaluado' => $this->evaluado1, 'id_vinc_evaluador_nuevo' => $this->superior, 'motivo' => 'Motivo.'];
+
+        $this->ajustar($id, ['motivo' => ''] + $base)->assertStatus(422)->assertJsonValidationErrors('motivo');
+        // Una persona que no está a cargo del delegado en esta delegación.
+        $this->ajustar($id, ['id_vinc_evaluado' => $this->otroEvaluador] + $base)->assertStatus(422)
+            ->assertJsonPath('message', 'Esa persona no está a cargo del delegado dentro de esta delegación.');
+        $this->ajustar($id, ['id_vinc_evaluador_nuevo' => $this->evaluado1] + $base)->assertStatus(422)
+            ->assertJsonPath('message', 'Una persona no puede ser su propio evaluador.');
+        $this->ajustar($id, ['id_vinc_evaluador_nuevo' => $this->delegado] + $base)->assertStatus(422)
+            ->assertJsonPath('message', 'Esa persona ya es evaluada por ese evaluador.');
+        // El evaluador del delegado no puede ser una persona que el delegado evalúa.
+        $this->ajustar($id, ['id_vinc_evaluado' => $this->delegado, 'id_vinc_evaluador_nuevo' => $this->evaluado2] + $base)->assertStatus(422)
+            ->assertJsonPath('message', 'El evaluador del delegado no puede ser una persona a cargo del delegado: se evaluarían entre sí.');
+
+        DB::table('vinculacion')->where('id_vinculacion', $this->superior)->update(['activa' => 0]);
+        $this->ajustar($id, $base)->assertStatus(422)->assertJsonPath('message', 'El nuevo evaluador debe tener una vinculación activa.');
+    }
+
+    public function test_solo_se_ajusta_una_delegacion_vigente(): void
+    {
+        $delegacion = $this->delegacionCortaVigente();
+        DB::table('delegacion')->where('id_delegacion', $delegacion->id_delegacion)->update(['estado' => 'FINALIZADA']);
+
+        $this->ajustar($delegacion->id_delegacion, [
+            'id_vinc_evaluado' => $this->evaluado1, 'id_vinc_evaluador_nuevo' => $this->superior, 'motivo' => 'x',
+        ])->assertStatus(422)->assertJsonPath('message', 'Solo se ajusta el evaluador de una delegación vigente (activa).');
+    }
+
+    public function test_el_historico_indica_a_quien_se_le_puede_cambiar_el_evaluador(): void
+    {
+        $this->delegacionCortaVigente();
+
+        $filas = $this->getJson('/admin/delegaciones')->assertOk()->json();
+        $personas = collect($filas[0]['personas_ajustables'])->keyBy('id_vinculacion');
+
+        $this->assertEqualsCanonicalizing([$this->delegado, $this->evaluado1, $this->evaluado2], $personas->keys()->map(fn ($k) => (int) $k)->all());
+        $this->assertTrue($personas[$this->delegado]['es_delegado']);
+        $this->assertNotNull($personas[$this->evaluado1]['evaluador_actual']);
+    }
+
+    public function test_los_selectores_largos_de_la_delegacion_tienen_buscador(): void
+    {
+        $this->get('/dashboard')->assertOk()
+            ->assertSee('name="id_vinc_delegado" data-buscable', false)
+            ->assertSee('name="area" data-buscable', false)
+            ->assertSee('name="id_vinc_delegante" data-buscable', false);
+    }
+
+    public function test_el_superior_del_delegado_no_puede_ser_el_titular(): void
+    {
+        $this->registrar(90, $this->titular)->assertSessionHasErrors(['delegaciones' => 'El titular que delega no puede evaluar al delegado: elige otro superior.']);
+        $this->assertNull($this->delegacion());
+    }
+
+    public function test_el_superior_del_delegado_no_puede_ser_una_persona_a_cargo_del_titular(): void
+    {
+        $this->registrar(90, $this->evaluado1)->assertSessionHasErrors(['delegaciones']);
+        $this->assertNull($this->delegacion());
+        $this->assertSame($this->titular, $this->evaluadorDe($this->evaluado1));
+    }
 
     public function test_la_delegacion_corta_no_genera_tramos(): void
     {

@@ -201,6 +201,206 @@ class SincronizadorPlazasTest extends TestCase
         $this->assertSame($this->v['jefe'], (int) $this->asignacion('e1')->id_vinc_evaluador);
     }
 
+    private function comoAdmin(): void
+    {
+        $this->withoutMiddleware(\Illuminate\Foundation\Http\Middleware\PreventRequestForgery::class);
+        session(['usuario_autenticado' => ['id_usuario' => $this->idUsuario, 'rol_activo' => 'admin', 'roles' => ['admin']]]);
+    }
+
+    public function test_la_delegacion_se_registra_por_cargo_y_queda_ligada_a_la_plaza(): void
+    {
+        $this->comoAdmin();
+
+        $this->post('/admin/delegaciones', [
+            'id_puesto_delegante' => $this->plaza['P1'],
+            'id_vinc_delegado' => $this->v['delegado'],
+            'fecha_inicio' => now()->toDateString(),
+            'fecha_fin' => now()->addDays(9)->toDateString(),
+            'motivo' => 'Vacaciones',
+        ])->assertSessionHasNoErrors();
+
+        $delegacion = DB::table('delegacion')->where('id_puesto', $this->plaza['P1'])->first();
+        $this->assertNotNull($delegacion);
+        $this->assertSame($this->v['jefe'], (int) $delegacion->id_vinc_delegante, 'Delega el ocupante vigente del cargo.');
+        $this->assertSame($this->v['delegado'], (int) $delegacion->id_vinc_delegado);
+        $this->assertSame('ACTIVA', $delegacion->estado);
+    }
+
+    public function test_delegar_por_persona_tambien_guarda_la_plaza_del_titular(): void
+    {
+        $this->comoAdmin();
+
+        $this->post('/admin/delegaciones', [
+            'id_vinc_delegante' => $this->v['jefe'],
+            'id_vinc_delegado' => $this->v['delegado'],
+            'fecha_inicio' => now()->toDateString(),
+            'fecha_fin' => now()->addDays(9)->toDateString(),
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame($this->plaza['P1'], (int) DB::table('delegacion')->where('id_vinc_delegante', $this->v['jefe'])->value('id_puesto'));
+    }
+
+    public function test_el_formulario_de_delegaciones_lista_los_cargos_con_su_ocupante(): void
+    {
+        $this->comoAdmin();
+
+        $this->get('/dashboard')
+            ->assertOk()
+            ->assertSee('Cargo que delega (titular)')
+            ->assertSee("T-{$this->s}-P1", false)
+            ->assertSee('Ocupa: JEFE ' . $this->s, false);
+    }
+
+    /** El jefe se retira: su vinculación queda inactiva y la plaza P1 vacante, con sus evaluados aún asignados. */
+    private function retirarJefe(): void
+    {
+        DB::table('puesto_ocupacion')->where('id_puesto', $this->plaza['P1'])->update(['estado' => 'CERRADA', 'vigente_hasta' => now()->toDateString()]);
+        DB::table('vinculacion')->where('id_vinculacion', $this->v['jefe'])->update(['activa' => 0]);
+    }
+
+    private function delegarVacante(array $extra = [])
+    {
+        return $this->post('/admin/delegaciones', $extra + [
+            'id_puesto_delegante' => $this->plaza['P1'],
+            'id_vinc_delegado' => $this->v['delegado'],
+            'fecha_inicio' => now()->toDateString(),
+            'motivo' => 'Encargo de la jefatura',
+        ]);
+    }
+
+    public function test_un_cargo_vacante_sin_ocupante_previo_no_se_delega(): void
+    {
+        $this->comoAdmin();
+        $vacante = DB::table('puesto')->insertGetId([
+            'codigo_plaza' => "T-{$this->s}-NUNCA", 'id_dependencia' => $this->idDependencia, 'id_cargo' => $this->idCargo,
+            'codigo_cargo' => 6, 'grado' => 1, 'nivel_jerarquico' => 'DIRECTIVO', 'sistema_evaluacion' => 'RENDIMIENTO_LABORAL',
+            'estado' => 'VALIDADA', 'requiere_revision' => 0, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $this->post('/admin/delegaciones', ['id_puesto_delegante' => $vacante, 'id_vinc_delegado' => $this->v['delegado'], 'fecha_inicio' => now()->toDateString()])
+            ->assertSessionHasErrors(['delegaciones' => 'El cargo está vacante y nunca tuvo un ocupante: no tiene personas a cargo ni trabajo que delegar.']);
+    }
+
+    public function test_el_cargo_vacante_se_delega_sin_tramos_aunque_sea_indefinida(): void
+    {
+        $this->comoAdmin();
+        $e1 = $this->evaluacion('e1');
+        $this->retirarJefe();
+
+        // Sin fecha fin (vigencia abierta): en un cargo con titular exigiría tramos.
+        $this->delegarVacante()->assertSessionHasNoErrors();
+
+        $delegacion = DB::table('delegacion')->where('id_puesto', $this->plaza['P1'])->first();
+        $this->assertSame('ACTIVA', $delegacion->estado);
+        $this->assertSame(1, (int) $delegacion->sin_titular);
+        $this->assertSame(0, (int) $delegacion->es_larga);
+        $this->assertSame($this->v['jefe'], (int) $delegacion->id_vinc_delegante, 'El último ocupante es el titular formal.');
+        $this->assertSame(0, DB::table('traslado')->where('id_delegacion', $delegacion->id_delegacion)->count(), 'No hay tramos ni pausa del titular.');
+
+        $evaluacion = DB::table('evaluacion')->where('id_evaluacion', $e1)->first();
+        $this->assertSame($this->v['delegado'], (int) $evaluacion->id_vinc_evaluador);
+        $this->assertSame($this->v['jefe'], (int) $evaluacion->id_vinc_suplente);
+        $this->assertEqualsCanonicalizing(
+            [$this->v['e1'], $this->v['e2']],
+            DB::table('evaluador_asignacion')->where('id_vinc_evaluador', $this->v['delegado'])->pluck('id_vinc_evaluado')->map(fn ($v) => (int) $v)->all()
+        );
+    }
+
+    public function test_si_el_delegado_dependia_del_cargo_vacante_debe_cambiar_de_evaluador(): void
+    {
+        $this->comoAdmin();
+        DB::table('evaluador_asignacion')->insert(['id_vinc_evaluador' => $this->v['jefe'], 'id_vinc_evaluado' => $this->v['delegado'], 'fecha_asignacion' => now()]);
+        $this->retirarJefe();
+
+        $this->delegarVacante()->assertSessionHasErrors(['delegaciones' => 'El delegado era evaluado por el cargo vacante y quedó sin evaluador: indica que el delegado cambia de evaluador y elige su superior.']);
+        $this->assertSame(0, DB::table('delegacion')->where('id_puesto', $this->plaza['P1'])->count());
+
+        // Con el cambio indicado: pasa directo a Rectoría (aquí, la plaza "otro"), sin tramo, y no queda como su propio evaluado.
+        $evalDelegado = DB::table('evaluacion')->insertGetId([
+            'id_periodo' => $this->idPeriodo, 'id_vinc_evaluado' => $this->v['delegado'], 'id_vinc_evaluador' => $this->v['jefe'],
+            'tipo_evaluacion' => 'SEMESTRE_1', 'fase_actual' => 2, 'concertacion_firmada' => 1, 'estado' => 'EN_PROCESO',
+        ]);
+        $this->delegarVacante(['delegado_cambia_evaluador' => 1, 'id_vinc_superior_delegado' => $this->v['otro']])->assertSessionHasNoErrors();
+
+        $this->assertSame($this->v['otro'], (int) DB::table('evaluador_asignacion')->where('id_vinc_evaluado', $this->v['delegado'])->value('id_vinc_evaluador'));
+        $this->assertSame($this->v['otro'], (int) DB::table('evaluacion')->where('id_evaluacion', $evalDelegado)->value('id_vinc_evaluador'));
+        $this->assertSame(0, DB::table('evaluador_asignacion')->where('id_vinc_evaluador', $this->v['delegado'])->where('id_vinc_evaluado', $this->v['delegado'])->count());
+        $this->assertSame(0, DB::table('traslado')->count(), 'Sin tramo para el delegado.');
+        $this->assertSame($this->v['delegado'], (int) DB::table('evaluador_asignacion')->where('id_vinc_evaluado', $this->v['e1'])->where('id_vinc_evaluador', $this->v['delegado'])->value('id_vinc_evaluador'));
+    }
+
+    public function test_cambiar_de_evaluador_en_un_cargo_vacante_exige_el_superior(): void
+    {
+        $this->comoAdmin();
+        $this->retirarJefe();
+
+        $this->delegarVacante(['delegado_cambia_evaluador' => 1])->assertSessionHasErrors(['delegaciones' => 'Indicaste que el delegado cambia de evaluador: selecciona el superior que lo evaluará mientras ejerce el cargo.']);
+    }
+
+    public function test_al_terminar_la_delegacion_del_cargo_vacante_el_trabajo_pasa_al_sucesor_y_el_delegado_vuelve_a_su_evaluador(): void
+    {
+        $this->comoAdmin();
+        $e1 = $this->evaluacion('e1');
+        $this->retirarJefe();
+        $this->delegarVacante(['delegado_cambia_evaluador' => 1, 'id_vinc_superior_delegado' => $this->v['otro']])->assertSessionHasNoErrors();
+        $delegacion = DB::table('delegacion')->where('id_puesto', $this->plaza['P1'])->first();
+
+        // La plaza sigue vacante y el titular no está: TH debe elegir quién asume.
+        $this->postJson("/admin/delegaciones/{$delegacion->id_delegacion}/finalizar")->assertStatus(422);
+
+        $this->postJson("/admin/delegaciones/{$delegacion->id_delegacion}/finalizar", [
+            'id_vinc_sucesor' => $this->v['nuevo'],
+            'id_vinc_evaluador_regreso' => $this->v['nuevo'],
+        ])->assertOk();
+
+        $this->assertSame('FINALIZADA', DB::table('delegacion')->where('id_delegacion', $delegacion->id_delegacion)->value('estado'));
+        $this->assertSame($this->v['nuevo'], (int) DB::table('evaluacion')->where('id_evaluacion', $e1)->value('id_vinc_evaluador'));
+        $this->assertSame($this->v['nuevo'], (int) DB::table('evaluador_asignacion')->where('id_vinc_evaluado', $this->v['e1'])->value('id_vinc_evaluador'));
+        $this->assertSame($this->v['nuevo'], (int) DB::table('evaluador_asignacion')->where('id_vinc_evaluado', $this->v['delegado'])->value('id_vinc_evaluador'));
+    }
+
+    public function test_el_formulario_lista_todos_los_cargos_ocupados_con_personas_a_cargo(): void
+    {
+        $this->comoAdmin();
+        // Un segundo y un tercer cargo ocupados con personas a cargo: todos deben salir con su ocupante.
+        foreach (['nuevo', 'otro'] as $clave) {
+            DB::table('evaluador_asignacion')->insert(['id_vinc_evaluador' => $this->v[$clave], 'id_vinc_evaluado' => $this->v['e1'], 'fecha_asignacion' => now()]);
+        }
+
+        $this->get('/dashboard')
+            ->assertOk()
+            ->assertSee("T-{$this->s}-P1", false)
+            ->assertSee("T-{$this->s}-P2", false)
+            ->assertSee("T-{$this->s}-P3", false)
+            ->assertSee('Ocupa: JEFE ' . $this->s, false)
+            ->assertSee('Ocupa: NUEVO ' . $this->s, false)
+            ->assertSee('Ocupa: OTRO ' . $this->s, false)
+            ->assertSee('name="id_puesto_delegante" data-buscable', false);
+    }
+
+    public function test_el_formulario_mezcla_cargos_ocupados_y_vacantes(): void
+    {
+        $this->comoAdmin();
+        DB::table('evaluador_asignacion')->insert(['id_vinc_evaluador' => $this->v['otro'], 'id_vinc_evaluado' => $this->v['e1'], 'fecha_asignacion' => now()]);
+        $this->retirarJefe();
+
+        $this->get('/dashboard')
+            ->assertOk()
+            ->assertSee('VACANTE, último ocupante: JEFE ' . $this->s, false)
+            ->assertSee('Ocupa: OTRO ' . $this->s, false);
+    }
+
+    public function test_el_formulario_lista_el_cargo_vacante_con_su_ultimo_ocupante(): void
+    {
+        $this->comoAdmin();
+        $this->retirarJefe();
+
+        $this->get('/dashboard')
+            ->assertOk()
+            ->assertSee("T-{$this->s}-P1", false)
+            ->assertSee('VACANTE, último ocupante: JEFE ' . $this->s, false);
+    }
+
     public function test_al_terminar_la_delegacion_el_sucesor_es_el_ocupante_vigente_de_la_plaza(): void
     {
         $this->modo('ACTIVO');

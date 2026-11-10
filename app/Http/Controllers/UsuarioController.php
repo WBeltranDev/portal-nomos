@@ -26,7 +26,6 @@ class UsuarioController extends Controller
             'apellidos' => ['required', 'string', 'max:255'],
             'tipo_documento' => ['required', 'string', 'in:CEDULA_CIUDADANIA'],
             'numero_doc' => ['required', 'string', 'max:50'],
-            'correo' => ['required', 'email', 'max:255'],
             'cargo' => ['required', 'string', 'max:255'],
             'area' => ['required', 'string', 'max:255'],
             'rol' => ['required', 'string', 'in:EVALUADOR,EVALUADO,ADMINISTRADOR'],
@@ -67,13 +66,13 @@ class UsuarioController extends Controller
             }
 
             // 1. Crear o reactivar Usuario
-            $user = User::where('username', $data['correo'])->first();
+            $user = User::where('username', trim($data['numero_doc']))->first();
             $tempPassword = null;
 
             if (!$user) {
                 $tempPassword = $defaultPassword;
                 $user = User::create([
-                    'username' => $data['correo'],
+                    'username' => trim($data['numero_doc']),
                     'password' => Hash::make($tempPassword),
                     'rol' => $data['rol'],
                     'activo' => 1
@@ -94,14 +93,12 @@ class UsuarioController extends Controller
                 $funcionario->numero_doc = $data['numero_doc'];
                 $funcionario->nombres = $data['nombres'];
                 $funcionario->apellidos = $data['apellidos'];
-                $funcionario->correo_cargo = $data['correo'];
                 $funcionario->save();
             } else {
                 $funcionario->update([
                     'id_usuario' => $user->id_usuario,
                     'nombres' => $data['nombres'],
                     'apellidos' => $data['apellidos'],
-                    'correo_cargo' => $data['correo'],
                 ]);
             }
 

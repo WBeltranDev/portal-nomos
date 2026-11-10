@@ -24,15 +24,19 @@
                         <div class="text-sm text-slate-500">Total: <span class="font-bold text-slate-900">{{ $usuarios->count() }}</span></div>
                     </div>
                     <div class="mt-4">
-                        <input id="buscador-usuarios" oninput="filtrarUsuarios()" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-[#00594E] focus:ring-2 focus:ring-[#00594E]/10" type="text" placeholder="Buscar por documento, nombre o correo">
+                        <input id="buscador-usuarios" oninput="filtrarUsuarios()" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-[#00594E] focus:ring-2 focus:ring-[#00594E]/10" type="text" placeholder="Buscar por documento o nombre">
                     </div>
                     <div class="mt-6 grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
                         @foreach ($usuarios as $u)
-                            <article class="usuario-card rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-nombre="{{ strtolower(($u->nombres ?? 'Usuario') . ' ' . ($u->apellidos ?? 'Admin')) }}" data-cedula="{{ strtolower($u->documento_identidad ?? '') }}" data-correo="{{ strtolower($u->correo_institucional ?? '') }}">
+                            <article class="usuario-card rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-nombre="{{ strtolower(($u->nombres ?? 'Usuario') . ' ' . ($u->apellidos ?? 'Admin')) }}" data-cedula="{{ strtolower($u->documento_identidad ?? '') }}" data-usuario="{{ $u->id_funcionario ? '' : strtolower($u->correo_institucional ?? '') }}">
                                 <div class="flex items-start justify-between gap-4">
                                     <div class="min-w-0">
                                         <h3 class="font-bold text-slate-900 break-words">{{ $u->nombres ?? 'Usuario' }} {{ $u->apellidos ?? 'Admin' }}</h3>
-                                        <p class="text-sm text-slate-500 break-all">{{ $u->correo_institucional }}</p>
+                                        @if($u->id_funcionario)
+                                            <p class="text-sm text-slate-500">C.C. {{ $u->documento_identidad }}</p>
+                                        @else
+                                            <p class="text-sm text-slate-500 break-all">Usuario: {{ $u->correo_institucional }}</p>
+                                        @endif
                                     </div>
                                     <span class="shrink-0 whitespace-nowrap text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-[#EAF2EF] text-[#00594E]">{{ $u->rol }}</span>
                                 </div>
@@ -68,7 +72,7 @@
                             </div>
                         </div>
 
-                        <input id="buscador-empleados" oninput="filtrarEmpleados()" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-[#00594E] focus:ring-2 focus:ring-[#00594E]/10" type="text" placeholder="Buscar por documento, nombre o correo">
+                        <input id="buscador-empleados" oninput="filtrarEmpleados()" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-[#00594E] focus:ring-2 focus:ring-[#00594E]/10" type="text" placeholder="Buscar por documento o nombre">
 
                         <div class="mt-4 grid gap-4 md:grid-cols-2">
                             @foreach ($empleados as $e)
@@ -76,7 +80,6 @@
                                     class="empleado-card rounded-2xl border border-slate-200 bg-white p-4 shadow-sm cursor-pointer transition hover:border-[#00594E]"
                                     data-nombre="{{ strtolower($e->nombres . ' ' . $e->apellidos) }}"
                                     data-cedula="{{ strtolower($e->documento_identidad) }}"
-                                    data-correo="{{ strtolower($e->correo_institucional ?? '') }}"
                                     data-cargo="{{ e($e->nombre_cargo ?? 'Sin cargo') }}"
                                     data-area="{{ e($e->nombre_area ?? 'Sin Área') }}"
                                     data-estado="{{ $e->activo ? ($e->es_vacante ? 'Vacante' : 'Activo') : 'Inactivo' }}"
@@ -112,8 +115,7 @@
                                 </div>
                             </div>
                             <div class="mt-4 space-y-2 text-xs">
-                                <div class="flex justify-between py-2 border-b border-slate-50"><span class="text-slate-500">Correo</span><span id="empleado-correo" class="text-slate-800 font-medium">-</span></div>
-                                <div class="flex justify-between py-2 border-b border-slate-50"><span class="text-slate-500">Documento</span><span id="empleado-documento" class="text-slate-800 font-medium">-</span></div>
+                                                                <div class="flex justify-between py-2 border-b border-slate-50"><span class="text-slate-500">Documento</span><span id="empleado-documento" class="text-slate-800 font-medium">-</span></div>
                                 <div class="flex justify-between py-2 border-b border-slate-50"><span class="text-slate-500">Área</span><span id="empleado-area" class="text-slate-800 font-medium">-</span></div>
                                 <div class="flex justify-between py-2"><span class="text-slate-500">Estado</span><span id="empleado-estado" class="text-slate-800 font-medium">-</span></div>
                             </div>
@@ -157,10 +159,6 @@
                                         <label class="block text-[10px] font-bold text-slate-600 uppercase">Número</label>
                                         <input type="text" name="numero_doc" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white" required>
                                     </div>
-                                </div>
-                                <div>
-                                    <label class="block text-[10px] font-bold text-slate-600 uppercase">Correo Inst.</label>
-                                    <input type="email" name="correo" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white" required>
                                 </div>
                                 <div>
                                     <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Cargo Institucional</label>
@@ -766,7 +764,7 @@
 
             <!-- SECTION: PERIODOS (Admin Only) -->
             <section id="section-periodos" class="section-content hidden space-y-6">
-                <div class="grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
+                <div class="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_22rem]">
                     <div class="panel-card rounded-3xl p-6">
                         <h2 class="text-2xl font-black text-slate-900 mb-6">Periodos de Evaluación</h2>
                         <div class="overflow-x-auto">
@@ -870,6 +868,11 @@
                                         <label class="block text-[10px] font-bold text-slate-600 uppercase text-red-600">Cierre Concertación</label>
                                         <input type="date" name="fecha_fin_concertacion" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white focus:border-red-500 outline-none" required>
                                     </div>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-600 uppercase text-red-600">Cierre Calificación (Opcional)</label>
+                                    <input type="date" name="fecha_fin_calificacion" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white focus:border-red-500 outline-none">
+                                    <p class="text-[9px] text-slate-400 mt-0.5">Pasada la fecha, concertar o calificar exige extratiempo autorizado por Talento Humano.</p>
                                 </div>
                                 <div>
                                     <label class="block text-[10px] font-bold text-slate-600 uppercase">Descripción (Opcional)</label>
@@ -1111,18 +1114,31 @@
 
                         <form method="POST" action="{{ route('admin.delegaciones.store') }}" class="space-y-3">
                             @csrf
+                            @if($plazasDelegables->isNotEmpty())
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Cargo que delega (titular)</label>
+                                <select name="id_puesto_delegante" data-buscable="Buscar cargo, dependencia o persona…" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
+                                    <option value="">Selecciona el cargo que delega</option>
+                                    @foreach($plazasDelegables as $pz)
+                                        <option value="{{ $pz->id_puesto }}">{{ $pz->cargo }} - {{ $pz->dependencia }} ({{ $pz->codigo_plaza }}) · {{ ($pz->vacante ?? false) ? 'VACANTE, último ocupante: ' : 'Ocupa: ' }}{{ $pz->nombres }} {{ $pz->apellidos }}</option>
+                                    @endforeach
+                                </select>
+                                <p class="text-[9px] text-slate-400 mt-0.5">La delegación es del cargo: si cambia quien lo ocupa, la delegación sigue al cargo. En un cargo vacante no hay tramo que calificar: las personas a cargo pasan directamente al delegado.</p>
+                            </div>
+                            @else
                             <div>
                                 <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Evaluador titular (Delegante)</label>
-                                <select name="id_vinc_delegante" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
+                                <select name="id_vinc_delegante" data-buscable="Buscar evaluador titular…" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
                                     <option value="">Selecciona el evaluador titular</option>
                                     @foreach($evaluadoresDelegacion as $ed)
                                         <option value="{{ $ed->id_vinculacion }}">{{ $ed->nombres }} {{ $ed->apellidos }} - {{ $ed->cargo }} ({{ $ed->area }})</option>
                                     @endforeach
                                 </select>
                             </div>
+                            @endif
                             <div>
                                 <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Funcionario que asume la delegación (Delegado)</label>
-                                <select name="id_vinc_delegado" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
+                                <select name="id_vinc_delegado" data-buscable="Buscar funcionario delegado…" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
                                     <option value="">Selecciona el funcionario delegado</option>
                                     @foreach($delegadosDisponibles as $dd)
                                         <option value="{{ $dd->id_vinculacion }}">{{ $dd->nombres }} {{ $dd->apellidos }} - {{ $dd->cargo }} ({{ $dd->area }} - {{ $dd->nivel_jerarquico ?? 'PROFESIONAL' }})</option>
@@ -1140,11 +1156,24 @@
                                     <p class="text-[9px] text-slate-400 mt-0.5">Vacío = vigencia abierta</p>
                                 </div>
                             </div>
-                            <div class="rounded-xl border border-amber-100 bg-amber-50/60 p-3 space-y-2">
-                                <p class="text-[11px] text-amber-800"><b>Más de 30 días o vigencia abierta:</b> el titular debe calificar el tramo de todas sus personas a cargo y el evaluador del delegado debe calificar su tramo antes de confirmar el inicio. Con 30 días o menos, el delegado atiende las mismas evaluaciones sin tramos.</p>
+                            <div class="rounded-xl border border-amber-100 bg-amber-50/60 p-3 space-y-3">
+                                <p class="text-[11px] text-amber-800">El delegado asume las personas a cargo del titular. <b>Más de 30 días o vigencia abierta:</b> el titular debe calificar el tramo de cada una antes de confirmar el inicio. Con 30 días o menos, el delegado atiende las mismas evaluaciones sin tramos.</p>
                                 <div>
-                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Superior que evaluará al delegado (si supera 30 días)</label>
-                                    <select name="id_vinc_superior_delegado" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white">
+                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">¿El delegado cambia de evaluador?</label>
+                                    <div class="grid gap-2 sm:grid-cols-2">
+                                        <label class="flex items-start gap-2 rounded-xl border border-slate-200 bg-white p-2.5 cursor-pointer">
+                                            <input type="radio" name="delegado_cambia_evaluador" value="0" checked class="mt-0.5" onchange="alternarCambiaEvaluadorDelegacion(this.form)" />
+                                            <span class="text-[11px] text-slate-700"><b>No (regla general):</b> conserva su evaluador y no se le pide calificar nada; no es un traslado.</span>
+                                        </label>
+                                        <label class="flex items-start gap-2 rounded-xl border border-slate-200 bg-white p-2.5 cursor-pointer">
+                                            <input type="radio" name="delegado_cambia_evaluador" value="1" class="mt-0.5" onchange="alternarCambiaEvaluadorDelegacion(this.form)" />
+                                            <span class="text-[11px] text-slate-700"><b>Sí (excepcional):</b> pasa a otro evaluador y su evaluador actual debe calificar su tramo.</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div id="bloque-delegacion-superior" class="hidden">
+                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Superior que evaluará al delegado</label>
+                                    <select name="id_vinc_superior_delegado" data-buscable="Buscar superior…" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white">
                                         <option value="">Selecciona el nuevo superior del delegado</option>
                                         @foreach($evaluadoresDelegacion as $ed)
                                             <option value="{{ $ed->id_vinculacion }}">{{ $ed->nombres }} {{ $ed->apellidos }} - {{ $ed->cargo }} ({{ $ed->area }})</option>
@@ -1154,7 +1183,7 @@
                             </div>
                             <div>
                                 <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Área / Dependencia Delegada</label>
-                                <select name="area" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white">
+                                <select name="area" data-buscable="Buscar dependencia…" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white">
                                     <option value="">Selecciona dependencia para trazabilidad</option>
                                     @foreach($dependenciasCatalogo as $dp)
                                         <option value="{{ $dp->nombre }}">{{ $dp->nombre }}</option>
@@ -1191,9 +1220,9 @@
                     <div class="panel-card rounded-3xl p-6">
                         <div class="flex items-center gap-2 mb-1">
                             <span class="material-symbols-outlined text-[#00594E]">history_toggle_off</span>
-                            <h2 class="text-2xl sm:text-3xl font-black text-slate-900">Concertación Extratiempo</h2>
+                            <h2 class="text-2xl sm:text-3xl font-black text-slate-900">Extratiempo</h2>
                         </div>
-                        <p class="text-sm text-slate-500 mb-6">Autoriza tiempo adicional justificado para aquellas evaluaciones que no lograron concertarse en los plazos establecidos.</p>
+                        <p class="text-sm text-slate-500 mb-6">Autoriza tiempo adicional justificado para concertar o para calificar aquellas evaluaciones que no lo lograron en los plazos establecidos.</p>
 
                         <form method="POST" action="" id="form-extratiempo" class="space-y-4">
                             @csrf
@@ -1209,11 +1238,18 @@
                                 </select>
                             </div>
                             <div>
+                                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Tipo de extratiempo</label>
+                                <select name="tipo" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" required>
+                                    <option value="CONCERTACION">Concertación de compromisos</option>
+                                    <option value="CALIFICACION">Calificación</option>
+                                </select>
+                            </div>
+                            <div>
                                 <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Justificación / Observación Oficial</label>
                                 <textarea name="justificacion" rows="3" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Ej. Permiso sindical certificado, incapacidad médica radicada, etc." required></textarea>
                             </div>
                             <div>
-                                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Nueva Fecha Límite para Concertar</label>
+                                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Nueva Fecha Límite</label>
                                 <input type="date" name="fecha_limite" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" required>
                             </div>
                             <button type="submit" class="w-full bg-[#B5A160] hover:brightness-110 text-white rounded-xl py-2.5 text-xs font-bold transition shadow-md shadow-[#B5A160]/20 flex items-center justify-center gap-2">
@@ -1229,7 +1265,7 @@
                                 <span class="material-symbols-outlined text-3xl">info</span>
                             </div>
                             <h3 class="text-base font-black text-slate-800">Sobre el Extratiempo</h3>
-                            <p class="text-xs text-slate-500">Al aprobar un extratiempo, el sistema registrará la observación y reabrirá la concertación para el evaluador y evaluado seleccionado, independientemente del cierre general del periodo.</p>
+                            <p class="text-xs text-slate-500">Al aprobar un extratiempo, el sistema registrará la observación y reabrirá la concertación o la calificación (según el tipo) para el evaluador y evaluado seleccionado, independientemente del cierre del periodo.</p>
                         </div>
                     </div>
                 </div>
@@ -1245,7 +1281,7 @@
                                 <div class="flex items-start justify-between gap-3">
                                     <div class="min-w-0">
                                         <p class="text-xs font-black text-slate-800">{{ $hx->nombres }} {{ $hx->apellidos }}</p>
-                                        <p class="text-[10px] text-slate-400">Cargo: {{ $hx->cargo }}</p>
+                                        <p class="text-[10px] text-slate-400">Cargo: {{ $hx->cargo }} · <span class="font-bold text-[#00594E]">{{ ($hx->tipo ?? 'CONCERTACION') === 'CALIFICACION' ? 'Calificación' : 'Concertación' }}</span></p>
                                     </div>
                                     <span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 {{ $hx->activo ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500' }}">{{ $hx->activo ? 'Vigente' : 'Inactivo/Cerrado' }}</span>
                                 </div>
@@ -1360,7 +1396,12 @@
                                         <td class="p-3 text-center">
                                             <span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#EAF2EF] text-[#00594E]">{{ $ev->sistema === 'RENDIMIENTO_LABORAL' ? 'RL' : 'AG' }}</span>
                                         </td>
-                                        <td class="p-3 text-slate-500">{{ $ev->tipo_nombre }}</td>
+                                        <td class="p-3 text-slate-500">
+                                            {{ $ev->tramo ? 'Parcial ' . $ev->tramo['numero'] . ' de ' . $ev->tramo['total'] : $ev->tipo_nombre }}
+                                            @if($ev->tramo)
+                                                <span class="block text-[10px] text-slate-400 whitespace-nowrap">{{ \Carbon\Carbon::parse($ev->tramo['desde'])->format('d/m/Y') }} al {{ \Carbon\Carbon::parse($ev->tramo['hasta'])->format('d/m/Y') }} · {{ $ev->tramo['dias'] }} d</span>
+                                            @endif
+                                        </td>
                                         <td class="p-3">
                                             <span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold {{ $colorFase }}">Fase {{ $ev->fase_actual }}: {{ $nombreFase }}</span>
                                         </td>

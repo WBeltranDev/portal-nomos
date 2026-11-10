@@ -272,3 +272,180 @@ window.showInlineMessage = showInlineMessage;
 window.renderResultado = renderResultado;
 window.formatPendientes = formatPendientes;
 window.actualizarFaseLabel = actualizarFaseLabel;
+
+/**
+ * Enlaces de un recurso: lo que adjuntó el evaluado al radicar, el oficio con
+ * la respuesta y los soportes de la decisión (acta del CEDP, otros).
+ */
+export function renderEnlacesRecurso(r) {
+    const evidencias = Array.isArray(r.evidencias) ? r.evidencias : [];
+    const enlace = (url, texto) => `
+        <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 text-xs text-[#00594E] hover:underline min-w-0">
+            <span class="material-symbols-outlined text-sm shrink-0">open_in_new</span>
+            <span class="truncate">${escapeHtml(texto || url)}</span>
+        </a>`;
+    const bloque = (icono, titulo, contenido) => `
+        <div class="pt-2 border-t border-slate-100 space-y-1.5">
+            <p class="text-[10px] font-bold uppercase text-slate-500 flex items-center gap-1"><span class="material-symbols-outlined text-xs">${icono}</span> ${titulo}</p>
+            ${contenido}
+        </div>`;
+
+    const radicacion = evidencias.filter(e => (e.origen || 'RADICACION') === 'RADICACION');
+    const soportes = evidencias.filter(e => e.origen === 'DECISION');
+
+    return (radicacion.length ? bloque('link', 'Evidencias', radicacion.map(e => enlace(e.url, e.descripcion)).join('')) : '')
+        + (r.url_oficio ? bloque('description', 'Oficio de respuesta', enlace(r.url_oficio, 'Ver oficio de respuesta')) : '')
+        + (soportes.length ? bloque('attach_file', 'Soportes de la decisión', soportes.map(e => enlace(e.url, e.descripcion)).join('')) : '');
+}
+
+/**
+ * Ventana para decidir un recurso: motivación, enlace obligatorio del oficio y
+ * enlaces de soporte opcionales. Llama a onConfirmar({ motivacion, url_oficio,
+ * soportes }) cuando los datos obligatorios están completos.
+ */
+export function abrirModalDecisionRecurso({ decision, onConfirmar }) {
+    document.getElementById('modal-decision-recurso')?.remove();
+
+    const favorable = decision === 'APROBADO';
+    const modal = document.createElement('div');
+    modal.id = 'modal-decision-recurso';
+    modal.className = 'fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 p-4';
+    modal.innerHTML = `
+        <div class="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl space-y-4">
+            <div>
+                <p class="text-[10px] font-black uppercase tracking-widest text-[#B5A160]">Decisión del recurso</p>
+                <h3 class="text-lg font-black text-slate-900">${favorable ? 'Decisión favorable (se acepta el recurso)' : 'Decisión desfavorable (se niega el recurso)'}</h3>
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Motivación / observaciones</label>
+                <textarea id="decision-recurso-motivacion" rows="4" maxlength="3000" class="w-full text-sm rounded-xl border border-slate-200 p-3 outline-none focus:border-[#00594E]" placeholder="Explica los fundamentos de tu decisión"></textarea>
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Enlace del oficio con la respuesta (obligatorio)</label>
+                <input id="decision-recurso-oficio" type="url" maxlength="1000" class="w-full text-sm rounded-xl border border-slate-200 p-3 outline-none focus:border-[#00594E]" placeholder="https://...">
+            </div>
+            <div>
+                <div class="flex items-center justify-between mb-1">
+                    <label class="block text-[10px] font-bold uppercase text-slate-500">Soportes adicionales (acta del CEDP, otros)</label>
+                    <button type="button" id="decision-recurso-agregar" class="text-[11px] font-bold text-[#00594E] hover:underline">+ Agregar enlace</button>
+                </div>
+                <div id="decision-recurso-soportes" class="space-y-2"></div>
+            </div>
+            <p id="decision-recurso-error" class="hidden text-xs font-semibold text-red-600"></p>
+            <div class="flex justify-end gap-2 pt-2">
+                <button type="button" id="decision-recurso-cancelar" class="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50">Cancelar</button>
+                <button type="button" id="decision-recurso-confirmar" class="rounded-xl bg-[#00594E] px-4 py-2 text-xs font-bold text-white hover:brightness-110">Registrar decisión</button>
+            </div>
+        </div>`;
+    document.body.appendChild(modal);
+
+    const lista = modal.querySelector('#decision-recurso-soportes');
+    const error = modal.querySelector('#decision-recurso-error');
+    const mostrarError = texto => { error.innerText = texto; error.classList.remove('hidden'); };
+
+    modal.querySelector('#decision-recurso-agregar').addEventListener('click', () => {
+        const fila = document.createElement('div');
+        fila.className = 'soporte-fila grid grid-cols-[1fr_1fr_auto] gap-2';
+        fila.innerHTML = `
+            <input type="text" maxlength="200" class="soporte-descripcion text-xs rounded-xl border border-slate-200 p-2 outline-none focus:border-[#00594E]" placeholder="Descripción">
+            <input type="url" maxlength="1000" class="soporte-url text-xs rounded-xl border border-slate-200 p-2 outline-none focus:border-[#00594E]" placeholder="https://...">
+            <button type="button" class="soporte-quitar text-slate-400 hover:text-red-600" title="Quitar"><span class="material-symbols-outlined text-base">close</span></button>`;
+        fila.querySelector('.soporte-quitar').addEventListener('click', () => fila.remove());
+        lista.appendChild(fila);
+    });
+
+    modal.querySelector('#decision-recurso-cancelar').addEventListener('click', () => modal.remove());
+    modal.querySelector('#decision-recurso-confirmar').addEventListener('click', () => {
+        const motivacion = modal.querySelector('#decision-recurso-motivacion').value.trim();
+        const urlOficio = modal.querySelector('#decision-recurso-oficio').value.trim();
+        if (!motivacion) return mostrarError('La motivación es obligatoria para decidir el recurso.');
+        if (!/^https?:\/\/\S+$/i.test(urlOficio)) return mostrarError('Pega el enlace del oficio con la respuesta (debe empezar por https://).');
+
+        const soportes = [];
+        for (const fila of lista.querySelectorAll('.soporte-fila')) {
+            const url = fila.querySelector('.soporte-url').value.trim();
+            const descripcion = fila.querySelector('.soporte-descripcion').value.trim();
+            if (!url && !descripcion) continue;
+            if (!/^https?:\/\/\S+$/i.test(url)) return mostrarError('Cada soporte necesita un enlace válido (https://...).');
+            soportes.push({ url, descripcion });
+        }
+
+        modal.remove();
+        onConfirmar({ motivacion, url_oficio: urlOficio, soportes });
+    });
+
+    modal.querySelector('#decision-recurso-motivacion').focus();
+}
+
+/**
+ * Agrega un campo de búsqueda a un <select> largo. Filtra las opciones al escribir
+ * (sin distinguir tildes ni mayúsculas) reconstruyéndolas, porque no todos los
+ * navegadores permiten ocultar <option>. Conserva la opción vacía y la elegida.
+ */
+export function habilitarBuscadorSelect(select, placeholder = 'Buscar…') {
+    if (!select || select.dataset.buscadorListo === '1') return;
+    select.dataset.buscadorListo = '1';
+
+    const normalizar = texto => (texto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const guardar = () => Array.from(select.querySelectorAll('option')).map(o => ({
+        value: o.value, text: o.textContent, grupo: o.parentElement?.tagName === 'OPTGROUP' ? o.parentElement.label : null,
+        data: { ...o.dataset }, disabled: o.disabled,
+    }));
+    let opciones = guardar();
+
+    const entrada = document.createElement('input');
+    entrada.type = 'search';
+    entrada.placeholder = placeholder;
+    entrada.autocomplete = 'off';
+    entrada.className = 'w-full text-xs rounded-xl border border-slate-200 p-2 mb-1 bg-white outline-none focus:border-[#00594E]';
+    select.parentNode.insertBefore(entrada, select);
+
+    const pintar = () => {
+        const buscado = normalizar(entrada.value.trim());
+        const elegido = select.value;
+        const visibles = opciones.filter(o => o.value === '' || o.value === elegido || !buscado || normalizar(o.text).includes(buscado));
+        select.innerHTML = '';
+        const grupos = new Map();
+        visibles.forEach(o => {
+            const opcion = document.createElement('option');
+            opcion.value = o.value;
+            opcion.textContent = o.text;
+            opcion.disabled = o.disabled;
+            Object.entries(o.data).forEach(([k, v]) => { opcion.dataset[k] = v; });
+            if (o.value === elegido) opcion.selected = true;
+            if (o.grupo) {
+                if (!grupos.has(o.grupo)) {
+                    const grupo = document.createElement('optgroup');
+                    grupo.label = o.grupo;
+                    grupos.set(o.grupo, grupo);
+                    select.appendChild(grupo);
+                }
+                grupos.get(o.grupo).appendChild(opcion);
+            } else {
+                select.appendChild(opcion);
+            }
+        });
+        if (buscado && visibles.filter(o => o.value !== '' && o.value !== elegido).length === 0) {
+            const vacio = document.createElement('option');
+            vacio.disabled = true;
+            vacio.textContent = 'Sin resultados';
+            select.appendChild(vacio);
+        }
+    };
+
+    entrada.addEventListener('input', pintar);
+    // Con una sola coincidencia, Enter la elige.
+    entrada.addEventListener('keydown', evento => {
+        if (evento.key !== 'Enter') return;
+        evento.preventDefault();
+        const coincidencias = Array.from(select.options).filter(o => o.value !== '' && !o.disabled);
+        if (coincidencias.length >= 1) {
+            select.value = coincidencias[0].value;
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+    });
+}
+
+export function habilitarBuscadoresSelect(raiz = document) {
+    raiz.querySelectorAll('select[data-buscable]').forEach(select => habilitarBuscadorSelect(select, select.dataset.buscable || 'Buscar…'));
+}

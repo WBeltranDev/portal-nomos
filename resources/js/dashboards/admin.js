@@ -1,15 +1,14 @@
 /**
  * Admin Dashboard JS Module
  */
-import { escapeHtml, fetchJson, parseErrorMessage, navegarMenu } from './common.js';
+import { escapeHtml, fetchJson, parseErrorMessage, navegarMenu, renderEnlacesRecurso, abrirModalDecisionRecurso, habilitarBuscadorSelect, habilitarBuscadoresSelect } from './common.js';
 
 export function filtrarEmpleados() {
     const texto = (document.getElementById('buscador-empleados')?.value || '').trim().toLowerCase();
     document.querySelectorAll('.empleado-card').forEach(card => {
         const nombre = card.dataset.nombre || '';
         const cedula = card.dataset.cedula || '';
-        const correo = card.dataset.correo || '';
-        const match = !texto || nombre.includes(texto) || cedula.includes(texto) || correo.includes(texto);
+        const match = !texto || nombre.includes(texto) || cedula.includes(texto);
         card.classList.toggle('hidden', !match);
     });
 }
@@ -19,8 +18,8 @@ export function filtrarUsuarios() {
     document.querySelectorAll('.usuario-card').forEach(card => {
         const nombre = card.dataset.nombre || '';
         const cedula = card.dataset.cedula || '';
-        const correo = card.dataset.correo || '';
-        const match = !texto || nombre.includes(texto) || cedula.includes(texto) || correo.includes(texto);
+        const usuario = card.dataset.usuario || '';
+        const match = !texto || nombre.includes(texto) || cedula.includes(texto) || usuario.includes(texto);
         card.style.display = match ? 'block' : 'none';
     });
 }
@@ -169,7 +168,6 @@ export function seleccionarEmpleado(card, empleado) {
     setText('empleado-avatar', (empleado.nombres?.[0] || '') + (empleado.apellidos?.[0] || ''));
     setText('empleado-nombre', `${empleado.nombres || ''} ${empleado.apellidos || ''}`.trim());
     setText('empleado-cargo', empleado.nombre_cargo || 'Sin cargo');
-    setText('empleado-correo', empleado.correo_institucional || 'Sin correo');
     setText('empleado-documento', `${empleado.tipo_documento || ''} ${empleado.documento_identidad || ''}`.trim());
     setText('empleado-area', empleado.nombre_area || 'Sin área');
     setText('empleado-estado', empleado.es_vacante ? 'Vacante' : (empleado.activo ? 'Activo' : 'Inactivo'));
@@ -336,8 +334,8 @@ export function renderFirmasPlan(plan) {
         + row('Evaluado', !!plan.firmado_evaluado, plan.fecha_firma_evaluado);
 }
 
-export function enviarDecisionRecurso(id, decision, motivacion, id_vinc_nuevo_evaluador = null) {
-    const bodyParams = { decision, motivacion };
+export function enviarDecisionRecurso(id, decision, datos, id_vinc_nuevo_evaluador = null) {
+    const bodyParams = { decision, ...datos };
     if (id_vinc_nuevo_evaluador) {
         bodyParams.id_vinc_nuevo_evaluador = id_vinc_nuevo_evaluador;
     }
@@ -358,9 +356,6 @@ export function enviarDecisionRecurso(id, decision, motivacion, id_vinc_nuevo_ev
 
 export function decidirRecursoAdmin(id, esApelacion) {
     const decision = document.getElementById(`decision-admin-${id}`)?.value;
-    const motivacion = prompt('Escribe la motivación de la decisión sobre el recurso:');
-    if (motivacion === null) return;
-    if (!motivacion.trim()) { alert('La motivación es obligatoria para decidir el recurso.'); return; }
 
     let id_vinc_nuevo_evaluador = null;
     if (esApelacion && decision === 'APROBADO') {
@@ -371,7 +366,10 @@ export function decidirRecursoAdmin(id, esApelacion) {
         }
     }
 
-    enviarDecisionRecurso(id, decision, motivacion, id_vinc_nuevo_evaluador);
+    abrirModalDecisionRecurso({
+        decision,
+        onConfirmar: datos => enviarDecisionRecurso(id, decision, datos, id_vinc_nuevo_evaluador),
+    });
 }
 
 export function toggleNuevoEvaluador(id) {
@@ -416,15 +414,7 @@ export function cargarRecursosAdmin() {
                         ${badgeDecisionRecurso(r.decision)}
                     </div>
                     <p class="text-xs text-slate-600 whitespace-pre-wrap">${escapeHtml(r.motivacion || '')}</p>
-                    ${Array.isArray(r.evidencias) && r.evidencias.length ? `
-                    <div class="pt-2 border-t border-slate-100 space-y-1.5">
-                        <p class="text-[10px] font-bold uppercase text-slate-500 flex items-center gap-1"><span class="material-symbols-outlined text-xs">link</span> Evidencias</p>
-                        ${r.evidencias.map(ev => `
-                            <a href="${escapeHtml(ev.url)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 text-xs text-[#00594E] hover:underline min-w-0">
-                                <span class="material-symbols-outlined text-sm shrink-0">open_in_new</span>
-                                <span class="truncate">${escapeHtml(ev.descripcion || ev.url)}</span>
-                            </a>`).join('')}
-                    </div>` : ''}
+                    ${renderEnlacesRecurso(r)}
                     ${r.decision === 'PENDIENTE' ? `
                     <div class="pt-2 border-t border-slate-100 space-y-2">
                         <div class="grid sm:grid-cols-2 gap-2">
@@ -791,6 +781,65 @@ function opcionesVinculacion(seleccionado, placeholder) {
         <option value="${v.id_vinculacion}" ${String(v.id_vinculacion) === String(seleccionado ?? '') ? 'selected' : ''}>${escapeHtml(`${v.nombres || ''} ${v.apellidos || ''} - ${v.cargo || ''}`)}</option>`).join('');
 }
 
+// Ajuste manual: Talento Humano cambia quién califica al delegado o a una persona a
+// cargo dentro de una delegación vigente, sin cancelarla ni rehacerla.
+export function ajustarEvaluadorDelegacion(id) {
+    const panel = document.getElementById(`ajustar-delegacion-${id}`);
+    const d = delegacionesCache.find(item => Number(item.id_delegacion) === Number(id));
+    if (!panel || !d) return;
+    if (!panel.classList.contains('hidden')) {
+        panel.classList.add('hidden');
+        return;
+    }
+
+    cargarEvaluadoresDelegacion().then(() => {
+        const personas = Array.isArray(d.personas_ajustables) ? d.personas_ajustables : [];
+        panel.innerHTML = `
+            <p class="text-[11px] font-semibold text-slate-700">Cambia de inmediato quién califica a una persona, sin tramos. Queda registrado en la bitácora y se avisa a ambos.</p>
+            <div>
+                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">A quién se le cambia el evaluador</label>
+                <select id="ajuste-persona-${id}" data-buscable="Buscar persona…" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white">
+                    <option value="">Selecciona la persona</option>
+                    ${personas.map(p => `<option value="${p.id_vinculacion}">${escapeHtml(p.nombre)}${p.es_delegado ? ' (delegado)' : ''} · hoy lo califica: ${escapeHtml(p.evaluador_actual || 'sin evaluador')}</option>`).join('')}
+                </select>
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Nuevo evaluador</label>
+                <select id="ajuste-evaluador-${id}" data-buscable="Buscar evaluador…" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white">${opcionesVinculacion(null, 'Selecciona el nuevo evaluador')}</select>
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Motivo</label>
+                <textarea id="ajuste-motivo-${id}" rows="2" maxlength="500" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white outline-none focus:border-[#00594E]" placeholder="Por qué cambia quién califica"></textarea>
+            </div>
+            <button type="button" onclick="enviarAjusteEvaluadorDelegacion(${id})" class="w-full rounded-xl bg-[#00594E] py-2 text-xs font-bold text-white hover:brightness-110 transition">Aplicar cambio</button>`;
+        habilitarBuscadoresSelect(panel);
+        panel.classList.remove('hidden');
+    }).catch(() => alert('No se pudo cargar la lista de funcionarios.'));
+}
+
+export function enviarAjusteEvaluadorDelegacion(id) {
+    const valor = idNodo => document.getElementById(idNodo)?.value?.trim() || '';
+    const idEvaluado = valor(`ajuste-persona-${id}`);
+    const idNuevo = valor(`ajuste-evaluador-${id}`);
+    const motivo = valor(`ajuste-motivo-${id}`);
+    if (!idEvaluado || !idNuevo) return alert('Selecciona la persona y el nuevo evaluador.');
+    if (!motivo) return alert('Escribe el motivo del cambio.');
+    if (!confirm('¿Confirmas el cambio de evaluador? Se aplica de inmediato.')) return;
+
+    fetchJson(`/admin/delegaciones/${id}/ajustar-evaluador`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id_vinc_evaluado: idEvaluado, id_vinc_evaluador_nuevo: idNuevo, motivo }),
+    })
+        .then(async res => {
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo cambiar el evaluador.'));
+            alert(data.message || 'Evaluador cambiado.');
+            cargarDelegacionesAdmin();
+        })
+        .catch(error => alert(error.message));
+}
+
 // El fin de la delegación pasa el trabajo al sucesor: por defecto el titular, y
 // obligatorio elegirlo cuando el titular ya no está activo.
 export function finalizarDelegacion(id) {
@@ -816,13 +865,19 @@ export function finalizarDelegacion(id) {
                         <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Fecha de regreso</label>
                         <input type="date" id="regreso-delegacion-${id}" value="${fechaRegreso}" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white" />
                     </div>
+                    ${Number(d.delegado_cambia_evaluador) ? `
                     <div>
                         <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Evaluador del delegado al regresar</label>
                         <select id="evaluador-regreso-delegacion-${id}" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white">${opcionesVinculacion(d.id_vinc_evaluador_original_delegado, 'Su evaluador original')}</select>
-                    </div>
+                    </div>` : ''}
                 </div>
-                <p class="text-[10px] text-slate-500">El delegado debe calificar el tramo de cada persona a cargo y el superior el del delegado; con todas las notas confirmas el fin.</p>
+                <p class="text-[10px] text-slate-500">${Number(d.delegado_cambia_evaluador) ? 'El delegado debe calificar el tramo de cada persona a cargo y el superior el del delegado' : 'El delegado debe calificar el tramo de cada persona a cargo'}; con todas las notas confirmas el fin.</p>
             ` : ''}
+            ${(!Number(d.es_larga) && Number(d.sin_titular) && Number(d.delegado_cambia_evaluador)) ? `
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Evaluador del delegado al terminar</label>
+                    <select id="evaluador-regreso-delegacion-${id}" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white">${opcionesVinculacion(null, 'Se queda con su evaluador actual')}</select>
+                </div>` : ''}
             <button type="button" onclick="enviarFinDelegacion(${id})" class="w-full rounded-xl bg-red-600 py-2 text-xs font-bold text-white hover:bg-red-700 transition">${Number(d.es_larga) ? 'Programar fin' : 'Finalizar delegación'}</button>`;
         panel.classList.remove('hidden');
     }).catch(() => alert('No se pudo cargar la lista de funcionarios.'));
@@ -1159,6 +1214,10 @@ export function cargarDelegacionesAdmin() {
                                 </button>
                             </div>
                             <div id="finalizar-delegacion-${d.id_delegacion}" class="hidden rounded-xl border border-red-100 bg-red-50/40 p-3 space-y-2"></div>
+                            <button type="button" onclick="ajustarEvaluadorDelegacion(${d.id_delegacion})" class="w-full bg-white hover:bg-slate-50 text-[#00594E] border border-[#00594E]/30 rounded-xl py-2 text-xs font-bold transition flex items-center justify-center gap-1">
+                                <span class="material-symbols-outlined text-sm">swap_horiz</span> Cambiar quién califica
+                            </button>
+                            <div id="ajustar-delegacion-${d.id_delegacion}" class="hidden rounded-xl border border-[#00594E]/20 bg-[#EAF2EF]/40 p-3 space-y-2"></div>
                         ` : ''}
                         ${d.estado === 'PROGRAMADA' || d.estado === 'POR_FINALIZAR' ? `
                             <div class="grid grid-cols-2 gap-2 pt-1">
@@ -1607,7 +1666,6 @@ window.addEventListener('DOMContentLoaded', () => {
             nombres: firstCard.querySelector('h3')?.innerText?.split(' ').slice(0, -1).join(' ') || '',
             apellidos: firstCard.querySelector('h3')?.innerText?.split(' ').slice(-1).join(' ') || '',
             nombre_cargo: firstCard.dataset.cargo || '',
-            correo_institucional: firstCard.dataset.correo || '',
             documento_identidad: firstCard.dataset.cedula || '',
             tipo_documento: '',
             nombre_area: firstCard.dataset.area || '',
@@ -1849,3 +1907,20 @@ export function actualizarFormularioPeriodoParcial() {
 }
 
 window.actualizarFormularioPeriodoParcial = actualizarFormularioPeriodoParcial;
+
+// Delegación: el superior del delegado solo se pide si el delegado cambia de evaluador.
+export function alternarCambiaEvaluadorDelegacion(form) {
+    const cambia = form?.querySelector('input[name="delegado_cambia_evaluador"]:checked')?.value === '1';
+    document.getElementById('bloque-delegacion-superior')?.classList.toggle('hidden', !cambia);
+}
+window.alternarCambiaEvaluadorDelegacion = alternarCambiaEvaluadorDelegacion;
+window.ajustarEvaluadorDelegacion = ajustarEvaluadorDelegacion;
+window.enviarAjusteEvaluadorDelegacion = enviarAjusteEvaluadorDelegacion;
+
+// Buscador en los selectores largos de las pantallas de administración.
+const iniciarBuscadoresAdmin = () => habilitarBuscadoresSelect(document);
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', iniciarBuscadoresAdmin);
+} else {
+    iniciarBuscadoresAdmin();
+}

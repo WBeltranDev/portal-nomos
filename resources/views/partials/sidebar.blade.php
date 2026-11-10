@@ -87,7 +87,7 @@
         <div class="rounded-xl bg-[#EAF2EF] p-4">
             <p class="text-xs font-bold text-[#00594E] uppercase tracking-[0.18em]">Sesión activa</p>
             <p class="text-sm font-semibold text-slate-800 mt-1">{{ $usuario['nombres'] ?? '' }} {{ $usuario['apellidos'] ?? '' }}</p>
-            <p class="text-xs text-slate-500">{{ $usuario['correo'] ?? '' }}</p>
+            <p class="text-xs text-slate-500">{{ isset($usuario['identificacion']) && ctype_digit((string) $usuario['identificacion']) ? 'C.C. ' . $usuario['identificacion'] : ($usuario['identificacion'] ?? '') }}</p>
         </div>
     </div>
 </aside>

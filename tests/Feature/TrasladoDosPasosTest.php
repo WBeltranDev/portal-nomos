@@ -230,6 +230,156 @@ class TrasladoDosPasosTest extends TestCase
         $this->assertSame('PRUEBA DESTINO', DB::table('vinculacion')->where('id_vinculacion', $this->idVincEvaluado)->value('area'));
     }
 
+    /** Concertación del tramo de origen: dos compromisos con meta y una evidencia. */
+    private function concertarOrigen(): array
+    {
+        $ids = [];
+        foreach ([2 => 50, 3 => 30] as $orden => $peso) {
+            $ids[] = DB::table('compromiso')->insertGetId([
+                'id_evaluacion' => $this->idEvaluacionOrigen,
+                'numero_orden' => $orden,
+                'descripcion' => "Compromiso del tramo {$orden}",
+                'porcentaje_peso' => $peso,
+            ]);
+            DB::table('compromiso_meta')->insert(['id_compromiso' => end($ids), 'meta' => "Meta {$orden}"]);
+        }
+        DB::table('evidencia')->insert([
+            'id_evaluacion' => $this->idEvaluacionOrigen,
+            'id_compromiso' => $ids[0],
+            'componente' => 'B',
+            'descripcion' => 'Evidencia del tramo de origen',
+            'tipo_evidencia' => 'LINK',
+            'url_o_ubicacion' => 'https://unitropico.edu.co/o.pdf',
+            'fecha_inclusion' => now(),
+            'id_vinc_registra' => $this->idVincEvaluado,
+            'estado_aprobacion' => 'PENDIENTE',
+        ]);
+
+        return $ids;
+    }
+
+    public function test_el_cambio_de_evaluador_traslada_la_concertacion_como_borrador(): void
+    {
+        $originales = $this->concertarOrigen();
+        $traslado = $this->programar();
+        $this->calificar($this->idEvaluacionOrigen, 4.0);
+        $this->postJson("/admin/traslados/{$traslado->id_traslado}/confirmar")->assertOk();
+
+        $destino = $this->evaluacionDestino();
+        $copias = DB::table('compromiso')->where('id_evaluacion', $destino->id_evaluacion)->orderBy('numero_orden')->get();
+        $origen = DB::table('compromiso')->where('id_evaluacion', $this->idEvaluacionOrigen)->orderBy('numero_orden')->get();
+
+        $this->assertCount(3, $copias);
+        $this->assertSame($origen->pluck('descripcion')->all(), $copias->pluck('descripcion')->all());
+        $this->assertSame($origen->pluck('porcentaje_peso')->map(fn ($v) => (int) $v)->all(), $copias->pluck('porcentaje_peso')->map(fn ($v) => (int) $v)->all());
+        $this->assertSame($origen->pluck('id_compromiso')->map(fn ($v) => (int) $v)->all(), $copias->pluck('id_compromiso_origen')->map(fn ($v) => (int) $v)->all());
+        $this->assertContains($originales[0], $copias->pluck('id_compromiso_origen')->map(fn ($v) => (int) $v)->all());
+        $this->assertTrue($copias->every(fn ($c) => (int) $c->es_copia === 1));
+        $this->assertSame(['Meta 2'], DB::table('compromiso_meta')->where('id_compromiso', $copias[1]->id_compromiso)->pluck('meta')->all());
+
+        // Se firma de nuevo y las evidencias no se copian.
+        $this->assertSame(1, (int) $destino->fase_actual);
+        $this->assertSame(0, (int) $destino->concertacion_firmada);
+        $this->assertSame(0, DB::table('firma')->where('id_evaluacion', $destino->id_evaluacion)->count());
+        $this->assertSame(0, DB::table('evidencia')->where('id_evaluacion', $destino->id_evaluacion)->count());
+    }
+
+    public function test_sin_compromisos_en_el_origen_el_tramo_nuevo_nace_vacio(): void
+    {
+        $traslado = $this->programar();
+        DB::table('evaluacion')->where('id_evaluacion', $this->idEvaluacionOrigen)->update(['estado' => 'CALIFICADA', 'fase_actual' => 5]);
+        $this->postJson("/admin/traslados/{$traslado->id_traslado}/confirmar")->assertOk();
+
+        $this->assertSame(0, DB::table('compromiso')->where('id_evaluacion', $this->evaluacionDestino()->id_evaluacion)->count());
+    }
+
+    /** Califica el origen y programa el traslado; devuelve el traslado listo para confirmar. */
+    private function trasladoConOrigenCalificado(): object
+    {
+        $traslado = $this->programar();
+        $this->calificar($this->idEvaluacionOrigen, 4.0);
+
+        return $traslado;
+    }
+
+    private function notificarOrigen(Carbon $fecha): void
+    {
+        DB::table('firma')->insert([
+            'id_evaluacion' => $this->idEvaluacionOrigen,
+            'tipo_firma' => 'NOTIFICACION_EVALUADO',
+            'id_vinc_firmante' => $this->idVincEvaluado,
+            'fecha_firma' => $fecha,
+        ]);
+    }
+
+    public function test_no_se_confirma_dentro_del_plazo_de_recursos_del_tramo_de_origen(): void
+    {
+        $traslado = $this->trasladoConOrigenCalificado();
+        $this->notificarOrigen(Carbon::now());
+
+        $limite = fechaLimiteRecursos($this->idEvaluacionOrigen);
+        $this->assertTrue($limite->isWeekday());
+        $this->assertSame(5, Carbon::now()->startOfDay()->diffInWeekdays($limite));
+
+        $this->postJson("/admin/traslados/{$traslado->id_traslado}/confirmar")
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'El tramo de origen aún está dentro del plazo para recursos del evaluado (hasta el ' . $limite->format('d/m/Y') . '). Confirma el traslado cuando venza o se resuelvan.');
+        $this->assertSame('PROGRAMADO', DB::table('traslado')->where('id_traslado', $traslado->id_traslado)->value('estado'));
+        $this->assertNull($this->evaluacionDestino());
+    }
+
+    public function test_vencido_el_plazo_se_confirma_el_traslado(): void
+    {
+        $traslado = $this->trasladoConOrigenCalificado();
+        $this->notificarOrigen(Carbon::now()->subDays(10));
+
+        $this->postJson("/admin/traslados/{$traslado->id_traslado}/confirmar")->assertOk();
+        $this->assertNotNull($this->evaluacionDestino());
+    }
+
+    public function test_un_recurso_pendiente_bloquea_el_traslado_aunque_haya_vencido_el_plazo(): void
+    {
+        $traslado = $this->trasladoConOrigenCalificado();
+        $this->notificarOrigen(Carbon::now()->subDays(10));
+        $idRecurso = DB::table('recurso')->insertGetId([
+            'id_evaluacion' => $this->idEvaluacionOrigen,
+            'tipo_recurso' => 'REPOSICION',
+            'id_vinc_receptor' => $this->idVincEvaluadorOrigen,
+            'fecha_recurso' => Carbon::today()->toDateString(),
+            'decision' => 'PENDIENTE',
+            'motivacion' => 'Prueba',
+        ]);
+
+        $this->postJson("/admin/traslados/{$traslado->id_traslado}/confirmar")
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'El tramo de origen tiene un recurso pendiente de decisión. Debe resolverse antes de confirmar el traslado.');
+
+        DB::table('recurso')->where('id_recurso', $idRecurso)->update(['decision' => 'NEGADO']);
+        $this->postJson("/admin/traslados/{$traslado->id_traslado}/confirmar")->assertOk();
+    }
+
+    public function test_sin_firma_el_plazo_cuenta_desde_la_calificacion(): void
+    {
+        $traslado = $this->trasladoConOrigenCalificado();
+        DB::table('evaluacion_evento')->insert([
+            'id_evaluacion' => $this->idEvaluacionOrigen,
+            'tipo_evento' => 'EVALUACION_CALIFICADA',
+            'created_at' => Carbon::now()->subDays(10),
+        ]);
+
+        $this->postJson("/admin/traslados/{$traslado->id_traslado}/confirmar")->assertOk();
+
+        $this->assertSame(
+            Carbon::parse('2026-11-09')->addWeekdays(5)->toDateString(),
+            (function () {
+                $id = $this->idEvaluacionOrigen;
+                DB::table('evaluacion_evento')->where('id_evaluacion', $id)->update(['created_at' => '2026-11-09 08:00:00']);
+                return fechaLimiteRecursos($id)->toDateString();
+            })(),
+            'Cinco días hábiles desde un lunes caen el lunes siguiente.'
+        );
+    }
+
     public function test_si_la_evaluacion_de_origen_ya_tiene_nota_se_confirma_de_inmediato(): void
     {
         $this->calificar($this->idEvaluacionOrigen, 4.0);
@@ -445,6 +595,59 @@ class TrasladoDosPasosTest extends TestCase
             ->assertSee('data-url-lista="/mis-notificaciones"', false);
     }
 
+    public function test_cada_evaluacion_del_semestre_partido_trae_su_tramo_con_fechas_y_dias(): void
+    {
+        $traslado = $this->programar();
+        $this->calificar($this->idEvaluacionOrigen, 5.0);
+        $this->postJson("/admin/traslados/{$traslado->id_traslado}/confirmar")->assertOk();
+        $destino = $this->evaluacionDestino();
+        $hoy = Carbon::today();
+
+        $tramos = tramosDeEvaluaciones([$this->idEvaluacionOrigen, (int) $destino->id_evaluacion]);
+
+        $this->assertSame([
+            'numero' => 1, 'total' => 2,
+            'desde' => $hoy->copy()->subDays(self::DIAS_ORIGEN)->toDateString(),
+            'hasta' => $hoy->copy()->subDay()->toDateString(),
+            'dias' => self::DIAS_ORIGEN,
+        ], $tramos[$this->idEvaluacionOrigen]);
+        $this->assertSame([
+            'numero' => 2, 'total' => 2,
+            'desde' => $hoy->toDateString(),
+            'hasta' => $hoy->copy()->addDays(self::DIAS_DESTINO - 1)->toDateString(),
+            'dias' => self::DIAS_DESTINO,
+        ], $tramos[(int) $destino->id_evaluacion]);
+    }
+
+    public function test_un_semestre_sin_traslado_no_tiene_tramos(): void
+    {
+        $this->assertSame([], tramosDeEvaluaciones([$this->idEvaluacionOrigen]));
+    }
+
+    public function test_el_panel_del_evaluado_nombra_cada_tarjeta_parcial_n_y_muestra_las_fechas_del_tramo(): void
+    {
+        $traslado = $this->programar();
+        $this->calificar($this->idEvaluacionOrigen, 5.0);
+        $this->postJson("/admin/traslados/{$traslado->id_traslado}/confirmar")->assertOk();
+
+        $evaluado = DB::table('vinculacion as v')
+            ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
+            ->where('v.id_vinculacion', $this->idVincEvaluado)
+            ->first(['f.id_usuario', 'f.id_funcionario']);
+        session(['usuario_autenticado' => [
+            'id_usuario' => $evaluado->id_usuario, 'id_funcionario' => $evaluado->id_funcionario,
+            'nombres' => 'Tmp', 'apellidos' => 'Evaluado', 'rol_activo' => 'evaluado', 'roles' => ['evaluado'],
+        ]]);
+        $hoy = Carbon::today();
+
+        $this->get('/dashboard')
+            ->assertOk()
+            ->assertSee('Parcial 1 de 2')
+            ->assertSee('Parcial 2 de 2')
+            ->assertSee('Tramo:', false)
+            ->assertSee($hoy->copy()->subDays(self::DIAS_ORIGEN)->format('d/m/Y') . ' al ' . $hoy->copy()->subDay()->format('d/m/Y'), false);
+    }
+
     private function eventos(int $idEvaluacion): array
     {
         return DB::table('evaluacion_evento')->where('id_evaluacion', $idEvaluacion)->orderBy('id_evento')->pluck('tipo_evento')->all();
@@ -459,9 +662,9 @@ class TrasladoDosPasosTest extends TestCase
         $this->assertSame(['CAMBIO_EVALUADOR_PROGRAMADO', 'TRAMO_CERRADO'], $this->eventos($this->idEvaluacionOrigen));
 
         $destino = $this->evaluacionDestino();
-        $this->assertSame(['EVALUACION_ABIERTA'], $this->eventos($destino->id_evaluacion));
+        $this->assertSame(['COMPROMISOS_COPIADOS', 'EVALUACION_ABIERTA'], $this->eventos($destino->id_evaluacion));
 
-        $apertura = DB::table('evaluacion_evento')->where('id_evaluacion', $destino->id_evaluacion)->first();
+        $apertura = DB::table('evaluacion_evento')->where('id_evaluacion', $destino->id_evaluacion)->where('tipo_evento', 'EVALUACION_ABIERTA')->first();
         $this->assertSame($this->idUsuario, (int) $apertura->id_usuario_actor);
         $this->assertSame('admin', $apertura->rol_actor);
         $this->assertSame('EN_PROCESO', $apertura->estado_nuevo);
@@ -488,7 +691,7 @@ class TrasladoDosPasosTest extends TestCase
 
         $this->getJson("/evaluaciones/{$idDestino}/bitacora")
             ->assertOk()
-            ->assertJsonPath('eventos.0.tipo_evento', 'EVALUACION_ABIERTA')
+            ->assertJsonPath('eventos.0.tipo_evento', 'COMPROMISOS_COPIADOS')
             ->assertJsonPath("vinculaciones.{$this->idVincEvaluadorNuevo}", nombreFuncionarioVinc($this->idVincEvaluadorNuevo));
 
         $evaluado = DB::table('vinculacion as v')->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')

@@ -1,7 +1,7 @@
 <div id="profile-menu" class="profile-menu p-2">
     <div class="px-4 py-3 border-b border-slate-100">
         <p class="text-sm font-bold text-slate-800">{{ $usuario['nombres'] ?? '' }} {{ $usuario['apellidos'] ?? '' }}</p>
-        <p class="text-xs text-slate-500">{{ $usuario['correo'] ?? '' }}</p>
+        <p class="text-xs text-slate-500">{{ isset($usuario['identificacion']) && ctype_digit((string) $usuario['identificacion']) ? 'C.C. ' . $usuario['identificacion'] : ($usuario['identificacion'] ?? '') }}</p>
         <p class="text-[10px] uppercase tracking-[0.18em] text-[#00594E] font-bold mt-1">{{ $rolActivo }}</p>
     </div>
     @if(count($usuario['roles'] ?? []) > 1)
