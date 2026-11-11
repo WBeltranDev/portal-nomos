@@ -99,3 +99,58 @@ Artisan::command('puestos:observar', function (\App\Services\ModeloPuestos $mode
 })->purpose('Compara el responsable por persona contra el responsable por plaza (modo Observación)');
 
 \Illuminate\Support\Facades\Schedule::command('puestos:observar')->dailyAt('02:00')->withoutOverlapping();
+
+// Limpieza de los datos de prueba antes de operar (ver App\Services\LimpiezaPruebas).
+Artisan::command('serag:limpiar-pruebas
+    {--ejecutar : Ejecuta la limpieza. Sin esta opción solo muestra qué se borraría}
+    {--base= : Nombre de la base de datos, como confirmación (obligatorio con --ejecutar)}
+    {--sin-evaluadores : No restablece los evaluadores al jefe inmediato de la planta}
+    {--sin-reiniciar-ids : No reinicia los contadores de id de las tablas vaciadas}', function (\App\Services\LimpiezaPruebas $limpieza) {
+    $base = \Illuminate\Support\Facades\DB::connection()->getDatabaseName();
+    $plan = $limpieza->plan();
+
+    $this->info("Base de datos: {$base}");
+    $this->newLine();
+    $this->line('SE VACÍAN (movimiento y derivados):');
+    foreach ($plan['vaciar'] as $tabla => $n) {
+        $this->line(sprintf('  %-38s %6d registro(s)', $tabla, $n));
+    }
+    $this->newLine();
+    $this->line('SE CONSERVAN:');
+    foreach ($plan['conservar'] as $tabla => $n) {
+        $this->line(sprintf('  %-38s %6d registro(s)', $tabla, $n));
+    }
+    $this->line(sprintf('  evaluador_asignacion se restablece: %d hoy → %d (cada persona activa con su jefe inmediato)', $plan['asignaciones_hoy'], $plan['asignaciones_base']));
+    if ($plan['sin_clasificar']) {
+        $this->newLine();
+        $this->warn('Tablas sin clasificar (NO se tocan): ' . implode(', ', $plan['sin_clasificar']));
+    }
+    if ($plan['inactivas_no_vacante']) {
+        $this->newLine();
+        $this->warn('Funcionarios inactivos (no vacantes) que conviene revisar o reactivar:');
+        foreach ($plan['inactivas_no_vacante'] as $p) {
+            $this->line("  {$p['numero_doc']}  {$p['nombres']} {$p['apellidos']} · {$p['cargo']} · {$p['area']}");
+        }
+    }
+
+    if (! $this->option('ejecutar')) {
+        $this->newLine();
+        $this->comment('Simulación: no se cambió nada. Para ejecutar: php artisan serag:limpiar-pruebas --ejecutar --base=' . $base);
+        return 0;
+    }
+
+    if ($this->option('base') !== $base) {
+        $this->error("Para ejecutar hay que confirmar la base: agrega --base={$base}");
+        return 1;
+    }
+
+    $resultado = $limpieza->ejecutar(! $this->option('sin-evaluadores'), ! $this->option('sin-reiniciar-ids'));
+    $this->newLine();
+    $this->info('Limpieza terminada: ' . array_sum($resultado['vaciadas']) . ' registro(s) borrados en ' . count($resultado['vaciadas']) . ' tabla(s).');
+    if ($resultado['asignaciones'] !== null) {
+        $this->info("Evaluadores restablecidos: {$resultado['asignaciones']} asignaciones (jefe inmediato).");
+    }
+    \Illuminate\Support\Facades\Log::warning('serag:limpiar-pruebas ejecutado', ['base' => $base, 'borrados' => $resultado['vaciadas'], 'asignaciones' => $resultado['asignaciones']]);
+
+    return 0;
+})->purpose('Vacía los datos de prueba (periodos, evaluaciones, delegaciones, traslados, recursos…) y conserva los datos maestros');
