@@ -66,7 +66,7 @@
                         <h2 class="text-xl font-black text-slate-900 mb-4">Mis evaluaciones</h2>
                         <div class="space-y-3">
                             @forelse($evaluacionesEvaluado as $ev)
-                                <div class="evaluacion-card p-4 rounded-2xl border border-slate-200 bg-white cursor-pointer hover:border-[#00594E] transition" onclick="abrirConcertacionEvaluado(this, @js($ev))">
+                                <div class="evaluacion-card p-4 rounded-2xl border border-slate-200 bg-white cursor-pointer hover:border-[#00594E] transition" data-id-evaluacion="{{ $ev->id_evaluacion }}" onclick="abrirConcertacionEvaluado(this, @js($ev))">
                                     <div class="flex items-center gap-2">
                                         <h4 class="font-bold text-slate-900 text-sm leading-snug">{{ $ev->tramo ? 'Parcial ' . $ev->tramo['numero'] . ' de ' . $ev->tramo['total'] : $ev->tipo_nombre }}</h4>
                                         @if($ev->es_traslado)

@@ -1,7 +1,7 @@
 /**
  * Admin Dashboard JS Module
  */
-import { escapeHtml, fetchJson, parseErrorMessage, navegarMenu, renderEnlacesRecurso, abrirModalDecisionRecurso, habilitarBuscadorSelect, habilitarBuscadoresSelect } from './common.js';
+import { escapeHtml, fetchJson, parseErrorMessage, navegarMenu, renderEnlacesRecurso, abrirModalDecisionRecurso, habilitarBuscadorSelect, habilitarBuscadoresSelect, avisar, confirmarAccion } from './common.js';
 
 export function filtrarEmpleados() {
     const texto = (document.getElementById('buscador-empleados')?.value || '').trim().toLowerCase();
@@ -134,15 +134,15 @@ export function filtrarJefaturas(resetPagina = true) {
     }
 }
 
-export function guardarJefeSuperior(id) {
+export async function guardarJefeSuperior(id) {
     const select = document.getElementById(`jefe-superior-${id}`);
     const valor = select?.value?.trim();
-    if (valor === String(id)) { alert('Un cargo no puede ser su propio jefe superior.'); return; }
+    if (valor === String(id)) { avisar('Un cargo no puede ser su propio jefe superior.'); return; }
 
     const mensaje = valor
         ? '¿Asignar este jefe superior a la vinculación?'
         : '¿Quitar el jefe superior de esta vinculación?';
-    if (!confirm(mensaje)) return;
+    if (!await confirmarAccion(mensaje)) return;
 
     fetchJson(`/admin/vinculaciones/${id}/jefe`, {
         method: 'POST',
@@ -154,10 +154,10 @@ export function guardarJefeSuperior(id) {
             if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo asignar el jefe superior.'));
             const fila = select?.closest('.jefatura-fila');
             if (fila) fila.dataset.tieneJefe = valor ? '1' : '0';
-            alert(data.message || 'Jefe superior asignado.');
+            avisar(data.message || 'Jefe superior asignado.');
             filtrarJefaturas();
         })
-        .catch(error => alert(error.message));
+        .catch(error => avisar(error.message, 'error'));
 }
 
 export function seleccionarEmpleado(card, empleado) {
@@ -348,10 +348,10 @@ export function enviarDecisionRecurso(id, decision, datos, id_vinc_nuevo_evaluad
         .then(async res => {
             const payload = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(parseErrorMessage(payload, 'No se pudo registrar la decisión.'));
-            alert(payload.message || 'Decisión registrada.');
+            avisar(payload.message || 'Decisión registrada.');
             cargarRecursosAdmin();
         })
-        .catch(error => alert(error.message));
+        .catch(error => avisar(error.message, 'error'));
 }
 
 export function decidirRecursoAdmin(id, esApelacion) {
@@ -361,7 +361,7 @@ export function decidirRecursoAdmin(id, esApelacion) {
     if (esApelacion && decision === 'APROBADO') {
         id_vinc_nuevo_evaluador = document.getElementById(`nuevo-evaluador-apelacion-${id}`)?.value;
         if (!id_vinc_nuevo_evaluador) {
-            alert('Para aprobar una apelación, debes asignar un evaluador de Talento Humano u otro designado que hará la recalificación.');
+            avisar('Para aprobar una apelación, debes asignar un evaluador de Talento Humano u otro designado que hará la recalificación.');
             return;
         }
     }
@@ -472,32 +472,40 @@ function badgeEstadoTraslado(estado) {
     return '<span class="whitespace-nowrap text-[10px] font-bold uppercase rounded-full px-2.5 py-1 bg-emerald-50 text-emerald-700">Confirmado</span>';
 }
 
-// S14: el traslado se confirma cuando el tramo de origen ya tiene nota.
+// S14: el traslado se confirma cuando el tramo de origen ya tiene nota y vence el plazo de recursos.
 function accionesTrasladoProgramado(t) {
     const conNota = ['CALIFICADA', 'APELACION', 'CERRADA'].includes(t.origen_estado);
+    const bloqueado = !!t.bloqueo_recursos;
     const estadoOrigen = conNota
-        ? `Tramo de origen calificado${t.origen_calificacion ? ` (${escapeHtml(String(t.origen_calificacion))})` : ''}. Ya puedes confirmar.`
+        ? `Tramo de origen calificado${t.origen_calificacion ? ` (${escapeHtml(String(t.origen_calificacion))})` : ''}. ${bloqueado ? '' : 'Ya puedes confirmar.'}`
         : 'Esperando que el evaluador de origen concierte y califique el tramo.';
+    const insignia = bloqueado ? `
+            <p class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase text-amber-800" title="${escapeHtml(t.bloqueo_recursos)}">
+                <span class="material-symbols-outlined text-[13px]">hourglass_top</span>
+                ${t.plazo_recursos_hasta ? `En plazo de recursos hasta ${escapeHtml(t.plazo_recursos_hasta)}` : 'Con recurso pendiente'}
+            </p>
+            <p class="text-[10px] text-amber-800">${escapeHtml(t.bloqueo_recursos)}</p>` : '';
     return `
-        <div class="rounded-xl border ${conNota ? 'border-emerald-100 bg-emerald-50/60 text-emerald-800' : 'border-amber-100 bg-amber-50/60 text-amber-800'} p-3 space-y-2">
+        <div class="rounded-xl border ${conNota && !bloqueado ? 'border-emerald-100 bg-emerald-50/60 text-emerald-800' : 'border-amber-100 bg-amber-50/60 text-amber-800'} p-3 space-y-2">
             <p class="text-[11px] font-semibold">${estadoOrigen}</p>
+            ${insignia}
             <div class="flex gap-2">
-                <button type="button" onclick="confirmarTrasladoAdmin(${t.id_traslado})" class="flex-1 rounded-xl bg-[#00594E] py-2 text-xs font-bold text-white hover:brightness-110 transition">Confirmar traslado</button>
+                <button type="button" ${bloqueado ? 'disabled aria-disabled="true"' : `onclick="confirmarTrasladoAdmin(${t.id_traslado})"`} class="flex-1 rounded-xl bg-[#00594E] py-2 text-xs font-bold text-white transition ${bloqueado ? 'opacity-50 cursor-not-allowed' : 'hover:brightness-110'}">Confirmar traslado</button>
                 ${conNota ? '' : `<button type="button" onclick="cancelarTrasladoAdmin(${t.id_traslado})" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 transition">Cancelar</button>`}
             </div>
         </div>`;
 }
 
-function resolverTrasladoAdmin(id, accion, confirmacion) {
-    if (!confirm(confirmacion)) return;
+async function resolverTrasladoAdmin(id, accion, confirmacion) {
+    if (!await confirmarAccion(confirmacion)) return;
     fetchJson(`/admin/traslados/${id}/${accion}`, { method: 'POST' })
         .then(async res => {
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo actualizar el traslado.'));
-            alert(data.message || 'Traslado actualizado.');
+            avisar(data.message || 'Traslado actualizado.');
             cargarTrasladosAdmin();
         })
-        .catch(err => alert(err.message));
+        .catch(err => avisar(err.message, 'error'));
 }
 
 export function confirmarTrasladoAdmin(id) {
@@ -537,7 +545,9 @@ export function cargarTrasladosAdmin() {
                         </div>
                     </div>
                     ${t.estado === 'PROGRAMADO' && t.id_delegacion ? `<p class="rounded-xl border border-amber-100 bg-amber-50/60 p-2.5 text-[11px] font-semibold text-amber-800">${t.tipo === 'PAUSA' ? 'Cierre del tramo del titular' : t.tipo === 'REANUDACION' ? 'Regreso del titular' : 'Cambio de evaluador'} de la delegación #${t.id_delegacion}: se confirma desde Delegaciones.</p>` : ''}
-                    ${t.estado === 'PROGRAMADO' && !t.id_delegacion ? accionesTrasladoProgramado(t) : ''}
+                    ${t.estado === 'PROGRAMADO' && t.id_lote ? `<p class="rounded-xl border border-amber-100 bg-amber-50/60 p-2.5 text-[11px] font-semibold text-amber-800">Hace parte del lote #${t.id_lote} de traslados en bloque: se confirma desde Traslados en bloque.</p>` : ''}
+                    ${t.id_lote && t.estado !== 'PROGRAMADO' ? `<p class="text-[10px] font-bold uppercase text-[#00594E]">Traslado en bloque · lote #${t.id_lote}</p>` : ''}
+                    ${t.estado === 'PROGRAMADO' && !t.id_delegacion && !t.id_lote ? accionesTrasladoProgramado(t) : ''}
                     <div class="grid grid-cols-2 gap-2 rounded-xl border border-slate-100 bg-slate-50/50 p-3">
                         <div>
                             <p class="text-[9px] font-bold uppercase text-slate-400">Origen</p>
@@ -560,6 +570,165 @@ export function cargarTrasladosAdmin() {
         });
 }
 
+// --- Traslados en bloque (rotación) ---
+let revisionLote = null;
+
+export function descargarFormatoLote() {
+    const cargo = document.getElementById('lote-cargo')?.value || '';
+    window.location.href = `/admin/traslados/lote/plantilla${cargo ? `?cargo=${encodeURIComponent(cargo)}` : ''}`;
+}
+
+export function revisarLote() {
+    const archivo = document.getElementById('lote-archivo')?.files?.[0];
+    if (!archivo) return avisar('Selecciona el archivo Excel del formato diligenciado.', 'error');
+
+    const datos = new FormData();
+    datos.append('archivo', archivo);
+    fetchJson('/admin/traslados/lote/analizar', { method: 'POST', body: datos })
+        .then(async res => {
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo revisar el archivo.'));
+            revisionLote = data;
+            pintarRevisionLote(data);
+        })
+        .catch(error => avisar(error.message, 'error'));
+}
+
+function pintarRevisionLote(data) {
+    const caja = document.getElementById('lote-revision');
+    if (!caja) return;
+    const r = data.resumen;
+    const filas = data.filas.map(f => `
+        <tr class="border-t border-slate-100 ${f.errores.length ? 'bg-red-50/60' : ''}">
+            <td class="px-3 py-2 text-slate-400">${f.fila}</td>
+            <td class="px-3 py-2"><b class="text-slate-800">${escapeHtml(f.nombre || f.cedula || '—')}</b><br><span class="text-slate-400">${escapeHtml(f.dependencia_actual || '')}${f.plaza_actual ? ' · ' + escapeHtml(f.plaza_actual) : ''}</span></td>
+            <td class="px-3 py-2">${escapeHtml(f.plaza_destino || '')}<br><span class="text-slate-400">${escapeHtml(f.dependencia_destino || '')}</span></td>
+            <td class="px-3 py-2">${escapeHtml(f.evaluador || '—')}${f.origen_evaluador ? `<br><span class="text-slate-400">${escapeHtml(f.origen_evaluador)}</span>` : ''}</td>
+            <td class="px-3 py-2">${f.errores.length ? f.errores.map(e => `<span class="block text-red-700">${escapeHtml(e)}</span>`).join('') : '<span class="font-bold text-emerald-700">Lista</span>'}</td>
+        </tr>`).join('');
+
+    caja.innerHTML = `
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <p class="text-sm font-black text-slate-800">Revisión de «${escapeHtml(data.archivo || 'archivo')}»: ${r.total} fila(s), <span class="text-emerald-700">${r.listas} lista(s)</span>${r.con_error ? `, <span class="text-red-700">${r.con_error} con error</span>` : ''}</p>
+            <button type="button" onclick="programarLote()" ${r.con_error ? 'disabled aria-disabled="true"' : ''} class="rounded-xl bg-[#00594E] px-4 py-2 text-xs font-bold text-white transition ${r.con_error ? 'opacity-50 cursor-not-allowed' : 'hover:brightness-110'}">Programar lote</button>
+        </div>
+        ${r.con_error ? '<p class="text-xs text-red-700">Corrige las filas con error en el Excel y vuelve a subirlo: no se programa nada mientras haya errores.</p>' : ''}
+        <div class="overflow-x-auto rounded-2xl border border-slate-200">
+            <table class="w-full text-left text-xs">
+                <thead class="bg-slate-50 text-[10px] uppercase text-slate-500"><tr><th class="px-3 py-2">Fila</th><th class="px-3 py-2">Persona</th><th class="px-3 py-2">Plaza destino</th><th class="px-3 py-2">Nuevo evaluador</th><th class="px-3 py-2">Estado</th></tr></thead>
+                <tbody>${filas}</tbody>
+            </table>
+        </div>`;
+    caja.classList.remove('hidden');
+}
+
+export async function programarLote() {
+    if (!revisionLote) return;
+    const fecha = document.getElementById('lote-fecha')?.value;
+    if (!fecha) return avisar('Indica la fecha del traslado para todo el lote.', 'error');
+    if (!await confirmarAccion(`¿Programar el lote de ${revisionLote.resumen.total} traslado(s) con fecha ${fecha}?\n\nNo se mueve a nadie hasta que confirmes el lote.`)) return;
+
+    fetchJson('/admin/traslados/lote/programar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            token: revisionLote.token, archivo: revisionLote.archivo, fecha_traslado: fecha,
+            descripcion: document.getElementById('lote-descripcion')?.value || null,
+        }),
+    })
+        .then(async res => {
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                const detalle = data.errores ? '\n' + Object.entries(data.errores).map(([fila, m]) => `Fila ${fila}: ${m}`).join('\n') : '';
+                throw new Error(parseErrorMessage(data, 'No se pudo programar el lote.') + detalle);
+            }
+            avisar(data.message, 'exito');
+            revisionLote = null;
+            document.getElementById('lote-revision')?.classList.add('hidden');
+            const archivo = document.getElementById('lote-archivo');
+            if (archivo) archivo.value = '';
+            cargarLotesAdmin();
+            cargarTrasladosAdmin();
+        })
+        .catch(error => avisar(error.message, 'error'));
+}
+
+export function cargarLotesAdmin() {
+    const lista = document.getElementById('lotes-admin-lista');
+    if (!lista) return;
+    fetchJson('/admin/traslados/lotes')
+        .then(res => res.json())
+        .then(lotes => {
+            if (!Array.isArray(lotes) || !lotes.length) {
+                lista.innerHTML = '<div class="rounded-xl border border-dashed border-slate-200 bg-white p-6 text-xs text-slate-500 text-center">Aún no hay lotes de traslados en bloque.</div>';
+                return;
+            }
+            const color = { PROGRAMADO: 'bg-amber-50 text-amber-700', CONFIRMADO: 'bg-emerald-50 text-emerald-700', CANCELADO: 'bg-slate-100 text-slate-500' };
+            lista.innerHTML = lotes.map(l => {
+                const todosListos = l.pendientes > 0 && l.listos === l.pendientes;
+                return `
+                <div class="rounded-2xl border border-slate-100 bg-white p-4 space-y-3">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div class="min-w-0">
+                            <p class="text-sm font-black text-slate-800">Lote #${l.id_lote}${l.descripcion ? ` · ${escapeHtml(l.descripcion)}` : ''}</p>
+                            <p class="text-[10px] text-slate-400">${l.total} traslado(s) · fecha ${escapeHtml(l.fecha_traslado)}${l.creado_por ? ` · creado por ${escapeHtml(l.creado_por)}` : ''}${l.archivo ? ` · ${escapeHtml(l.archivo)}` : ''}</p>
+                        </div>
+                        <span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 ${color[l.estado] || ''}">${escapeHtml(l.estado)}</span>
+                    </div>
+                    ${l.estado === 'PROGRAMADO' ? `
+                    <p class="text-[11px] font-semibold ${todosListos ? 'text-emerald-700' : 'text-amber-800'}">${todosListos ? 'Todos los tramos están listos: puedes confirmar el lote.' : `${l.listos} de ${l.pendientes} listos. El lote se confirma cuando todos lo estén.`}</p>
+                    <div class="flex gap-2">
+                        <button type="button" onclick="confirmarLote(${l.id_lote})" ${todosListos ? '' : 'disabled aria-disabled="true"'} class="rounded-xl bg-[#00594E] px-4 py-2 text-xs font-bold text-white transition ${todosListos ? 'hover:brightness-110' : 'opacity-50 cursor-not-allowed'}">Confirmar lote</button>
+                        <button type="button" onclick="cancelarLote(${l.id_lote})" class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 transition">Cancelar lote</button>
+                    </div>` : ''}
+                    <div class="overflow-x-auto rounded-xl border border-slate-100">
+                        <table class="w-full text-left text-[11px]">
+                            <thead class="bg-slate-50 text-[9px] uppercase text-slate-500"><tr><th class="px-3 py-2">Persona</th><th class="px-3 py-2">Plaza</th><th class="px-3 py-2">Nuevo evaluador</th><th class="px-3 py-2">Estado</th></tr></thead>
+                            <tbody>${l.traslados.map(t => `
+                                <tr class="border-t border-slate-100">
+                                    <td class="px-3 py-2 font-semibold text-slate-800">${escapeHtml(t.funcionario)}</td>
+                                    <td class="px-3 py-2">${escapeHtml(t.plaza_origen || '—')} → ${escapeHtml(t.plaza_destino || '—')}<br><span class="text-slate-400">${escapeHtml(t.area_origen || '')} → ${escapeHtml(t.area_nuevo || '')}</span></td>
+                                    <td class="px-3 py-2">${escapeHtml(t.evaluador_nuevo || '—')}</td>
+                                    <td class="px-3 py-2">${t.estado === 'PROGRAMADO' ? (t.bloqueo ? `<span class="font-semibold text-amber-800">${escapeHtml(t.bloqueo)}</span>` : '<span class="font-semibold text-emerald-700">Listo</span>') : escapeHtml(t.estado)}</td>
+                                </tr>`).join('')}</tbody>
+                        </table>
+                    </div>
+                </div>`;
+            }).join('');
+        })
+        .catch(() => { lista.innerHTML = '<div class="py-6 text-center text-xs text-red-500">No se pudieron cargar los lotes.</div>'; });
+}
+
+function resolverLote(id, accion, mensaje) {
+    return confirmarAccion(mensaje).then(aceptado => {
+        if (!aceptado) return;
+        return fetchJson(`/admin/traslados/lote/${id}/${accion}`, { method: 'POST' })
+            .then(async res => {
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo actualizar el lote.'));
+                avisar(data.message, 'exito');
+                cargarLotesAdmin();
+                cargarTrasladosAdmin();
+            })
+            .catch(error => avisar(error.message, 'error'));
+    });
+}
+
+export function confirmarLote(id) {
+    return resolverLote(id, 'confirmar', `¿Confirmar el lote #${id}? Se mueve a todas las personas a la vez: cambian de dependencia, plaza y evaluador, y se abre su evaluación en el cargo nuevo.`);
+}
+
+export function cancelarLote(id) {
+    return resolverLote(id, 'cancelar', `¿Cancelar el lote #${id}? Nadie se mueve y todos sus traslados quedan cancelados.`);
+}
+
+window.descargarFormatoLote = descargarFormatoLote;
+window.revisarLote = revisarLote;
+window.programarLote = programarLote;
+window.cargarLotesAdmin = cargarLotesAdmin;
+window.confirmarLote = confirmarLote;
+window.cancelarLote = cancelarLote;
+
 // --- S8: EDICION DE PERIODOS Y AUDITORIA ---
 export function abrirEditarPeriodo(btn) {
     const id = btn.dataset.id;
@@ -570,7 +739,6 @@ export function abrirEditarPeriodo(btn) {
     setVal('editar-periodo-id', id);
     setVal('editar-periodo-inicio', btn.dataset.inicio);
     setVal('editar-periodo-fin', btn.dataset.fin);
-    setVal('editar-periodo-inicio-concertacion', btn.dataset.inicio_concertacion);
     setVal('editar-periodo-fin-concertacion', btn.dataset.fin_concertacion);
     setVal('editar-periodo-descripcion', btn.dataset.descripcion);
     const estadoSelect = document.getElementById('editar-periodo-estado');
@@ -756,7 +924,7 @@ export function guardarEdicionDelegacion(event) {
             cargarDelegacionesAdmin();
         })
         .catch(error => {
-            alert(error.message);
+            avisar(error.message, 'error');
         })
         .finally(() => {
             if (btn) {
@@ -814,17 +982,17 @@ export function ajustarEvaluadorDelegacion(id) {
             <button type="button" onclick="enviarAjusteEvaluadorDelegacion(${id})" class="w-full rounded-xl bg-[#00594E] py-2 text-xs font-bold text-white hover:brightness-110 transition">Aplicar cambio</button>`;
         habilitarBuscadoresSelect(panel);
         panel.classList.remove('hidden');
-    }).catch(() => alert('No se pudo cargar la lista de funcionarios.'));
+    }).catch(() => avisar('No se pudo cargar la lista de funcionarios.'));
 }
 
-export function enviarAjusteEvaluadorDelegacion(id) {
+export async function enviarAjusteEvaluadorDelegacion(id) {
     const valor = idNodo => document.getElementById(idNodo)?.value?.trim() || '';
     const idEvaluado = valor(`ajuste-persona-${id}`);
     const idNuevo = valor(`ajuste-evaluador-${id}`);
     const motivo = valor(`ajuste-motivo-${id}`);
-    if (!idEvaluado || !idNuevo) return alert('Selecciona la persona y el nuevo evaluador.');
-    if (!motivo) return alert('Escribe el motivo del cambio.');
-    if (!confirm('¿Confirmas el cambio de evaluador? Se aplica de inmediato.')) return;
+    if (!idEvaluado || !idNuevo) return avisar('Selecciona la persona y el nuevo evaluador.');
+    if (!motivo) return avisar('Escribe el motivo del cambio.');
+    if (!await confirmarAccion('¿Confirmas el cambio de evaluador? Se aplica de inmediato.')) return;
 
     fetchJson(`/admin/delegaciones/${id}/ajustar-evaluador`, {
         method: 'POST',
@@ -834,10 +1002,10 @@ export function enviarAjusteEvaluadorDelegacion(id) {
         .then(async res => {
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo cambiar el evaluador.'));
-            alert(data.message || 'Evaluador cambiado.');
+            avisar(data.message || 'Evaluador cambiado.');
             cargarDelegacionesAdmin();
         })
-        .catch(error => alert(error.message));
+        .catch(error => avisar(error.message, 'error'));
 }
 
 // El fin de la delegación pasa el trabajo al sucesor: por defecto el titular, y
@@ -880,7 +1048,7 @@ export function finalizarDelegacion(id) {
                 </div>` : ''}
             <button type="button" onclick="enviarFinDelegacion(${id})" class="w-full rounded-xl bg-red-600 py-2 text-xs font-bold text-white hover:bg-red-700 transition">${Number(d.es_larga) ? 'Programar fin' : 'Finalizar delegación'}</button>`;
         panel.classList.remove('hidden');
-    }).catch(() => alert('No se pudo cargar la lista de funcionarios.'));
+    }).catch(() => avisar('No se pudo cargar la lista de funcionarios.'));
 }
 
 export function enviarFinDelegacion(id) {
@@ -894,8 +1062,8 @@ export function enviarFinDelegacion(id) {
     resolverDelegacionAdmin(id, 'finalizar', '¿Confirmas el fin de la delegación con estos datos?', body);
 }
 
-function resolverDelegacionAdmin(id, accion, confirmacion, body = null) {
-    if (!confirm(confirmacion)) return;
+async function resolverDelegacionAdmin(id, accion, confirmacion, body = null) {
+    if (!await confirmarAccion(confirmacion)) return;
     fetchJson(`/admin/delegaciones/${id}/${accion}`, {
         method: 'POST',
         ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}),
@@ -903,10 +1071,10 @@ function resolverDelegacionAdmin(id, accion, confirmacion, body = null) {
         .then(async res => {
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo actualizar la delegación.'));
-            alert(data.message || 'Delegación actualizada.');
+            avisar(data.message || 'Delegación actualizada.');
             cargarDelegacionesAdmin();
         })
-        .catch(error => alert(error.message));
+        .catch(error => avisar(error.message, 'error'));
 }
 
 export function confirmarDelegacion(id) {
@@ -1275,7 +1443,7 @@ export function analizarPlanta() {
     const archivo = document.getElementById('planta-archivo')?.files?.[0];
     const caja = document.getElementById('planta-ensayo');
     if (!archivo || !caja) {
-        alert('Selecciona el Excel de la planta (.xlsx).');
+        avisar('Selecciona el Excel de la planta (.xlsx).');
         return;
     }
     const datos = new FormData();
@@ -1326,9 +1494,9 @@ function renderEnsayoPlanta(d) {
         </div>`;
 }
 
-export function aplicarPlanta() {
+export async function aplicarPlanta() {
     if (!ensayoPlanta) return;
-    if (!confirm('¿Aplicar la carga de la planta? Se actualizan los datos de cargo de los funcionarios, se reasignan evaluadores, se crean las plazas y vacantes y se inactivan los registros ficticios.')) return;
+    if (!await confirmarAccion('¿Aplicar la carga de la planta? Se actualizan los datos de cargo de los funcionarios, se reasignan evaluadores, se crean las plazas y vacantes y se inactivan los registros ficticios.')) return;
     fetchJson('/admin/plazas/carga/aplicar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1337,12 +1505,12 @@ export function aplicarPlanta() {
         .then(async res => {
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo aplicar la carga.'));
-            alert(data.message || 'Carga aplicada.');
+            avisar(data.message || 'Carga aplicada.');
             ensayoPlanta = null;
             document.getElementById('planta-ensayo')?.classList.add('hidden');
             cargarPlazasAdmin();
         })
-        .catch(err => alert(err.message));
+        .catch(err => avisar(err.message, 'error'));
 }
 
 export function cargarPendientesPlanta() {
@@ -1389,11 +1557,11 @@ export function resolverPendientePlanta(id, accion) {
     const body = { accion };
     if (accion === 'crear_vacante') {
         body.id_dependencia = document.getElementById(`pend-dep-${id}`)?.value;
-        if (!body.id_dependencia) { alert('Elige la dependencia de la vacante.'); return; }
+        if (!body.id_dependencia) { avisar('Elige la dependencia de la vacante.'); return; }
     }
     if (accion === 'asignar_plaza') {
         body.id_puesto = document.getElementById(`pend-plaza-${id}`)?.value;
-        if (!body.id_puesto) { alert('Elige la plaza vacante.'); return; }
+        if (!body.id_puesto) { avisar('Elige la plaza vacante.'); return; }
     }
     accionPlazas(`/admin/plazas/pendientes/${id}`, accion === 'descartar' ? '¿Descartar este pendiente?' : null, body);
 }
@@ -1546,8 +1714,8 @@ export function renderPlazasAdmin() {
     }).join('');
 }
 
-function accionPlazas(url, confirmacion, body = null) {
-    if (confirmacion && !confirm(confirmacion)) return;
+async function accionPlazas(url, confirmacion, body = null) {
+    if (confirmacion && !await confirmarAccion(confirmacion)) return;
     fetchJson(url, {
         method: 'POST',
         ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}),
@@ -1555,10 +1723,10 @@ function accionPlazas(url, confirmacion, body = null) {
         .then(async res => {
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo actualizar el catálogo de plazas.'));
-            alert(data.message || 'Catálogo actualizado.');
+            avisar(data.message || 'Catálogo actualizado.');
             cargarPlazasAdmin();
         })
-        .catch(err => alert(err.message));
+        .catch(err => avisar(err.message, 'error'));
 }
 
 export function generarBorradorPlazas() {
@@ -1656,6 +1824,7 @@ window.addEventListener('DOMContentLoaded', () => {
     cargarRecursosAdmin();
     cargarPlanesAdmin();
     cargarTrasladosAdmin();
+    cargarLotesAdmin();
     cargarDelegacionesAdmin();
     cargarImpedimentosAdmin();
     cargarSolicitudesModificacion();
@@ -1687,9 +1856,13 @@ export function cargarImpedimentosAdmin() {
     }
 
     const evaluadores = window.APP_CONFIG?.evaluadores || [];
-    const options = evaluadores.map(e => `<option value="${e.id_vinculacion}">${escapeHtml(e.nombre_completo)} - ${escapeHtml(e.cargo)}</option>`).join('');
 
     lista.innerHTML = impedimentos.map(r => {
+        // Sin quien tiene hoy la evaluación, el solicitante, el evaluado ni sus personas a cargo.
+        const excluidos = new Set((r.evaluadores_excluidos || []).map(Number));
+        const options = evaluadores
+            .filter(e => !excluidos.has(Number(e.id_vinculacion)))
+            .map(e => `<option value="${e.id_vinculacion}">${escapeHtml(e.nombre_completo)} - ${escapeHtml(e.cargo)}</option>`).join('');
         const fechaPresentacion = r.created_at ? new Date(r.created_at).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
         return `
         <div class="rounded-2xl border border-slate-100 bg-white p-4 space-y-2 relative">
@@ -1718,7 +1891,7 @@ export function cargarImpedimentosAdmin() {
                 </div>
                 <div id="reasingar-box-${r.id_impedimento}" class="hidden">
                     <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Reasignar a Evaluador Alterno</label>
-                    <select id="reasignar-impedimento-${r.id_impedimento}" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white outline-none focus:border-[#00594E]">
+                    <select id="reasignar-impedimento-${r.id_impedimento}" data-buscable="Buscar evaluador…" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white outline-none focus:border-[#00594E]">
                         <option value="">-- Seleccionar nuevo evaluador --</option>
                         ${options}
                     </select>
@@ -1742,12 +1915,13 @@ export function cargarImpedimentosAdmin() {
             `}
         </div>`;
     }).join('');
+    habilitarBuscadoresSelect(lista);
 }
 
-export function decidirImpedimentoAdmin(id, estado) {
+export async function decidirImpedimentoAdmin(id, estado) {
     const respuesta = document.getElementById(`respuesta-impedimento-${id}`)?.value?.trim();
     if (!respuesta) {
-        alert('Debe justificar la decisión (Respuesta obligatoria).');
+        avisar('Debe justificar la decisión (Respuesta obligatoria).');
         return;
     }
 
@@ -1756,13 +1930,13 @@ export function decidirImpedimentoAdmin(id, estado) {
     if (estado === 'APROBADO') {
         const reasignar = document.getElementById(`reasignar-impedimento-${id}`)?.value;
         if (!reasignar) {
-            alert('Debe seleccionar el nuevo evaluador.');
+            avisar('Debe seleccionar el nuevo evaluador.');
             return;
         }
         payload.id_vinc_nuevo_evaluador = reasignar;
     }
 
-    if (!confirm('¿Confirma guardar la decisión y notificar a los implicados?')) return;
+    if (!await confirmarAccion('¿Confirma guardar la decisión y notificar a los implicados?')) return;
 
     fetchJson(`/admin/impedimentos/${id}/resolver`, {
         method: 'POST',
@@ -1772,10 +1946,10 @@ export function decidirImpedimentoAdmin(id, estado) {
     .then(async res => {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo resolver la solicitud.'));
-        alert('Solicitud resuelta con éxito.');
-        window.location.reload();
+        avisar('Solicitud resuelta con éxito.');
+        setTimeout(() => window.location.reload(), 1200);
     })
-    .catch(err => alert(err.message));
+    .catch(err => avisar(err.message, 'error'));
 }
 
 window.cargarImpedimentosAdmin = cargarImpedimentosAdmin;
@@ -1851,14 +2025,14 @@ export function cargarSolicitudesModificacion() {
         });
 }
 
-export function decidirSolicitudModificacion(id, estado) {
+export async function decidirSolicitudModificacion(id, estado) {
     const respuesta = document.getElementById(`respuesta-solmod-${id}`)?.value?.trim();
     if (!respuesta) {
-        alert('Debe justificar la decisión (Respuesta obligatoria).');
+        avisar('Debe justificar la decisión (Respuesta obligatoria).');
         return;
     }
 
-    if (!confirm('¿Confirma guardar la decisión?')) return;
+    if (!await confirmarAccion('¿Confirma guardar la decisión?')) return;
 
     fetchJson(`/admin/compromisos/solicitudes/${id}/resolver`, {
         method: 'POST',
@@ -1868,10 +2042,10 @@ export function decidirSolicitudModificacion(id, estado) {
     .then(async res => {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo resolver la solicitud.'));
-        alert('Solicitud resuelta con éxito.');
-        window.location.reload();
+        avisar('Solicitud resuelta con éxito.');
+        setTimeout(() => window.location.reload(), 1200);
     })
-    .catch(err => alert(err.message));
+    .catch(err => avisar(err.message, 'error'));
 }
 
 window.cargarSolicitudesModificacion = cargarSolicitudesModificacion;

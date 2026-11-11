@@ -1,7 +1,7 @@
 /**
  * Evaluado Dashboard JS Module
  */
-import { escapeHtml, fetchJson, parseErrorMessage, showInlineMessage, navegarMenu, renderResultado, actualizarFaseLabel, renderEnlacesRecurso } from './common.js';
+import { escapeHtml, fetchJson, parseErrorMessage, showInlineMessage, navegarMenu, renderResultado, actualizarFaseLabel, renderEnlacesRecurso, recordarSeleccion, seleccionRecordada, volvioDeUnaAccion, CLAVE_EVALUACION, avisar, confirmarAccion } from './common.js';
 
 let selectedEvaluacionId = null;
 let selectedEvaluacionData = null;
@@ -75,8 +75,11 @@ export function cambiarTabEvaluado(tab) {
     if (tab === 'recursos' && selectedEvaluacionData) cargarPlanMejoramientoEvaluado(selectedEvaluacionData);
 }
 
+const evaluacionRecordada = volvioDeUnaAccion() ? seleccionRecordada(CLAVE_EVALUACION) : null;
+
 export function abrirConcertacionEvaluado(card, ev) {
     selectedEvaluacionId = ev.id_evaluacion;
+    recordarSeleccion(CLAVE_EVALUACION, ev.id_evaluacion);
     selectedEvaluacionData = ev;
     const panel = document.getElementById('panel-concertacion-evaluado');
     const empty = document.getElementById('panel-concertacion-evaluado-empty');
@@ -285,9 +288,9 @@ export function cargarNotificacionEvaluado(ev) {
         });
 }
 
-export function firmarNotificacionEvaluado() {
+export async function firmarNotificacionEvaluado() {
     if (!selectedEvaluacionId) return;
-    if (!confirm('¿Confirmas firmar la notificación de tu calificación?\n\nEsta firma deja constancia de que fuiste notificado de la nota, sin importar si estás de acuerdo o no. Si no estás de acuerdo, podrás radicar un recurso de reposición o apelación con sus soportes.')) return;
+    if (!await confirmarAccion('¿Confirmas firmar la notificación de tu calificación?\n\nEsta firma deja constancia de que fuiste notificado de la nota, sin importar si estás de acuerdo o no. Si no estás de acuerdo, podrás radicar un recurso de reposición o apelación con sus soportes.')) return;
 
     const mensaje = document.getElementById('notificacion-mensaje-evaluado');
     const btn = document.getElementById('btn-firmar-notificacion-evaluado');
@@ -458,10 +461,10 @@ export function guardarDocumentoNotificacion(tipo = 'SEMESTRAL') {
         .catch(error => mostrarMensajeDocumento(error.message, true));
 }
 
-export function eliminarDocumentoNotificacion(tipo = 'SEMESTRAL') {
+export async function eliminarDocumentoNotificacion(tipo = 'SEMESTRAL') {
     if (!selectedEvaluacionId) return;
     const etiqueta = tipo === 'ANUAL' ? 'anual' : 'semestral';
-    if (!confirm(`¿Quitar el enlace al documento firmado ${etiqueta}?\n\nEl PDF dejará de estar cargado en la plataforma.`)) return;
+    if (!await confirmarAccion(`¿Quitar el enlace al documento firmado ${etiqueta}?\n\nEl PDF dejará de estar cargado en la plataforma.`)) return;
 
     fetchJson(`/evaluaciones/${selectedEvaluacionId}/documento-notificacion`, {
         method: 'POST',
@@ -895,13 +898,13 @@ export function firmarPlanMejoramiento(rol) {
     if (!selectedEvaluacionId) return;
     fetchJson(`/evaluaciones/${selectedEvaluacionId}/plan-mejoramiento`)
         .then(res => res.json())
-        .then(payload => {
+        .then(async payload => {
             const plan = payload.plan;
             if (!plan || !plan.id_plan) {
-                alert('Primero se debe guardar el plan de mejoramiento antes de firmarlo.');
+                avisar('Primero se debe guardar el plan de mejoramiento antes de firmarlo.');
                 return;
             }
-            if (!confirm('¿Confirmas firmar el plan de mejoramiento?')) return;
+            if (!await confirmarAccion('¿Confirmas firmar el plan de mejoramiento?')) return;
             fetchJson(`/plan-mejoramiento/${plan.id_plan}/firmar`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -910,12 +913,12 @@ export function firmarPlanMejoramiento(rol) {
                 .then(async res => {
                     const pData = await res.json().catch(() => ({}));
                     if (!res.ok) throw new Error(parseErrorMessage(pData, 'No se pudo firmar el plan.'));
-                    alert(pData.message || 'Firma registrada con éxito.');
+                    avisar(pData.message || 'Firma registrada con éxito.');
                     if (selectedEvaluacionData) cargarPlanMejoramientoEvaluado(selectedEvaluacionData);
                 })
-                .catch(error => alert(error.message));
+                .catch(error => avisar(error.message, 'error'));
         })
-        .catch(() => alert('Ocurrió un error al obtener la información del plan.'));
+        .catch(() => avisar('Ocurrió un error al obtener la información del plan.'));
 }
 
 export function guardarEvidenciaEvaluado(e, idCompromiso) {
@@ -948,12 +951,20 @@ export function guardarEvidenciaEvaluado(e, idCompromiso) {
         .catch(error => showInlineMessage(mensajeId, error.message, true));
 }
 
+// El formulario se envía solo después de confirmar: se frena el envío y se reenvía al aceptar.
 export function firmarConcertacion(e, rol) {
-    if (!confirm('¿Confirmas firmar la concertación? Una vez que ambas partes firmen, los compromisos y sus porcentajes quedarán bloqueados y no se podrán editar.')) {
-        e.preventDefault();
-        return false;
+    const form = e.target;
+    if (form.dataset.confirmado === '1') {
+        delete form.dataset.confirmado;
+        return true;
     }
-    return true;
+    e.preventDefault();
+    confirmarAccion('¿Confirmas firmar la concertación? Una vez que ambas partes firmen, los compromisos y sus porcentajes quedarán bloqueados y no se podrán editar.').then(aceptado => {
+        if (!aceptado) return;
+        form.dataset.confirmado = '1';
+        form.requestSubmit ? form.requestSubmit() : form.submit();
+    });
+    return false;
 }
 
 export function confirmarEvidenciasEvaluado() {
@@ -1047,4 +1058,8 @@ window.actualizarCajaEncuestaEvaluado = actualizarCajaEncuestaEvaluado;
 
 window.addEventListener('DOMContentLoaded', () => {
     navegarMenu(null, 'evaluaciones');
+    // Tras firmar o recargar, vuelve a la evaluación en la que se estaba trabajando.
+    if (evaluacionRecordada) {
+        setTimeout(() => document.querySelector(`.evaluacion-card[data-id-evaluacion="${evaluacionRecordada}"]`)?.click(), 0);
+    }
 });

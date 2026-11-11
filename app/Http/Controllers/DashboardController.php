@@ -406,10 +406,22 @@ class DashboardController extends Controller
                         'fs.nombres as solicitante_nombres',
                         'fs.apellidos as solicitante_apellidos',
                         'vs.cargo as solicitante_cargo',
-                        'ev.estado as estado_evaluacion'
+                        'ev.estado as estado_evaluacion',
+                        'ev.id_vinc_evaluador',
+                        'ev.id_vinc_evaluado'
                     )
                     ->orderByDesc('ir.id_impedimento')
-                    ->get();
+                    ->get()
+                    ->map(function ($r) {
+                        // Quién no puede recibir la evaluación al reasignarla: quien la tiene hoy
+                        // (impedido o recusado), el solicitante, el propio evaluado y las personas a su cargo.
+                        $r->evaluadores_excluidos = array_values(array_unique(array_map('intval', array_merge(
+                            [$r->id_vinc_evaluador, $r->id_vinc_solicitante, $r->id_vinc_evaluado],
+                            DB::table('evaluador_asignacion')->where('id_vinc_evaluador', $r->id_vinc_evaluado)->pluck('id_vinc_evaluado')->all()
+                        ))));
+
+                        return $r;
+                    });
             }
 
             // Visor general de TODAS las evaluaciones (menú "Evaluaciones")
@@ -757,7 +769,7 @@ class DashboardController extends Controller
             $empleadosMatriz = DB::table('vinculacion as v')
                 ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
                 ->where('v.activa', 1)
-                ->select('v.id_vinculacion', 'v.area', 'v.sistema_evaluacion', 'f.nombres', 'f.apellidos', 'f.numero_doc')
+                ->select('v.id_vinculacion', 'v.id_funcionario', 'v.area', 'v.sistema_evaluacion', 'f.nombres', 'f.apellidos', 'f.numero_doc')
                 ->orderBy('f.apellidos')
                 ->get();
             
@@ -778,25 +790,35 @@ class DashboardController extends Controller
                     ->get()
                 : collect();
             
+            // Vinculaciones de cada persona: sus evaluaciones pueden estar en cualquiera (cambió de cargo o sistema).
+            $vinculacionesPorFuncionario = DB::table('vinculacion')
+                ->get(['id_vinculacion', 'id_funcionario', 'sistema_evaluacion', 'activa'])
+                ->groupBy('id_funcionario');
+
             foreach ($empleadosMatriz as $emp) {
                 $idVinc = (int) $emp->id_vinculacion;
-                $sem1Data = function_exists('obtenerNotaSemestreConsolidada') 
-                    ? obtenerNotaSemestreConsolidada($idVinc, $anioActual, $emp->sistema_evaluacion, 1) 
-                    : null;
-                $sem2Data = function_exists('obtenerNotaSemestreConsolidada') 
-                    ? obtenerNotaSemestreConsolidada($idVinc, $anioActual, $emp->sistema_evaluacion, 2) 
-                    : null;
-                
-                $notaSem1 = $sem1Data ? ($sem1Data['nota'] ?? null) : null;
-                $notaSem2 = $sem2Data ? ($sem2Data['nota'] ?? null) : null;
-                
+                $propias = ($vinculacionesPorFuncionario->get($emp->id_funcionario) ?? collect())
+                    ->sortByDesc(fn ($v) => [(int) ($v->id_vinculacion === $idVinc), (int) $v->activa, (int) $v->id_vinculacion])
+                    ->map(fn ($v) => ['id' => (int) $v->id_vinculacion, 'sistema' => (string) $v->sistema_evaluacion])
+                    ->values()
+                    ->all();
+
+                $sem1Data = function_exists('notaSemestreParaMatriz') ? notaSemestreParaMatriz($propias, $anioActual, 1) : null;
+                $sem2Data = function_exists('notaSemestreParaMatriz') ? notaSemestreParaMatriz($propias, $anioActual, 2) : null;
+
+                $notaSem1 = $sem1Data['nota'] ?? null;
+                $notaSem2 = $sem2Data['nota'] ?? null;
+
+                // El anual solo promedia semestres con todos sus tramos calificados.
+                $defSem1 = $sem1Data && ! $sem1Data['provisional'] ? $notaSem1 : null;
+                $defSem2 = $sem2Data && ! $sem2Data['provisional'] ? $notaSem2 : null;
                 $notaAnual = null;
-                if ($notaSem1 !== null && $notaSem2 !== null) {
-                    $notaAnual = function_exists('redondearEscala') ? redondearEscala(($notaSem1 + $notaSem2) / 2) : round(($notaSem1 + $notaSem2) / 2, 1);
-                } elseif ($notaSem1 === null && $notaSem2 !== null) {
-                    $notaAnual = function_exists('redondearEscala') ? redondearEscala($notaSem2) : round($notaSem2, 1);
-                } elseif ($notaSem1 !== null && $notaSem2 === null) {
-                    $notaAnual = function_exists('redondearEscala') ? redondearEscala($notaSem1) : round($notaSem1, 1);
+                if ($defSem1 !== null && $defSem2 !== null) {
+                    $notaAnual = function_exists('redondearEscala') ? redondearEscala(($defSem1 + $defSem2) / 2) : round(($defSem1 + $defSem2) / 2, 1);
+                } elseif ($defSem1 === null && $defSem2 !== null) {
+                    $notaAnual = function_exists('redondearEscala') ? redondearEscala($defSem2) : round($defSem2, 1);
+                } elseif ($defSem1 !== null && $defSem2 === null) {
+                    $notaAnual = function_exists('redondearEscala') ? redondearEscala($defSem1) : round($defSem1, 1);
                 }
 
                 // Documentos firmados radicados para Semestre 1, Semestre 2 y Anual
@@ -822,6 +844,10 @@ class DashboardController extends Controller
                     'sistema' => $emp->sistema_evaluacion,
                     'nota_semestre_1' => $notaSem1,
                     'nota_semestre_2' => $notaSem2,
+                    'sem1_provisional' => $sem1Data['provisional'] ?? false,
+                    'sem2_provisional' => $sem2Data['provisional'] ?? false,
+                    'sem1_tramos' => $sem1Data && $sem1Data['provisional'] ? "{$sem1Data['tramos_calificados']}/{$sem1Data['tramos_total']}" : null,
+                    'sem2_tramos' => $sem2Data && $sem2Data['provisional'] ? "{$sem2Data['tramos_calificados']}/{$sem2Data['tramos_total']}" : null,
                     'nota_anual' => $notaAnual,
                     'id_evaluacion_sem1' => $idEval1,
                     'id_evaluacion_sem2' => $idEval2,

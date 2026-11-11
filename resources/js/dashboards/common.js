@@ -233,6 +233,42 @@ export function renderResultado(calculo, containerId, contexto = 'evaluador', ev
     `;
 }
 
+// Memoria de la pestaña y de la evaluación abiertas: una acción que recarga la página
+// (guardar, firmar, error de validación) no debe devolver al usuario a la pantalla inicial.
+const CLAVE_SECCION = 'serag_seccion_activa';
+export const CLAVE_EVALUACION = 'serag_evaluacion_activa';
+
+export function recordarSeleccion(clave, valor) {
+    try {
+        sessionStorage.setItem(clave, JSON.stringify({ rol: window.APP_CONFIG?.activeRole || null, valor }));
+    } catch (e) { /* sin almacenamiento: no se recuerda */ }
+}
+
+export function seleccionRecordada(clave) {
+    try {
+        const guardado = JSON.parse(sessionStorage.getItem(clave) || 'null');
+        return guardado && guardado.rol === (window.APP_CONFIG?.activeRole || null) ? guardado.valor : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+/** La página se cargó por una recarga o por la redirección de una acción hecha en el propio tablero. */
+export function volvioDeUnaAccion() {
+    try {
+        const navegacion = performance.getEntriesByType('navigation')[0];
+        if (navegacion?.type === 'reload') return true;
+        const referente = document.referrer ? new URL(document.referrer) : null;
+        return !!referente && referente.origin === window.location.origin && referente.pathname.startsWith('/dashboard');
+    } catch (e) {
+        return false;
+    }
+}
+
+// Se lee al cargar el módulo, antes de que el tablero abra su pantalla por defecto y la sobrescriba.
+const seccionRecordada = seleccionRecordada(CLAVE_SECCION);
+const restaurarSeccion = volvioDeUnaAccion();
+
 export function navegarMenu(button, seccion) {
     const activeRole = window.APP_CONFIG?.activeRole || 'evaluado';
     let targetSeccion = seccion;
@@ -247,7 +283,9 @@ export function navegarMenu(button, seccion) {
     document.querySelectorAll('.section-content').forEach(el => el.classList.add('hidden'));
     target.classList.remove('hidden');
     document.querySelectorAll('.sidebar-link').forEach(btn => btn.classList.remove('active'));
+    if (!button) button = document.querySelector(`.sidebar-link[onclick*="'${targetSeccion}'"]`);
     if (button) button.classList.add('active');
+    recordarSeleccion(CLAVE_SECCION, targetSeccion);
     if (targetSeccion === 'delegaciones' && typeof window.cargarDelegacionesAdmin === 'function') {
         window.cargarDelegacionesAdmin();
     }
@@ -256,6 +294,12 @@ export function navegarMenu(button, seccion) {
     }
     if (window.innerWidth < 1024) toggleSidebar();
 }
+
+// Tras la recarga, vuelve a la pestaña donde estaba el usuario (después del arranque del tablero).
+window.addEventListener('DOMContentLoaded', () => {
+    if (!restaurarSeccion || !seccionRecordada) return;
+    setTimeout(() => navegarMenu(null, seccionRecordada), 0);
+});
 
 // Make globally available for onclick handlers in HTML
 window.toggleSidebar = toggleSidebar;
@@ -449,3 +493,85 @@ export function habilitarBuscadorSelect(select, placeholder = 'Buscar…') {
 export function habilitarBuscadoresSelect(raiz = document) {
     raiz.querySelectorAll('select[data-buscable]').forEach(select => habilitarBuscadorSelect(select, select.dataset.buscable || 'Buscar…'));
 }
+
+/**
+ * Confirmación propia (Tailwind) en lugar de window.confirm(): no congela el
+ * navegador, respeta el diseño y no la silencian los bloqueadores. Devuelve una
+ * promesa con true/false.
+ */
+export function confirmarAccion(mensaje, { titulo = 'Confirmar acción', textoConfirmar = 'Confirmar', textoCancelar = 'Cancelar' } = {}) {
+    return new Promise(resolver => {
+        document.getElementById('modal-confirmar-accion')?.remove();
+
+        const modal = document.createElement('div');
+        modal.id = 'modal-confirmar-accion';
+        modal.setAttribute('role', 'dialog');
+        modal.setAttribute('aria-modal', 'true');
+        modal.className = 'fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/50 p-4';
+        modal.innerHTML = `
+            <div class="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl space-y-4">
+                <div class="flex items-start gap-3">
+                    <span class="material-symbols-outlined text-[#B5A160] text-2xl shrink-0">help</span>
+                    <div class="min-w-0">
+                        <h3 class="text-base font-black text-slate-900">${escapeHtml(titulo)}</h3>
+                        <p class="mt-1 text-sm text-slate-600 whitespace-pre-line">${escapeHtml(mensaje)}</p>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2">
+                    <button type="button" data-accion="cancelar" class="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50">${escapeHtml(textoCancelar)}</button>
+                    <button type="button" data-accion="confirmar" class="rounded-xl bg-[#00594E] px-4 py-2 text-xs font-bold text-white hover:brightness-110">${escapeHtml(textoConfirmar)}</button>
+                </div>
+            </div>`;
+        document.body.appendChild(modal);
+
+        const cerrar = resultado => {
+            document.removeEventListener('keydown', teclas, true);
+            modal.remove();
+            resolver(resultado);
+        };
+        const teclas = evento => {
+            if (evento.key === 'Escape') { evento.preventDefault(); cerrar(false); }
+            if (evento.key === 'Enter') { evento.preventDefault(); cerrar(true); }
+        };
+        modal.querySelector('[data-accion="cancelar"]').addEventListener('click', () => cerrar(false));
+        modal.querySelector('[data-accion="confirmar"]').addEventListener('click', () => cerrar(true));
+        modal.addEventListener('click', evento => { if (evento.target === modal) cerrar(false); });
+        document.addEventListener('keydown', teclas, true);
+        modal.querySelector('[data-accion="confirmar"]').focus();
+    });
+}
+
+/**
+ * Aviso no bloqueante (toast) en lugar de window.alert(). tipo: 'info', 'exito' o 'error'.
+ */
+export function avisar(mensaje, tipo = 'info') {
+    let contenedor = document.getElementById('avisos-serag');
+    if (!contenedor) {
+        contenedor = document.createElement('div');
+        contenedor.id = 'avisos-serag';
+        contenedor.setAttribute('aria-live', 'polite');
+        contenedor.className = 'fixed bottom-4 right-4 z-[10001] flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2';
+        document.body.appendChild(contenedor);
+    }
+
+    const estilos = {
+        info: ['border-slate-200 bg-white text-slate-800', 'info', 'text-[#00594E]'],
+        exito: ['border-emerald-200 bg-emerald-50 text-emerald-900', 'check_circle', 'text-emerald-600'],
+        error: ['border-red-200 bg-red-50 text-red-900', 'error', 'text-red-600'],
+    };
+    const [clases, icono, colorIcono] = estilos[tipo] || estilos.info;
+
+    const aviso = document.createElement('div');
+    aviso.className = `flex items-start gap-2 rounded-2xl border p-3 text-sm shadow-lg ${clases}`;
+    aviso.innerHTML = `
+        <span class="material-symbols-outlined text-lg shrink-0 ${colorIcono}">${icono}</span>
+        <p class="min-w-0 flex-1 whitespace-pre-line break-words">${escapeHtml(String(mensaje ?? ''))}</p>
+        <button type="button" class="shrink-0 text-slate-400 hover:text-slate-700" aria-label="Cerrar"><span class="material-symbols-outlined text-base">close</span></button>`;
+    const quitar = () => aviso.remove();
+    aviso.querySelector('button').addEventListener('click', quitar);
+    contenedor.appendChild(aviso);
+    setTimeout(quitar, tipo === 'error' ? 9000 : 6000);
+}
+
+window.confirmarAccion = confirmarAccion;
+window.avisar = avisar;

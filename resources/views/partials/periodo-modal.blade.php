@@ -29,18 +29,13 @@
 
                 <div class="grid grid-cols-2 gap-4">
                     <div>
-                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1 text-[#00594E]">Inicio Concertación</label>
-                        <input type="date" id="editar-periodo-inicio-concertacion" name="fecha_inicio_concertacion" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]">
-                    </div>
-                    <div>
                         <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1 text-red-600">Cierre Concertación</label>
                         <input type="date" id="editar-periodo-fin-concertacion" name="fecha_fin_concertacion" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-red-500">
                     </div>
-                </div>
-
-                <div>
-                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1 text-red-600">Cierre Calificación</label>
-                    <input type="date" id="editar-periodo-fin-calificacion" name="fecha_fin_calificacion" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-red-500">
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1 text-red-600">Cierre Calificación</label>
+                        <input type="date" id="editar-periodo-fin-calificacion" name="fecha_fin_calificacion" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-red-500">
+                    </div>
                 </div>
 
                 <div>
@@ -71,7 +66,6 @@
         document.getElementById('editar-periodo-id').value = p.id_periodo;
         document.getElementById('editar-periodo-inicio').value = p.fecha_inicio ? p.fecha_inicio.substring(0, 10) : '';
         document.getElementById('editar-periodo-fin').value = p.fecha_fin ? p.fecha_fin.substring(0, 10) : '';
-        document.getElementById('editar-periodo-inicio-concertacion').value = p.fecha_inicio_concertacion ? p.fecha_inicio_concertacion.substring(0, 10) : '';
         document.getElementById('editar-periodo-fin-concertacion').value = p.fecha_fin_concertacion ? p.fecha_fin_concertacion.substring(0, 10) : '';
         document.getElementById('editar-periodo-fin-calificacion').value = p.fecha_fin_calificacion ? p.fecha_fin_calificacion.substring(0, 10) : '';
         document.getElementById('editar-periodo-descripcion').value = p.descripcion || '';

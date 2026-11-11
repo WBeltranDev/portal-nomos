@@ -1,7 +1,7 @@
 /**
  * Evaluador Dashboard JS Module
  */
-import { escapeHtml, fetchJson, parseErrorMessage, showInlineMessage, navegarMenu, renderResultado, actualizarFaseLabel, getEscala, renderEnlacesRecurso, abrirModalDecisionRecurso } from './common.js';
+import { escapeHtml, fetchJson, parseErrorMessage, showInlineMessage, navegarMenu, renderResultado, actualizarFaseLabel, getEscala, renderEnlacesRecurso, abrirModalDecisionRecurso, recordarSeleccion, seleccionRecordada, volvioDeUnaAccion, CLAVE_EVALUACION, avisar, confirmarAccion } from './common.js';
 
 /**
  * Atributos min/max/step de los campos de nota, derivados de la escala
@@ -191,8 +191,12 @@ export function cambiarTabEvaluador(tab) {
     if (tab === 'recursos' && selectedEvaluacionData) cargarPlanMejoramientoEvaluador(selectedEvaluacionData);
 }
 
+// Evaluación abierta antes de la recarga; se lee ahora para que la apertura automática de la primera no la pise.
+const evaluacionRecordada = volvioDeUnaAccion() ? seleccionRecordada(CLAVE_EVALUACION) : null;
+
 export function abrirConcertacionEvaluador(card, ev) {
     selectedEvaluacionId = ev.id_evaluacion;
+    recordarSeleccion(CLAVE_EVALUACION, ev.id_evaluacion);
     selectedEstadoEvaluacion = ev.estado;
     selectedEvaluacionData = ev;
     selectedEvaluacionEjes = {};
@@ -401,18 +405,18 @@ export function renderEvidenciasEvaluadorAccion(evidencias = [], bloqueada = fal
     }).join('');
 }
 
-export function aprobarEvidencia(idEvidencia, decision) {
+export async function aprobarEvidencia(idEvidencia, decision) {
     if (!selectedEvaluacionId) return;
 
     let observacion = '';
     if (decision === 'RECHAZADA') {
         const motivo = prompt('Motivo del rechazo:');
         if (motivo === null) return;
-        if (!motivo.trim()) { alert('Debes indicar un motivo para rechazar la evidencia.'); return; }
+        if (!motivo.trim()) { avisar('Debes indicar un motivo para rechazar la evidencia.'); return; }
         observacion = motivo.trim();
-        if (!confirm('¿Confirmas rechazar esta evidencia? Esta decisión quedará registrada.')) return;
+        if (!await confirmarAccion('¿Confirmas rechazar esta evidencia? Esta decisión quedará registrada.')) return;
     } else {
-        if (!confirm('¿Confirmas aprobar esta evidencia? Esta decisión quedará registrada.')) return;
+        if (!await confirmarAccion('¿Confirmas aprobar esta evidencia? Esta decisión quedará registrada.')) return;
     }
 
     fetchJson(`/evaluaciones/${selectedEvaluacionId}/evidencias/${idEvidencia}/aprobar`, {
@@ -422,7 +426,7 @@ export function aprobarEvidencia(idEvidencia, decision) {
     })
         .then(async res => {
             const payload = await res.json().catch(() => ({}));
-            if (!res.ok) { alert(payload.message || 'No se pudo registrar la decisión.'); return; }
+            if (!res.ok) { avisar(payload.message || 'No se pudo registrar la decisión.'); return; }
             if (payload.fase_actual && selectedEvaluacionData) {
                 selectedEvaluacionData = { ...selectedEvaluacionData, fase_actual: payload.fase_actual };
                 actualizarFaseLabel(selectedEvaluacionId, payload.fase_actual, 'evaluador');
@@ -479,7 +483,7 @@ export function recargarSoloObservacionEvaluador(idCompromiso, observacion) {
     contenedor.innerHTML = renderObservacionEvaluador(compromiso, observacion, !ev.concertacion_firmada);
 }
 
-export function confirmarObservacionCompromiso(idCompromiso) {
+export async function confirmarObservacionCompromiso(idCompromiso) {
     if (!selectedEvaluacionId) return;
     const msg = document.getElementById(`observacion-mensaje-${idCompromiso}`);
     const texto = (document.getElementById(`observacion-compromiso-${idCompromiso}`)?.value || '').trim();
@@ -491,7 +495,7 @@ export function confirmarObservacionCompromiso(idCompromiso) {
         }
         return;
     }
-    if (!confirm('¿Confirmas esta observación? Una vez confirmada no podrás modificarla.')) return;
+    if (!await confirmarAccion('¿Confirmas esta observación? Una vez confirmada no podrás modificarla.')) return;
 
     fetchJson(`/evaluaciones/${selectedEvaluacionId}/observaciones`, {
         method: 'POST',
@@ -671,7 +675,7 @@ export function agregarCompromisoEvaluador(e) {
         .then(async res => {
             const data = await res.json().catch(() => ({}));
             if (data.error) {
-                alert(data.error);
+                avisar(data.error);
             } else {
                 document.getElementById('form-nuevo-compromiso-evaluador')?.reset();
                 if (selectedEvaluacionData) cargarCompromisosEvaluador(selectedEvaluacionData, selectedEvaluacionEjes);
@@ -679,13 +683,13 @@ export function agregarCompromisoEvaluador(e) {
         });
 }
 
-export function eliminarCompromisoEvaluador(id) {
-    if (!confirm('¿Deseas eliminar este compromiso?')) return;
+export async function eliminarCompromisoEvaluador(id) {
+    if (!await confirmarAccion('¿Deseas eliminar este compromiso?')) return;
     fetchJson(`/compromisos/${id}`, { method: 'DELETE' })
         .then(res => res.json())
         .then(data => {
             if (data.error) {
-                alert(data.error);
+                avisar(data.error);
             } else if (selectedEvaluacionData) {
                 cargarCompromisosEvaluador(selectedEvaluacionData, selectedEvaluacionEjes);
             }
@@ -735,7 +739,7 @@ export function guardarEdicionCompromisoEvaluador(id) {
     const metas = (document.getElementById(`edit-comp-metas-${id}`)?.value || '').split(',').map(m => m.trim()).filter(Boolean);
 
     if (!descripcion || !peso || !metas.length) {
-        alert('Completa la descripción, el peso y al menos una meta.');
+        avisar('Completa la descripción, el peso y al menos una meta.');
         return;
     }
 
@@ -749,7 +753,7 @@ export function guardarEdicionCompromisoEvaluador(id) {
             if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo guardar el compromiso.'));
             if (selectedEvaluacionData) cargarCompromisosEvaluador(selectedEvaluacionData, selectedEvaluacionEjes);
         })
-        .catch(error => alert(error.message));
+        .catch(error => avisar(error.message, 'error'));
 }
 
 export function mostrarModalSolicitudModificacion() {
@@ -785,7 +789,7 @@ export function cambiarCompromisoSeleccionado() {
     document.getElementById('solmod-metas').value = (comp.metas || []).join(', ');
 }
 
-export function enviarSolicitudModificacion(e) {
+export async function enviarSolicitudModificacion(e) {
     e.preventDefault();
     if (!selectedEvaluacionId) return;
 
@@ -797,17 +801,17 @@ export function enviarSolicitudModificacion(e) {
     const evidenciaUrl = document.getElementById('solmod-evidencia')?.value?.trim() || null;
 
     if (!motivo || !idCompromiso || !descripcion || !peso || !metasRaw) {
-        alert('Debe diligenciar todos los campos.');
+        avisar('Debe diligenciar todos los campos.');
         return;
     }
 
     const metas = metasRaw.split(',').map(m => m.trim()).filter(Boolean);
     if (!metas.length) {
-        alert('Debe registrar al menos una meta.');
+        avisar('Debe registrar al menos una meta.');
         return;
     }
 
-    if (!confirm('¿Enviar la solicitud de modificación a Talento Humano?')) return;
+    if (!await confirmarAccion('¿Enviar la solicitud de modificación a Talento Humano?')) return;
 
     fetchJson(`/evaluaciones/${selectedEvaluacionId}/compromisos/solicitar-modificacion`, {
         method: 'POST',
@@ -817,10 +821,10 @@ export function enviarSolicitudModificacion(e) {
     .then(async res => {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo registrar la solicitud.'));
-        alert('Solicitud de modificación enviada a Talento Humano.');
+        avisar('Solicitud de modificación enviada a Talento Humano.');
         document.getElementById('modal-solicitud-modificacion')?.classList.add('hidden');
     })
-    .catch(error => alert(error.message));
+    .catch(error => avisar(error.message, 'error'));
 }
 
 export function renderTarjetaRecurso(r, contexto) {
@@ -983,9 +987,9 @@ export function enviarDecisionRecurso(id, decision, datos, id_vinc_nuevo_evaluad
         .then(async res => {
             const payload = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(parseErrorMessage(payload, 'No se pudo registrar la decisión.'));
-            alert(payload.message || 'Decisión registrada.');
+            avisar(payload.message || 'Decisión registrada.');
             if (id_vinc_nuevo_evaluador) {
-                window.location.reload();
+                setTimeout(() => window.location.reload(), 1200);
                 return;
             }
             if (selectedEvaluacionData) {
@@ -1000,7 +1004,7 @@ export function enviarDecisionRecurso(id, decision, datos, id_vinc_nuevo_evaluad
             }
             cargarRecursosMiosEvaluador();
         })
-        .catch(error => alert(error.message));
+        .catch(error => avisar(error.message, 'error'));
 }
 
 export function decidirRecurso(id, esApelacion = false, idVincReceptor = null) {
@@ -1092,13 +1096,13 @@ export function firmarPlanMejoramiento(rol) {
     if (!selectedEvaluacionId) return;
     fetchJson(`/evaluaciones/${selectedEvaluacionId}/plan-mejoramiento`)
         .then(res => res.json())
-        .then(payload => {
+        .then(async payload => {
             const plan = payload.plan;
             if (!plan || !plan.id_plan) {
-                alert('Primero se debe guardar el plan de mejoramiento antes de firmarlo.');
+                avisar('Primero se debe guardar el plan de mejoramiento antes de firmarlo.');
                 return;
             }
-            if (!confirm('¿Confirmas firmar el plan de mejoramiento?')) return;
+            if (!await confirmarAccion('¿Confirmas firmar el plan de mejoramiento?')) return;
             fetchJson(`/plan-mejoramiento/${plan.id_plan}/firmar`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1107,20 +1111,28 @@ export function firmarPlanMejoramiento(rol) {
                 .then(async res => {
                     const pData = await res.json().catch(() => ({}));
                     if (!res.ok) throw new Error(parseErrorMessage(pData, 'No se pudo firmar el plan.'));
-                    alert(pData.message || 'Firma registrada con éxito.');
+                    avisar(pData.message || 'Firma registrada con éxito.');
                     if (selectedEvaluacionData) cargarPlanMejoramientoEvaluador(selectedEvaluacionData);
                 })
-                .catch(error => alert(error.message));
+                .catch(error => avisar(error.message, 'error'));
         })
-        .catch(() => alert('Ocurrió un error al obtener la información del plan.'));
+        .catch(() => avisar('Ocurrió un error al obtener la información del plan.'));
 }
 
+// El formulario se envía solo después de confirmar: se frena el envío y se reenvía al aceptar.
 export function firmarConcertacion(e, rol) {
-    if (!confirm('¿Confirmas firmar la concertación? Una vez que ambas partes firmen, los compromisos y sus porcentajes quedarán bloqueados.')) {
-        e.preventDefault();
-        return false;
+    const form = e.target;
+    if (form.dataset.confirmado === '1') {
+        delete form.dataset.confirmado;
+        return true;
     }
-    return true;
+    e.preventDefault();
+    confirmarAccion('¿Confirmas firmar la concertación? Una vez que ambas partes firmen, los compromisos y sus porcentajes quedarán bloqueados.').then(aceptado => {
+        if (!aceptado) return;
+        form.dataset.confirmado = '1';
+        form.requestSubmit ? form.requestSubmit() : form.submit();
+    });
+    return false;
 }
 
 export function guardarCalificacionesCompromisos() {
@@ -1415,12 +1427,12 @@ function ocultarBotonesCalificacion() {
 }
 
 function mostrarAvisoSinEvidenciasConfirmadas() {
-    alert('La evidencia fue rechazada. La evaluación volvió a la fase de subir evidencias: el evaluado debe corregirla y volver a confirmar la entrega para habilitar la calificación.');
+    avisar('La evidencia fue rechazada. La evaluación volvió a la fase de subir evidencias: el evaluado debe corregirla y volver a confirmar la entrega para habilitar la calificación.');
 }
 
-export function calcularNotaFinal() {
+export async function calcularNotaFinal() {
     if (!selectedEvaluacionId) return;
-    if (!confirm('¿Confirmas calcular la nota final? La evaluación quedará calificada y las notas se congelarán.')) return;
+    if (!await confirmarAccion('¿Confirmas calcular la nota final? La evaluación quedará calificada y las notas se congelarán.')) return;
     const msgId = mensajeCalificacionActivo();
     fetchJson(`/evaluaciones/${selectedEvaluacionId}/calcular-final`, {
         method: 'POST',
@@ -1516,4 +1528,8 @@ window.addEventListener('DOMContentLoaded', () => {
     cargarRecursosMiosEvaluador();
     const firstEvaluacion = document.querySelector('.evaluacion-evaluador-card');
     if (firstEvaluacion) firstEvaluacion.click();
+    // Tras firmar, calificar o recargar, vuelve a la evaluación en la que se estaba trabajando.
+    if (evaluacionRecordada) {
+        setTimeout(() => document.querySelector(`.evaluacion-evaluador-card[data-id-evaluacion="${evaluacionRecordada}"]`)?.click(), 0);
+    }
 });

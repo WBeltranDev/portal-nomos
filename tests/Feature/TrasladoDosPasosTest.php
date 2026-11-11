@@ -328,6 +328,20 @@ class TrasladoDosPasosTest extends TestCase
         $this->assertNull($this->evaluacionDestino());
     }
 
+    public function test_la_lista_de_traslados_informa_el_bloqueo_por_plazo_de_recursos(): void
+    {
+        $traslado = $this->trasladoConOrigenCalificado();
+        $this->notificarOrigen(Carbon::now());
+
+        $fila = collect($this->getJson('/admin/traslados')->assertOk()->json())->firstWhere('id_traslado', $traslado->id_traslado);
+        $this->assertStringContainsString('dentro del plazo para recursos', $fila['bloqueo_recursos']);
+        $this->assertSame(fechaLimiteRecursos($this->idEvaluacionOrigen)->format('d/m/Y'), $fila['plazo_recursos_hasta']);
+
+        DB::table('firma')->where('id_evaluacion', $this->idEvaluacionOrigen)->update(['fecha_firma' => Carbon::now()->subDays(10)]);
+        $fila = collect($this->getJson('/admin/traslados')->json())->firstWhere('id_traslado', $traslado->id_traslado);
+        $this->assertNull($fila['bloqueo_recursos']);
+    }
+
     public function test_vencido_el_plazo_se_confirma_el_traslado(): void
     {
         $traslado = $this->trasladoConOrigenCalificado();

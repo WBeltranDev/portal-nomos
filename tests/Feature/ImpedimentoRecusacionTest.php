@@ -191,6 +191,37 @@ class ImpedimentoRecusacionTest extends TestCase
         $this->assertTrue(evaluadorTieneEvaluadoAsignado($this->idVincEvaluador, $idVincEvaluado));
     }
 
+    public function test_el_reemplazo_no_puede_ser_quien_tiene_hoy_la_evaluacion_ni_el_evaluado_ni_su_subordinado(): void
+    {
+        $idVincEvaluado = (int) DB::table('evaluacion')->where('id_evaluacion', $this->idEvaluacion)->value('id_vinc_evaluado');
+
+        $this->resolver(['estado' => 'APROBADO', 'id_vinc_nuevo_evaluador' => $this->idVincEvaluador])->assertStatus(422)
+            ->assertJsonPath('message', 'El nuevo evaluador no puede ser quien tiene hoy la evaluación (el evaluador impedido o recusado).');
+        $this->resolver(['estado' => 'APROBADO', 'id_vinc_nuevo_evaluador' => $idVincEvaluado])->assertStatus(422)
+            ->assertJsonPath('message', 'El evaluado no puede ser su propio evaluador.');
+
+        // El nuevo evaluador es una persona a cargo del evaluado.
+        DB::table('evaluador_asignacion')->insert(['id_vinc_evaluador' => $idVincEvaluado, 'id_vinc_evaluado' => $this->idVincNuevoEvaluador, 'fecha_asignacion' => now()]);
+        $this->resolver(['estado' => 'APROBADO', 'id_vinc_nuevo_evaluador' => $this->idVincNuevoEvaluador])->assertStatus(422)
+            ->assertJsonPath('message', 'El nuevo evaluador es una persona a cargo del evaluado: se evaluarían entre sí.');
+
+        // Nada cambió: la solicitud sigue pendiente y la evaluación con su evaluador.
+        $this->assertSame('PENDIENTE', DB::table('impedimento_recusacion')->where('id_impedimento', $this->idImpedimento)->value('estado'));
+        $this->assertSame($this->idVincEvaluador, (int) DB::table('evaluacion')->where('id_evaluacion', $this->idEvaluacion)->value('id_vinc_evaluador'));
+    }
+
+    public function test_el_tablero_excluye_del_selector_a_los_evaluadores_incompatibles(): void
+    {
+        $idVincEvaluado = (int) DB::table('evaluacion')->where('id_evaluacion', $this->idEvaluacion)->value('id_vinc_evaluado');
+        $subordinado = $this->crearVinculacion($this->crearFuncionario('T' . random_int(10000, 99999) . 'Q'), true);
+        DB::table('evaluador_asignacion')->insert(['id_vinc_evaluador' => $idVincEvaluado, 'id_vinc_evaluado' => $subordinado, 'fecha_asignacion' => now()]);
+
+        $fila = collect($this->get('/dashboard')->assertOk()->viewData('impedimentos'))->firstWhere('id_impedimento', $this->idImpedimento);
+
+        $this->assertEqualsCanonicalizing([$this->idVincEvaluador, $idVincEvaluado, $subordinado], $fila->evaluadores_excluidos);
+        $this->assertNotContains($this->idVincNuevoEvaluador, $fila->evaluadores_excluidos);
+    }
+
     public function test_no_se_aprueba_sin_elegir_nuevo_evaluador(): void
     {
         $this->resolver(['estado' => 'APROBADO'])

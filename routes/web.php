@@ -948,6 +948,14 @@ Route::get('/admin/plazas', [PlazaController::class, 'index'])->name('admin.plaz
 Route::get('/admin/plazas/vacantes', [PlazaController::class, 'vacantes'])->name('admin.plazas.vacantes');
 // Carga de la planta oficial (Excel de TH): ensayo, aplicación, pendientes y documento oficial.
 Route::post('/admin/plazas/carga/analizar', [CargaPlantaController::class, 'analizar'])->name('admin.plazas.carga.analizar');
+
+// --- Traslados en bloque (rotación) ---
+Route::get('/admin/traslados/lote/plantilla', [\App\Http\Controllers\TrasladoLoteController::class, 'plantilla'])->name('admin.traslados.lote.plantilla');
+Route::post('/admin/traslados/lote/analizar', [\App\Http\Controllers\TrasladoLoteController::class, 'analizar'])->name('admin.traslados.lote.analizar');
+Route::post('/admin/traslados/lote/programar', [\App\Http\Controllers\TrasladoLoteController::class, 'programar'])->name('admin.traslados.lote.programar');
+Route::get('/admin/traslados/lotes', [\App\Http\Controllers\TrasladoLoteController::class, 'index'])->name('admin.traslados.lotes');
+Route::post('/admin/traslados/lote/{id}/confirmar', [\App\Http\Controllers\TrasladoLoteController::class, 'confirmar'])->name('admin.traslados.lote.confirmar');
+Route::post('/admin/traslados/lote/{id}/cancelar', [\App\Http\Controllers\TrasladoLoteController::class, 'cancelar'])->name('admin.traslados.lote.cancelar');
 Route::post('/admin/plazas/carga/aplicar', [CargaPlantaController::class, 'aplicar'])->name('admin.plazas.carga.aplicar');
 Route::get('/admin/plazas/pendientes', [CargaPlantaController::class, 'pendientes'])->name('admin.plazas.pendientes');
 Route::post('/admin/plazas/pendientes/{id}', [CargaPlantaController::class, 'resolverPendiente'])->whereNumber('id')->name('admin.plazas.pendientes.resolver');
@@ -1289,6 +1297,31 @@ function errorPlazosPeriodo(array $data): ?string {
 }
 }
 
+if (!function_exists('mensajeFaltantesCalificacion')) {
+/** Mensaje que nombra lo que falta por calificar antes de calcular la nota final. */
+function mensajeFaltantesCalificacion(array $pendientes): string {
+    $etiquetasEjes = ['DOCENCIA' => 'Docencia', 'INVESTIGACION' => 'Investigación', 'PROYECCION_SOCIAL' => 'Proyección social'];
+    $partes = [];
+
+    if (! empty($pendientes['compromisos_sin_calificar'])) {
+        $partes[] = $pendientes['compromisos_sin_calificar'] . ' compromiso(s) sin calificar (pestaña Compromisos)';
+    }
+    if (! empty($pendientes['competencias_comunes_faltantes'])) {
+        $partes[] = 'competencias comunes: ' . implode(', ', $pendientes['competencias_comunes_faltantes']);
+    }
+    if (! empty($pendientes['competencias_nivel_faltantes'])) {
+        $partes[] = 'competencias del nivel jerárquico: ' . implode(', ', $pendientes['competencias_nivel_faltantes']);
+    }
+    if (! empty($pendientes['ejes_faltantes'])) {
+        $partes[] = 'ejes misionales: ' . implode(', ', array_map(fn ($e) => $etiquetasEjes[$e] ?? $e, $pendientes['ejes_faltantes']));
+    }
+
+    return $partes
+        ? 'Faltan por calificar antes de calcular la nota final: ' . implode('; ', $partes) . '.'
+        : 'Faltan calificaciones por registrar antes de calcular la nota final.';
+}
+}
+
 if (!function_exists('extratiempoVigente')) {
 /** Talento Humano autorizó tiempo adicional vigente para concertar o calificar esta evaluación. */
 function extratiempoVigente(int $idEvaluacion, string $tipo): bool {
@@ -1333,6 +1366,7 @@ Route::post('/admin/periodos', function (Request $request) {
         'fecha_fin' => ['required', 'date', 'after:fecha_inicio'],
         'fecha_fin_concertacion' => ['nullable', 'date', 'after_or_equal:fecha_inicio'],
         'fecha_fin_calificacion' => ['nullable', 'date', 'after_or_equal:fecha_inicio'],
+        'descripcion' => ['nullable', 'string', 'max:200'],
     ]);
 
     if ($error = errorPlazosPeriodo($data)) {
@@ -1370,6 +1404,7 @@ Route::post('/admin/periodos', function (Request $request) {
         'fecha_fin' => $data['fecha_fin'],
         'fecha_fin_concertacion' => $data['fecha_fin_concertacion'] ?? null,
         'fecha_fin_calificacion' => $data['fecha_fin_calificacion'] ?? null,
+        'descripcion' => trim($data['descripcion'] ?? '') ?: null,
         'estado' => 'ABIERTO',
     ]);
 
@@ -2089,7 +2124,7 @@ if (!function_exists('programarTraslado')) {
      * Retorna ['error' => mensaje] o ['id_traslado', 'dias', 'listo'], donde
      * 'listo' indica que ya se puede confirmar (sin tramo o con nota de origen).
      */
-    function programarTraslado(array $data, ?int $idVincEvaluadorOrigen = null, ?int $idDelegacion = null, bool $exigirEvaluador = true, string $tipo = 'CAMBIO'): array
+    function programarTraslado(array $data, ?int $idVincEvaluadorOrigen = null, ?int $idDelegacion = null, bool $exigirEvaluador = true, string $tipo = 'CAMBIO', array $opciones = []): array
     {
         // PAUSA cierra el tramo sin cambiar de evaluador; REANUDACION abre la
         // evaluación nueva al regresar, sin tramo de origen que calificar.
@@ -2129,7 +2164,8 @@ if (!function_exists('programarTraslado')) {
             return ['error' => "{$nombre} no tiene un evaluador asignado. Asigna un evaluador antes de registrar el cambio."];
         }
 
-        if ($tipo === 'CAMBIO' && $evaluadorOrigenId === (int) $data['id_vinc_evaluador_nuevo']) {
+        // En un lote de traslados la persona puede conservar su evaluador (cambia de área, no de jefe).
+        if ($tipo === 'CAMBIO' && empty($opciones['permitir_mismo_evaluador']) && $evaluadorOrigenId === (int) $data['id_vinc_evaluador_nuevo']) {
             return ['error' => "El evaluador nuevo de {$nombre} no puede ser el mismo que su evaluador actual."];
         }
 
@@ -2151,7 +2187,9 @@ if (!function_exists('programarTraslado')) {
             if ($plazaOrigen && (int) $plazaOrigen->id_puesto === $idPuestoDestino) {
                 return ['error' => 'La plaza destino es la misma que ocupa hoy.'];
             }
-            if ($ocupaciones->ocupante($idPuestoDestino)) {
+            // En un lote, la plaza puede estar ocupada por alguien que también sale en el mismo lote.
+            $ocupanteDestino = $ocupaciones->ocupante($idPuestoDestino);
+            if ($ocupanteDestino && ! in_array($ocupanteDestino, array_map('intval', $opciones['ocupantes_que_salen'] ?? []), true)) {
                 return ['error' => 'La plaza destino ya tiene un ocupante vigente: elige una plaza vacante.'];
             }
         }
@@ -2225,12 +2263,17 @@ if (!function_exists('programarTraslado')) {
                 $diasTramo = 0;
             } else {
                 $evaluacionOrigen = buscarEvaluacionVigenteTraslado((int) $periodo->id_periodo, (int) $data['id_vinc_funcionario'], $evaluadorOrigenId);
+
+                // Lote de traslados: sin evaluación en el periodo no hay tramo que calificar.
+                if (! empty($opciones['sin_origen_ok']) && ! $evaluacionOrigen) {
+                    $diasTramo = 0;
+                }
             }
         }
 
         $vincularOrigen = $evaluacionOrigen && $diasTramo > 0;
 
-        $idTraslado = DB::transaction(function () use ($data, $evaluado, $periodo, $diasTramo, $evaluacionOrigen, $vincularOrigen, $evaluadorOrigenId, $idDelegacion, $tipo, $plazaOrigen, $idPuestoDestino) {
+        $idTraslado = DB::transaction(function () use ($data, $evaluado, $periodo, $diasTramo, $evaluacionOrigen, $vincularOrigen, $evaluadorOrigenId, $idDelegacion, $tipo, $plazaOrigen, $idPuestoDestino, $opciones) {
             if ($vincularOrigen) {
                 // Los días del tramo ponderan su nota en el promedio del semestre.
                 DB::table('evaluacion')
@@ -2250,6 +2293,7 @@ if (!function_exists('programarTraslado')) {
                 'tipo' => $tipo,
                 'id_periodo' => $periodo->id_periodo ?? null,
                 'id_delegacion' => $idDelegacion,
+                'id_lote' => $opciones['id_lote'] ?? null,
                 'id_puesto_origen' => $plazaOrigen->id_puesto ?? null,
                 'id_puesto_destino' => $idPuestoDestino,
                 'id_vinc_evaluador_origen' => $evaluadorOrigenId,
@@ -2349,7 +2393,19 @@ Route::get('/admin/traslados', function () {
         ->leftJoin('evaluacion as evo', 'evo.id_evaluacion', '=', 't.id_evaluacion_origen')
         ->select('t.*', DB::raw('COALESCE(t.referencia, evp.referencia) as referencia'), 'evo.estado as origen_estado', 'evo.calificacion_final as origen_calificacion', 'ff.nombres as funcionario_nombres', 'ff.apellidos as funcionario_apellidos', 'feo.nombres as origen_nombres', 'feo.apellidos as origen_apellidos', 'fen.nombres as nuevo_nombres', 'fen.apellidos as nuevo_apellidos', 'fr.nombres as reemplazado_nombres', 'fr.apellidos as reemplazado_apellidos')
         ->orderByDesc('t.id_traslado')
-        ->get();
+        ->get()
+        ->map(function ($t) {
+            // Un traslado de evaluador no se confirma con recursos abiertos en el tramo de origen.
+            $t->bloqueo_recursos = null;
+            $t->plazo_recursos_hasta = null;
+            if ($t->estado === 'PROGRAMADO' && ($t->tipo ?? 'CAMBIO') === 'CAMBIO' && empty($t->id_delegacion) && $t->id_evaluacion_origen && in_array($t->origen_estado, ['CALIFICADA', 'APELACION', 'CERRADA'], true)) {
+                $t->bloqueo_recursos = motivoRecursosAbiertos((int) $t->id_evaluacion_origen);
+                $limite = fechaLimiteRecursos((int) $t->id_evaluacion_origen);
+                $t->plazo_recursos_hasta = $limite ? $limite->format('d/m/Y') : null;
+            }
+
+            return $t;
+        });
 })->name('admin.traslados.index');
 
 if (!function_exists('cancelarTraslado')) {
@@ -2406,9 +2462,27 @@ if (!function_exists('trasladoDeDelegacion')) {
     }
 }
 
+if (!function_exists('trasladoDeLote')) {
+    /** Número del lote al que pertenece un traslado programado, o null si es individual. */
+    function trasladoDeLote(int $idTraslado): ?int
+    {
+        if (! Schema::hasColumn('traslado', 'id_lote')) {
+            return null;
+        }
+
+        $lote = DB::table('traslado')->where('id_traslado', $idTraslado)->value('id_lote');
+
+        return $lote ? (int) $lote : null;
+    }
+}
+
 // --- POST: Confirmar traslado programado (S14 - paso 2) ---
 Route::post('/admin/traslados/{id}/confirmar', function (int $id) {
     abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
+
+    if ($lote = trasladoDeLote($id)) {
+        return response()->json(['message' => "Este traslado hace parte del lote #{$lote}; confírmalo desde Traslados en bloque."], 422);
+    }
 
     if (trasladoDeDelegacion($id)) {
         return response()->json(['message' => 'Este cambio hace parte de una delegación; confírmalo desde Delegaciones.'], 422);
@@ -2428,6 +2502,10 @@ Route::post('/admin/traslados/{id}/cancelar', function (int $id) {
 
     if (trasladoDeDelegacion($id)) {
         return response()->json(['message' => 'Este cambio hace parte de una delegación; cancélalo desde Delegaciones.'], 422);
+    }
+
+    if ($lote = trasladoDeLote($id)) {
+        return response()->json(['message' => "Este traslado hace parte del lote #{$lote}; cancélalo desde Traslados en bloque."], 422);
     }
 
     $error = cancelarTraslado($id);
@@ -3207,6 +3285,22 @@ Route::post('/admin/impedimentos/{id}/resolver', function (Request $request, int
     ], [
         'id_vinc_nuevo_evaluador.required_if' => 'Debe seleccionar el nuevo evaluador para aprobar la solicitud.',
     ]);
+
+    // El reemplazo no puede ser quien tiene hoy la evaluación (impedido o recusado), el
+    // propio evaluado ni una persona a cargo del evaluado.
+    if ($data['estado'] === 'APROBADO') {
+        $evaluacionImpedida = DB::table('evaluacion')->where('id_evaluacion', $solicitud->id_evaluacion)->first();
+        $idNuevo = (int) $data['id_vinc_nuevo_evaluador'];
+        if ($evaluacionImpedida && $idNuevo === (int) $evaluacionImpedida->id_vinc_evaluador) {
+            return response()->json(['message' => 'El nuevo evaluador no puede ser quien tiene hoy la evaluación (el evaluador impedido o recusado).'], 422);
+        }
+        if ($evaluacionImpedida && $idNuevo === (int) $evaluacionImpedida->id_vinc_evaluado) {
+            return response()->json(['message' => 'El evaluado no puede ser su propio evaluador.'], 422);
+        }
+        if ($evaluacionImpedida && DB::table('evaluador_asignacion')->where('id_vinc_evaluador', $evaluacionImpedida->id_vinc_evaluado)->where('id_vinc_evaluado', $idNuevo)->exists()) {
+            return response()->json(['message' => 'El nuevo evaluador es una persona a cargo del evaluado: se evaluarían entre sí.'], 422);
+        }
+    }
 
     DB::transaction(function () use ($id, $solicitud, $data) {
         // 1. Actualizar solicitud
@@ -4210,7 +4304,9 @@ if (!function_exists('notaSemestrePorTramos')) {
             ->where('p.sistema', $sistema)
             ->where('p.semestre', $semestreNumero)
             ->where('ev.id_vinc_evaluado', $idVincEvaluado)
-            ->whereIn('ev.tipo_evaluacion', ['SEMESTRE_' . $semestreNumero, 'PARCIAL'])
+            // La evaluación semestral pertenece al semestre de su periodo; el tipo (1 o 2)
+            // no la excluye si se registró con el otro número.
+            ->whereIn('ev.tipo_evaluacion', ['SEMESTRE_1', 'SEMESTRE_2', 'PARCIAL'])
             ->where('ev.es_traslado', 0)
             ->orderBy('ev.id_evaluacion')
             ->select('ev.id_evaluacion', 'ev.estado', 'ev.dias_laborados', 'p.fecha_inicio', 'p.fecha_fin')
@@ -4460,7 +4556,7 @@ if (!function_exists('obtenerNotaSemestreConsolidada')) {
             ->where('p.sistema', $sistema)
             ->where('p.semestre', $semestreNumero)
             ->where('ev.id_vinc_evaluado', $idVincEvaluado)
-            ->where('ev.tipo_evaluacion', 'SEMESTRE_' . $semestreNumero)
+            ->whereIn('ev.tipo_evaluacion', ['SEMESTRE_1', 'SEMESTRE_2'])
             ->where('ev.estado', 'CALIFICADA')
             ->where('ev.es_traslado', 0)
             ->first();
@@ -4525,7 +4621,7 @@ if (!function_exists('obtenerNotaSemestreConsolidada')) {
             ->where('p.sistema', $sistema)
             ->where('p.semestre', $semestreNumero)
             ->where('ev.id_vinc_evaluado', $idVincEvaluado)
-            ->where('ev.tipo_evaluacion', 'SEMESTRE_' . $semestreNumero)
+            ->whereIn('ev.tipo_evaluacion', ['SEMESTRE_1', 'SEMESTRE_2'])
             ->where('ev.estado', 'CALIFICADA')
             ->first();
 
@@ -4541,6 +4637,52 @@ if (!function_exists('obtenerNotaSemestreConsolidada')) {
         }
 
         return null;
+    }
+}
+
+if (!function_exists('notaSemestreParaMatriz')) {
+    /**
+     * Nota de un semestre para la matriz de calificaciones de Talento Humano. Busca en
+     * todas las vinculaciones de la persona (pudo cambiar de cargo o de sistema). Si el
+     * semestre se partió por tramos y aún no están todos calificados, devuelve la nota
+     * provisional de los tramos ya calificados (ponderada por días) para que las
+     * calificaciones realizadas no desaparezcan de la matriz.
+     *
+     * @param  array<int, array{id:int, sistema:string}>  $vinculaciones
+     * @return array{nota:float, provisional:bool, tramos_calificados:int, tramos_total:int, id_evaluacion:int|null}|null
+     */
+    function notaSemestreParaMatriz(array $vinculaciones, int $anio, int $semestre): ?array
+    {
+        $provisional = null;
+
+        foreach ($vinculaciones as $vinc) {
+            $r = obtenerNotaSemestreConsolidada((int) $vinc['id'], $anio, (string) $vinc['sistema'], $semestre);
+            if (! $r) {
+                continue;
+            }
+
+            if ($r['nota'] !== null) {
+                return [
+                    'nota' => (float) $r['nota'], 'provisional' => false,
+                    'tramos_calificados' => count($r['parciales'] ?? []), 'tramos_total' => count($r['parciales'] ?? []),
+                    'id_evaluacion' => $r['id_evaluacion'] ?? null,
+                ];
+            }
+
+            $tramos = collect($r['parciales'] ?? []);
+            $calificados = $tramos->filter(fn ($t) => $t['nota_final'] !== null && (float) $t['nota_final'] > 0);
+            if ($calificados->isNotEmpty() && ! $provisional) {
+                $dias = $calificados->sum(fn ($t) => max(1, (int) $t['dias_laborados']));
+                $suma = $calificados->sum(fn ($t) => (float) $t['nota_final'] * max(1, (int) $t['dias_laborados']));
+                $provisional = [
+                    'nota' => redondearEscala($suma / $dias), 'provisional' => true,
+                    'tramos_calificados' => $calificados->count(), 'tramos_total' => $tramos->count(),
+                    'id_evaluacion' => $calificados->first()['id_evaluacion'] ?? ($r['id_evaluacion'] ?? null),
+                ];
+            }
+        }
+
+        return $provisional;
     }
 }
 
@@ -4908,7 +5050,7 @@ Route::post('/evaluaciones/{id}/calcular-final', function (Request $request, int
 
     if ($rolActivo === 'evaluador' && !($calculo['calificacion_completa'] ?? false)) {
         return response()->json([
-            'error' => 'Faltan calificaciones por registrar antes de calcular la nota final.',
+            'error' => mensajeFaltantesCalificacion($calculo['pendientes'] ?? []),
             'pendientes' => $calculo['pendientes'],
         ], 422);
     }

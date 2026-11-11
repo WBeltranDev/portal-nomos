@@ -50,7 +50,7 @@
                                         <button class="w-full rounded-xl bg-slate-900 text-white py-2 text-xs font-bold hover:bg-slate-800 transition" type="submit">Generar contraseña temporal</button>
                                     </form>
                                     @if($u->documento_identidad)
-                                    <button type="button" onclick="navigator.clipboard.writeText('{{ $u->documento_identidad }}').then(() => alert('Contraseña inicial (Cédula: {{ $u->documento_identidad }}) copiada al portapapeles'))" class="px-3 py-2 bg-[#EAF2EF] hover:bg-[#d5e7e1] text-[#00594E] rounded-xl text-xs font-bold transition flex items-center gap-1" title="Copiar contraseña inicial (cédula)">
+                                    <button type="button" onclick="navigator.clipboard.writeText('{{ $u->documento_identidad }}').then(() => window.avisar('Contraseña inicial (Cédula: {{ $u->documento_identidad }}) copiada al portapapeles', 'exito'))" class="px-3 py-2 bg-[#EAF2EF] hover:bg-[#d5e7e1] text-[#00594E] rounded-xl text-xs font-bold transition flex items-center gap-1" title="Copiar contraseña inicial (cédula)">
                                         <span class="material-symbols-outlined text-sm">content_copy</span>
                                     </button>
                                     @endif
@@ -776,6 +776,8 @@
                                         <th class="px-4 py-3">Período</th>
                                         <th class="px-4 py-3">Inicio</th>
                                         <th class="px-4 py-3">Fin</th>
+                                        <th class="px-4 py-3">Cierre concertación</th>
+                                        <th class="px-4 py-3">Cierre calificación</th>
                                         <th class="px-4 py-3">Descripción</th>
                                         <th class="px-4 py-3">Estado</th>
                                         <th class="px-4 py-3 text-right">Acción</th>
@@ -789,6 +791,10 @@
                                             <td class="px-4 py-3">{{ $p->anio }}-{{ (int) $p->semestre === 1 ? 'A' : 'B' }}</td>
                                             <td class="px-4 py-3 text-xs">{{ $p->fecha_inicio }}</td>
                                             <td class="px-4 py-3 text-xs">{{ $p->fecha_fin }}</td>
+                                            @foreach (['fecha_fin_concertacion', 'fecha_fin_calificacion'] as $campoCierre)
+                                                @php $cierre = $p->{$campoCierre} ?? null; @endphp
+                                                <td class="px-4 py-3 text-xs {{ $cierre && $cierre < now()->toDateString() ? 'text-red-600 font-semibold' : '' }}" title="{{ $cierre && $cierre < now()->toDateString() ? 'Plazo vencido' : '' }}">{{ $cierre ?: 'Sin límite' }}</td>
+                                            @endforeach
                                             <td class="px-4 py-3 text-xs text-slate-500">{{ $p->descripcion ?? 'Semestre regular' }}</td>
                                             <td class="px-4 py-3">
                                                 <span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 {{ $p->estado === 'ABIERTO' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500' }}">{{ $p->estado }}</span>
@@ -861,19 +867,15 @@
                                 </div>
                                 <div class="grid grid-cols-2 gap-2">
                                     <div>
-                                        <label class="block text-[10px] font-bold text-slate-600 uppercase text-[#00594E]">Inicio Concertación (Opcional)</label>
-                                        <input type="date" name="fecha_inicio_concertacion" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white focus:border-[#00594E] outline-none">
-                                    </div>
-                                    <div>
                                         <label class="block text-[10px] font-bold text-slate-600 uppercase text-red-600">Cierre Concertación</label>
                                         <input type="date" name="fecha_fin_concertacion" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white focus:border-red-500 outline-none" required>
                                     </div>
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-600 uppercase text-red-600">Cierre Calificación (Opcional)</label>
+                                        <input type="date" name="fecha_fin_calificacion" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white focus:border-red-500 outline-none">
+                                    </div>
                                 </div>
-                                <div>
-                                    <label class="block text-[10px] font-bold text-slate-600 uppercase text-red-600">Cierre Calificación (Opcional)</label>
-                                    <input type="date" name="fecha_fin_calificacion" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white focus:border-red-500 outline-none">
-                                    <p class="text-[9px] text-slate-400 mt-0.5">Pasada la fecha, concertar o calificar exige extratiempo autorizado por Talento Humano.</p>
-                                </div>
+                                <p class="text-[9px] text-slate-400 -mt-1">La concertación inicia con el periodo. Pasado cada cierre, concertar o calificar exige extratiempo autorizado por Talento Humano.</p>
                                 <div>
                                     <label class="block text-[10px] font-bold text-slate-600 uppercase">Descripción (Opcional)</label>
                                     <input type="text" name="descripcion" maxlength="200" placeholder="Ej: Primer semestre 2026 ordinario" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white">
@@ -1007,6 +1009,62 @@
 
             <!-- SECTION: TRASLADOS (Admin Only) -->
             <section id="section-traslados" class="section-content hidden space-y-6">
+                <!-- Traslados en bloque (rotación) -->
+                <div class="panel-card rounded-3xl p-6 space-y-4">
+                    <div class="flex items-center gap-2">
+                        <span class="material-symbols-outlined text-[#00594E]">sync_alt</span>
+                        <h2 class="text-xl sm:text-2xl font-black text-slate-900">Traslados en bloque (rotación)</h2>
+                    </div>
+                    <p class="text-sm text-slate-500">Para rotar a muchas personas a la vez: descarga el formato, escribe la plaza destino de cada una, súbelo y revisa. Cada persona queda con su traslado y su historial; el lote se confirma cuando <b>todos</b> los tramos de origen estén calificados.</p>
+
+                    <div class="grid gap-4 lg:grid-cols-2">
+                        <div class="rounded-2xl border border-slate-100 bg-slate-50/50 p-4 space-y-3">
+                            <p class="text-xs font-black uppercase text-slate-500">1. Descargar el formato</p>
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Cargo a rotar (precarga a las personas)</label>
+                                <select id="lote-cargo" data-buscable="Buscar cargo…" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white">
+                                    <option value="">Formato en blanco</option>
+                                    @foreach($cargosCatalogo as $cg)
+                                        @if($cg->activo ?? true)
+                                            <option value="{{ $cg->nombre }}">{{ $cg->nombre }}</option>
+                                        @endif
+                                    @endforeach
+                                </select>
+                            </div>
+                            <button type="button" onclick="descargarFormatoLote()" class="inline-flex items-center gap-2 rounded-xl bg-[#00594E] px-4 py-2 text-xs font-bold text-white hover:brightness-110 transition">
+                                <span class="material-symbols-outlined text-sm">download</span> Descargar formato (Excel)
+                            </button>
+                        </div>
+
+                        <div class="rounded-2xl border border-slate-100 bg-slate-50/50 p-4 space-y-3">
+                            <p class="text-xs font-black uppercase text-slate-500">2. Subir el formato diligenciado</p>
+                            <input type="file" id="lote-archivo" accept=".xlsx" class="block w-full text-xs text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-[#EAF2EF] file:px-3 file:py-2 file:text-xs file:font-bold file:text-[#00594E]" />
+                            <div class="grid gap-2 sm:grid-cols-2">
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Fecha del traslado (para todo el lote)</label>
+                                    <input type="date" id="lote-fecha" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" />
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Descripción</label>
+                                    <input type="text" id="lote-descripcion" maxlength="300" placeholder="Ej: Rotación anual de asistentes 2026" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" />
+                                </div>
+                            </div>
+                            <button type="button" onclick="revisarLote()" class="inline-flex items-center gap-2 rounded-xl border border-[#00594E]/40 bg-white px-4 py-2 text-xs font-bold text-[#00594E] hover:bg-[#EAF2EF] transition">
+                                <span class="material-symbols-outlined text-sm">fact_check</span> Revisar archivo
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="lote-revision" class="hidden space-y-3"></div>
+
+                    <div>
+                        <h3 class="text-sm font-black text-slate-800 mb-2">Lotes registrados</h3>
+                        <div id="lotes-admin-lista" class="grid gap-3">
+                            <div class="py-6 text-center text-slate-500 text-xs">Cargando lotes...</div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="grid gap-6 lg:grid-cols-[1.1fr_0.9fr] items-start">
                     <div class="panel-card rounded-3xl p-6">
                         <div class="flex items-center gap-2 mb-1">
@@ -1468,11 +1526,13 @@
                                                 {{ $fila->sistema === 'RENDIMIENTO_LABORAL' ? 'RL' : ($fila->sistema === 'ACUERDO_GESTION' ? 'AG' : $fila->sistema) }}
                                             </span>
                                         </td>
-                                        <td class="px-4 py-3 text-center font-semibold {{ $fila->nota_semestre_1 ? 'text-[#00594E]' : 'text-slate-300' }}">
+                                        <td class="px-4 py-3 text-center font-semibold {{ $fila->nota_semestre_1 ? ($fila->sem1_provisional ? 'text-amber-600' : 'text-[#00594E]') : 'text-slate-300' }}" @if($fila->sem1_provisional) title="Nota provisional: {{ $fila->sem1_tramos }} tramos calificados" @endif>
                                             {{ $fila->nota_semestre_1 ?? '-' }}
+                                            @if($fila->sem1_provisional)<span class="block text-[9px] font-bold uppercase text-amber-600">Parcial {{ $fila->sem1_tramos }}</span>@endif
                                         </td>
-                                        <td class="px-4 py-3 text-center font-semibold {{ $fila->nota_semestre_2 ? 'text-[#00594E]' : 'text-slate-300' }}">
+                                        <td class="px-4 py-3 text-center font-semibold {{ $fila->nota_semestre_2 ? ($fila->sem2_provisional ? 'text-amber-600' : 'text-[#00594E]') : 'text-slate-300' }}" @if($fila->sem2_provisional) title="Nota provisional: {{ $fila->sem2_tramos }} tramos calificados" @endif>
                                             {{ $fila->nota_semestre_2 ?? '-' }}
+                                            @if($fila->sem2_provisional)<span class="block text-[9px] font-bold uppercase text-amber-600">Parcial {{ $fila->sem2_tramos }}</span>@endif
                                         </td>
                                         <td class="px-4 py-3 text-center font-bold {{ $fila->nota_anual ? 'text-[#00594E] bg-[#EAF2EF] rounded-lg' : 'text-slate-300' }}">
                                             {{ $fila->nota_anual ?? '-' }}

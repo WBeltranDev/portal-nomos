@@ -199,6 +199,36 @@ class PlazosYExtratiempoTest extends TestCase
         $this->assertStringNotContainsString('fecha límite de concertación', (string) $respuesta->getContent());
     }
 
+    public function test_el_periodo_nuevo_guarda_la_descripcion_y_la_tabla_muestra_los_cierres(): void
+    {
+        $this->comoAdmin();
+
+        $this->post('/admin/periodos', [
+            'sistema' => 'ACUERDO_GESTION', 'anio' => 2097, 'semestre' => 2, 'fecha_inicio' => '2097-07-01', 'fecha_fin' => '2097-12-31',
+            'fecha_fin_concertacion' => '2097-08-15', 'fecha_fin_calificacion' => '2098-01-15', 'descripcion' => 'Evaluación ordinaria segundo semestre',
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame('Evaluación ordinaria segundo semestre', DB::table('periodo')->where('anio', 2097)->value('descripcion'));
+
+        $this->get('/dashboard')->assertOk()
+            ->assertSee('Cierre concertación')->assertSee('Cierre calificación')
+            ->assertSee('2097-08-15')->assertSee('2098-01-15')
+            ->assertDontSee('fecha_inicio_concertacion', false);
+    }
+
+    public function test_el_layout_trae_el_meta_del_token_csrf(): void
+    {
+        $this->get('/')->assertOk()->assertSee('<meta name="csrf-token"', false);
+    }
+
+    public function test_el_error_de_calificacion_incompleta_nombra_lo_que_falta(): void
+    {
+        $this->postJson("/evaluaciones/{$this->idEvaluacion}/calcular-final")
+            ->assertStatus(422)
+            ->assertJsonPath('pendientes.compromisos_sin_calificar', 0)
+            ->assertJson(fn ($json) => $json->where('error', fn ($m) => str_starts_with($m, 'Faltan por calificar antes de calcular la nota final:') && str_contains($m, 'competencias comunes:'))->etc());
+    }
+
     public function test_el_periodo_guarda_los_dos_cierres_y_valida_su_coherencia(): void
     {
         $this->comoAdmin();
