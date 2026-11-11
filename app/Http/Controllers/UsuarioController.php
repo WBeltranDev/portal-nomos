@@ -65,27 +65,33 @@ class UsuarioController extends Controller
                 ]);
             }
 
-            // 1. Crear o reactivar Usuario
-            $user = User::where('username', trim($data['numero_doc']))->first();
+            // 1. Funcionario y cuenta de acceso. Si la persona ya existe se conserva su propia cuenta
+            //    (no se le asigna la de otra persona ni se crea una nueva que deje la anterior huérfana).
+            $funcionario = Funcionario::where('numero_doc', $data['numero_doc'])->first();
             $tempPassword = null;
+            $user = $funcionario && $funcionario->id_usuario ? User::find($funcionario->id_usuario) : null;
 
-            if (!$user) {
-                $tempPassword = $defaultPassword;
-                $user = User::create([
-                    'username' => trim($data['numero_doc']),
-                    'password' => Hash::make($tempPassword),
-                    'rol' => $data['rol'],
-                    'activo' => 1
-                ]);
+            if ($user) {
+                $user->update(['rol' => $data['rol'], 'activo' => 1]);
             } else {
-                $user->update([
-                    'rol' => $data['rol'],
-                    'activo' => 1
-                ]);
+                $user = User::where('username', trim($data['numero_doc']))->first();
+                if ($user && Funcionario::where('id_usuario', $user->id_usuario)->where('numero_doc', '!=', $data['numero_doc'])->exists()) {
+                    throw new \RuntimeException('La cuenta de acceso con la cédula ' . trim($data['numero_doc']) . ' ya pertenece a otro funcionario.');
+                }
+                if ($user) {
+                    $user->update(['rol' => $data['rol'], 'activo' => 1]);
+                } else {
+                    $tempPassword = $defaultPassword;
+                    $user = User::create([
+                        'username' => trim($data['numero_doc']),
+                        'password' => Hash::make($tempPassword),
+                        'rol' => $data['rol'],
+                        'activo' => 1,
+                    ]);
+                }
             }
 
             // 2. Crear o actualizar Funcionario
-            $funcionario = Funcionario::where('numero_doc', $data['numero_doc'])->first();
             if (!$funcionario) {
                 $funcionario = new Funcionario();
                 $funcionario->id_usuario = $user->id_usuario;
@@ -102,34 +108,52 @@ class UsuarioController extends Controller
                 ]);
             }
 
-            // 3. Crear Vinculación (Cargo asignado)
-            $sistema = !empty($data['sistema_evaluacion']) ? $data['sistema_evaluacion'] : ($request->boolean('aplica_eje_misional') || $data['rol'] === 'ADMINISTRADOR' || str_contains(strtoupper($data['cargo']), 'DIRECT') ? 'ACUERDO_GESTION' : 'RENDIMIENTO_LABORAL');
-            
-            DB::table('vinculacion')->insert([
-                'id_funcionario' => $funcionario->id_funcionario,
-                'cargo' => $data['cargo'],
-                'area' => $data['area'],
-                'activa' => 1,
-                'es_evaluador' => ($data['rol'] === 'EVALUADOR' || $data['rol'] === 'ADMINISTRADOR' ? 1 : 0),
-                'sistema_evaluacion' => $sistema,
-                'codigo_cargo' => $data['codigo_cargo'] ?? 0,
-                'grado_cargo' => $data['grado_cargo'] ?? 0,
-                'nivel_jerarquico' => $data['nivel_jerarquico'] ?? 'PROFESIONAL',
-                'aplica_eje_misional' => $request->boolean('aplica_eje_misional') ? 1 : 0,
-                'tipo_vinculacion' => 'INDEFINIDO',
-                'fecha_ingreso' => date('Y-m-d'),
-            ]);
+            // 3. Vinculación. Si la persona ya tenía este mismo cargo y quedó inactiva, se reactiva ESA
+            //    vinculación (conserva su evaluador, su jefe y su plaza) en lugar de crear otra vacía.
+            $activaIgual = DB::table('vinculacion')->where('id_funcionario', $funcionario->id_funcionario)->where('activa', 1)
+                ->where('cargo', $data['cargo'])->where('area', $data['area'])->exists();
+            if ($activaIgual) {
+                throw new \RuntimeException('Esta persona ya tiene una vinculación activa en ese cargo y dependencia.');
+            }
+
+            $previa = DB::table('vinculacion')->where('id_funcionario', $funcionario->id_funcionario)->where('activa', 0)->where('es_vacante', 0)
+                ->where('cargo', $data['cargo'])->where('area', $data['area'])->orderByDesc('id_vinculacion')->first();
+
+            if ($previa) {
+                $mensajePlaza = $this->reactivarVinculacion((int) $previa->id_vinculacion);
+                $reactivada = true;
+            } else {
+                $reactivada = false;
+                $sistema = !empty($data['sistema_evaluacion']) ? $data['sistema_evaluacion'] : ($request->boolean('aplica_eje_misional') || $data['rol'] === 'ADMINISTRADOR' || str_contains(strtoupper($data['cargo']), 'DIRECT') ? 'ACUERDO_GESTION' : 'RENDIMIENTO_LABORAL');
+
+                DB::table('vinculacion')->insert([
+                    'id_funcionario' => $funcionario->id_funcionario,
+                    'cargo' => $data['cargo'],
+                    'area' => $data['area'],
+                    'activa' => 1,
+                    'es_evaluador' => ($data['rol'] === 'EVALUADOR' || $data['rol'] === 'ADMINISTRADOR' ? 1 : 0),
+                    'sistema_evaluacion' => $sistema,
+                    'codigo_cargo' => $data['codigo_cargo'] ?? 0,
+                    'grado_cargo' => $data['grado_cargo'] ?? 0,
+                    'nivel_jerarquico' => $data['nivel_jerarquico'] ?? 'PROFESIONAL',
+                    'aplica_eje_misional' => $request->boolean('aplica_eje_misional') ? 1 : 0,
+                    'tipo_vinculacion' => 'INDEFINIDO',
+                    'fecha_ingreso' => date('Y-m-d'),
+                ]);
+            }
 
             if ($request->filled("vacante_id")) {
                 DB::table("vinculacion")->where("id_vinculacion", $request->vacante_id)->update(["es_vacante" => 0]);
             }
             DB::commit();
 
-            return back()->with([
-                'success' => 'Funcionario y vinculación creados exitosamente.',
-                'temp_password' => $tempPassword ?? $defaultPassword,
-                'temp_password_user' => $user->id_usuario,
-            ]);
+            return back()->with(array_filter([
+                'success' => $reactivada
+                    ? 'Funcionario reactivado: se recuperó su vinculación anterior con su evaluador. ' . $mensajePlaza
+                    : 'Funcionario y vinculación creados exitosamente.',
+                'temp_password' => $tempPassword,
+                'temp_password_user' => $tempPassword ? $user->id_usuario : null,
+            ], fn ($v) => $v !== null));
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->withErrors(['error' => 'Error al crear usuario y cargo: ' . $e->getMessage()]);
@@ -166,6 +190,55 @@ class UsuarioController extends Controller
             DB::rollBack();
             return back()->withErrors(['error' => 'Error al inhabilitar empleado.']);
         }
+    }
+
+    /**
+     * Reactiva una vinculación inactiva: vuelve a su plaza si sigue vacante. Conserva
+     * el evaluador asignado, el jefe y el historial. Retorna una frase sobre la plaza.
+     */
+    private function reactivarVinculacion(int $idVinculacion): string
+    {
+        DB::table('vinculacion')->where('id_vinculacion', $idVinculacion)->update(['activa' => 1, 'es_vacante' => 0]);
+
+        $ocupaciones = app(OcupacionPuestos::class);
+        $ocupaciones->reactivar($idVinculacion, 'Funcionario reactivado');
+        $plaza = $ocupaciones->plazaVigente($idVinculacion);
+
+        return $plaza
+            ? "Volvió a su plaza {$plaza->codigo_plaza}."
+            : 'Su plaza ya no está disponible o no tenía plaza: asígnala en el Catálogo de plazas.';
+    }
+
+    /**
+     * Reactivar a un funcionario inhabilitado: su cuenta de acceso y la vinculación indicada
+     * (por defecto la más reciente que no sea una vacante).
+     */
+    public function enable(Request $request, $id)
+    {
+        abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
+
+        $funcionario = Funcionario::find($id);
+        abort_unless($funcionario, 404);
+
+        if (DB::table('vinculacion')->where('id_funcionario', $id)->where('activa', 1)->exists()) {
+            return back()->withErrors(['error' => 'Este funcionario ya tiene una vinculación activa.']);
+        }
+
+        $vinculacion = DB::table('vinculacion')->where('id_funcionario', $id)->where('es_vacante', 0)
+            ->when($request->filled('id_vinculacion'), fn ($q) => $q->where('id_vinculacion', (int) $request->input('id_vinculacion')))
+            ->orderByDesc('id_vinculacion')->first();
+        if (! $vinculacion) {
+            return back()->withErrors(['error' => 'No hay una vinculación para reactivar: crea el cargo con "Crear usuario y cargo".']);
+        }
+
+        DB::transaction(function () use ($funcionario, $vinculacion, &$mensajePlaza) {
+            if ($funcionario->id_usuario) {
+                DB::table('usuario')->where('id_usuario', $funcionario->id_usuario)->update(['activo' => 1]);
+            }
+            $mensajePlaza = $this->reactivarVinculacion((int) $vinculacion->id_vinculacion);
+        });
+
+        return back()->with('success', 'Funcionario reactivado en ' . $vinculacion->cargo . ' · ' . $vinculacion->area . '. ' . $mensajePlaza);
     }
 
     /**

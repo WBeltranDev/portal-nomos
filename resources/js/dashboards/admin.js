@@ -179,6 +179,16 @@ export function seleccionarEmpleado(card, empleado) {
         if (formDisable && empleado.id_funcionario) {
             formDisable.action = `/admin/funcionarios/${empleado.id_funcionario}/disable`;
         }
+        // Inactivo (inhabilitado, no vacante): se ofrece reactivarlo en lugar de inhabilitarlo.
+        const inactivo = !empleado.activo && !empleado.es_vacante;
+        const formHabilitar = document.getElementById('form-habilitar-empleado');
+        if (formHabilitar && empleado.id_funcionario) {
+            formHabilitar.action = `/admin/funcionarios/${empleado.id_funcionario}/enable`;
+            const campo = document.getElementById('habilitar-id-vinculacion');
+            if (campo) campo.value = empleado.id_vinculacion || '';
+            formHabilitar.classList.toggle('hidden', !inactivo);
+        }
+        formDisable?.classList.toggle('hidden', inactivo);
         const formVacancia = document.getElementById('form-vacancia-empleado');
         const btnVacancia = document.getElementById('btn-toggle-vacancia');
         const inputVacancia = document.getElementById('vacancia-valor');
@@ -519,20 +529,27 @@ export function cancelarTrasladoAdmin(id) {
 window.confirmarTrasladoAdmin = confirmarTrasladoAdmin;
 window.cancelarTrasladoAdmin = cancelarTrasladoAdmin;
 
-export function cargarTrasladosAdmin() {
+// Histórico: los 10 traslados más recientes, con "Mostrar más" y barra de desplazamiento propia.
+const TRASLADOS_POR_PAGINA = 10;
+let trasladosCache = [];
+let trasladosVisibles = TRASLADOS_POR_PAGINA;
+
+function pintarTraslados() {
     const lista = document.getElementById('traslados-admin-lista');
     const contador = document.getElementById('traslados-admin-contador');
     if (!lista) return;
-    fetchJson('/admin/traslados')
-        .then(res => res.json())
-        .then(traslados => {
-            const items = Array.isArray(traslados) ? traslados : [];
-            if (contador) contador.innerText = `${items.length} registro${items.length === 1 ? '' : 's'}`;
-            if (!items.length) {
-                lista.innerHTML = '<div class="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-xs text-slate-500 text-center">No hay traslados registrados.</div>';
-                return;
-            }
-            lista.innerHTML = items.map(t => `
+    const items = trasladosCache;
+    const visibles = items.slice(0, trasladosVisibles);
+    if (contador) contador.innerText = items.length > visibles.length ? `Mostrando ${visibles.length} de ${items.length}` : `${items.length} registro${items.length === 1 ? '' : 's'}`;
+    if (!items.length) {
+        lista.innerHTML = '<div class="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-xs text-slate-500 text-center">No hay traslados registrados.</div>';
+        return;
+    }
+    const restantes = items.length - visibles.length;
+    const botonMas = restantes > 0
+        ? `<button type="button" onclick="mostrarMasTraslados()" class="w-full rounded-xl border border-[#00594E]/30 bg-white py-2.5 text-xs font-bold text-[#00594E] hover:bg-[#EAF2EF] transition">Mostrar más (${restantes} restante${restantes === 1 ? '' : 's'})</button>`
+        : '';
+    lista.innerHTML = visibles.map(t => `
                 <div class="rounded-2xl border border-slate-100 bg-white p-4 space-y-2">
                     <div class="flex items-start justify-between gap-3">
                         <div class="min-w-0">
@@ -563,7 +580,26 @@ export function cargarTrasladosAdmin() {
                     ${t.referencia ? `<p class="text-[10px] font-semibold text-[#00594E]">${escapeHtml(t.referencia)}</p>` : ''}
                     ${t.reemplazado_nombres ? `<p class="text-[10px] text-slate-500">Reemplaza a: <b>${escapeHtml(t.reemplazado_nombres)} ${escapeHtml(t.reemplazado_apellidos)}</b></p>` : ''}
                     ${t.motivo ? `<p class="text-[10px] text-slate-400 italic">${escapeHtml(t.motivo)}</p>` : ''}
-                </div>`).join('');
+                </div>`).join('') + botonMas;
+}
+
+export function mostrarMasTraslados() {
+    const lista = document.getElementById('traslados-admin-lista');
+    const posicion = lista ? lista.scrollTop : 0;
+    trasladosVisibles += TRASLADOS_POR_PAGINA;
+    pintarTraslados();
+    if (lista) lista.scrollTop = posicion;
+}
+window.mostrarMasTraslados = mostrarMasTraslados;
+
+export function cargarTrasladosAdmin() {
+    const contador = document.getElementById('traslados-admin-contador');
+    if (!document.getElementById('traslados-admin-lista')) return;
+    fetchJson('/admin/traslados')
+        .then(res => res.json())
+        .then(traslados => {
+            trasladosCache = Array.isArray(traslados) ? traslados : [];
+            pintarTraslados();
         })
         .catch(() => {
             if (contador) contador.innerText = 'Error';

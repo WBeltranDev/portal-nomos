@@ -356,7 +356,15 @@ class TrasladoLoteTest extends TestCase
             ->assertSee('Traslados en bloque (rotación)')
             ->assertSee('Descargar formato (Excel)')
             ->assertSee('id="lote-archivo"', false)
-            ->assertSee('id="lotes-admin-lista"', false);
+            ->assertSee('id="lotes-admin-lista"', false)
+            // El histórico tiene su propia barra de desplazamiento.
+            ->assertSee('id="traslados-admin-lista" class="grid gap-3 max-h-[72vh] overflow-y-auto', false);
+
+        // El panel de lotes va dentro de la columna del formulario, debajo de Traslados de Funcionarios y antes del histórico.
+        $html = $this->get('/dashboard')->getContent();
+        $seccion = strpos($html, 'id="section-traslados"');
+        $this->assertLessThan(strpos($html, 'Traslados en bloque (rotación)', $seccion), strpos($html, 'Traslados de Funcionarios', $seccion));
+        $this->assertLessThan(strpos($html, 'Histórico de traslados', $seccion), strpos($html, 'Traslados en bloque (rotación)', $seccion));
     }
 
     public function test_solo_talento_humano_usa_los_traslados_en_bloque(): void

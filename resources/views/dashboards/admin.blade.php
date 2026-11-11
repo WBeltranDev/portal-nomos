@@ -124,6 +124,12 @@
                                     @csrf
                                     <button type="submit" class="w-full bg-red-600 hover:bg-red-700 text-white rounded-xl py-2 text-xs font-bold transition">Inhabilitar Funcionario</button>
                                 </form>
+                                <form method="POST" id="form-habilitar-empleado" class="hidden">
+                                    @csrf
+                                    <input type="hidden" name="id_vinculacion" id="habilitar-id-vinculacion" value="">
+                                    <button type="submit" class="w-full bg-[#00594E] hover:brightness-110 text-white rounded-xl py-2 text-xs font-bold transition">Reactivar Funcionario</button>
+                                    <p class="mt-1 text-[10px] text-slate-500">Recupera esta vinculación con su evaluador, su jefe y su plaza.</p>
+                                </form>
                                 <form method="POST" id="form-vacancia-empleado">
                                     @csrf
                                     <input type="hidden" name="es_vacante" id="vacancia-valor" value="1">
@@ -1009,63 +1015,8 @@
 
             <!-- SECTION: TRASLADOS (Admin Only) -->
             <section id="section-traslados" class="section-content hidden space-y-6">
-                <!-- Traslados en bloque (rotación) -->
-                <div class="panel-card rounded-3xl p-6 space-y-4">
-                    <div class="flex items-center gap-2">
-                        <span class="material-symbols-outlined text-[#00594E]">sync_alt</span>
-                        <h2 class="text-xl sm:text-2xl font-black text-slate-900">Traslados en bloque (rotación)</h2>
-                    </div>
-                    <p class="text-sm text-slate-500">Para rotar a muchas personas a la vez: descarga el formato, escribe la plaza destino de cada una, súbelo y revisa. Cada persona queda con su traslado y su historial; el lote se confirma cuando <b>todos</b> los tramos de origen estén calificados.</p>
-
-                    <div class="grid gap-4 lg:grid-cols-2">
-                        <div class="rounded-2xl border border-slate-100 bg-slate-50/50 p-4 space-y-3">
-                            <p class="text-xs font-black uppercase text-slate-500">1. Descargar el formato</p>
-                            <div>
-                                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Cargo a rotar (precarga a las personas)</label>
-                                <select id="lote-cargo" data-buscable="Buscar cargo…" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white">
-                                    <option value="">Formato en blanco</option>
-                                    @foreach($cargosCatalogo as $cg)
-                                        @if($cg->activo ?? true)
-                                            <option value="{{ $cg->nombre }}">{{ $cg->nombre }}</option>
-                                        @endif
-                                    @endforeach
-                                </select>
-                            </div>
-                            <button type="button" onclick="descargarFormatoLote()" class="inline-flex items-center gap-2 rounded-xl bg-[#00594E] px-4 py-2 text-xs font-bold text-white hover:brightness-110 transition">
-                                <span class="material-symbols-outlined text-sm">download</span> Descargar formato (Excel)
-                            </button>
-                        </div>
-
-                        <div class="rounded-2xl border border-slate-100 bg-slate-50/50 p-4 space-y-3">
-                            <p class="text-xs font-black uppercase text-slate-500">2. Subir el formato diligenciado</p>
-                            <input type="file" id="lote-archivo" accept=".xlsx" class="block w-full text-xs text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-[#EAF2EF] file:px-3 file:py-2 file:text-xs file:font-bold file:text-[#00594E]" />
-                            <div class="grid gap-2 sm:grid-cols-2">
-                                <div>
-                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Fecha del traslado (para todo el lote)</label>
-                                    <input type="date" id="lote-fecha" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" />
-                                </div>
-                                <div>
-                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Descripción</label>
-                                    <input type="text" id="lote-descripcion" maxlength="300" placeholder="Ej: Rotación anual de asistentes 2026" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" />
-                                </div>
-                            </div>
-                            <button type="button" onclick="revisarLote()" class="inline-flex items-center gap-2 rounded-xl border border-[#00594E]/40 bg-white px-4 py-2 text-xs font-bold text-[#00594E] hover:bg-[#EAF2EF] transition">
-                                <span class="material-symbols-outlined text-sm">fact_check</span> Revisar archivo
-                            </button>
-                        </div>
-                    </div>
-
-                    <div id="lote-revision" class="hidden space-y-3"></div>
-
-                    <div>
-                        <h3 class="text-sm font-black text-slate-800 mb-2">Lotes registrados</h3>
-                        <div id="lotes-admin-lista" class="grid gap-3">
-                            <div class="py-6 text-center text-slate-500 text-xs">Cargando lotes...</div>
-                        </div>
-                    </div>
-                </div>
-
                 <div class="grid gap-6 lg:grid-cols-[1.1fr_0.9fr] items-start">
+                    <div class="space-y-6">
                     <div class="panel-card rounded-3xl p-6">
                         <div class="flex items-center gap-2 mb-1">
                             <span class="material-symbols-outlined text-[#00594E]">swap_horiz</span>
@@ -1145,7 +1096,64 @@
                         </form>
                     </div>
 
-                    <div class="panel-card rounded-3xl p-6">
+                    <!-- Traslados en bloque (rotación) -->
+                    <div class="panel-card rounded-3xl p-6 space-y-4">
+                        <div class="flex items-center gap-2">
+                            <span class="material-symbols-outlined text-[#00594E]">sync_alt</span>
+                            <h2 class="text-xl sm:text-2xl font-black text-slate-900">Traslados en bloque (rotación)</h2>
+                        </div>
+                        <p class="text-sm text-slate-500">Para rotar a muchas personas a la vez: descarga el formato, escribe la plaza destino de cada una, súbelo y revisa. Cada persona queda con su traslado y su historial; el lote se confirma cuando <b>todos</b> los tramos de origen estén calificados.</p>
+
+                        <div class="grid gap-4">
+                            <div class="rounded-2xl border border-slate-100 bg-slate-50/50 p-4 space-y-3">
+                                <p class="text-xs font-black uppercase text-slate-500">1. Descargar el formato</p>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Cargo a rotar (precarga a las personas)</label>
+                                    <select id="lote-cargo" data-buscable="Buscar cargo…" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white">
+                                        <option value="">Formato en blanco</option>
+                                        @foreach($cargosCatalogo as $cg)
+                                            @if($cg->activo ?? true)
+                                                <option value="{{ $cg->nombre }}">{{ $cg->nombre }}</option>
+                                            @endif
+                                        @endforeach
+                                    </select>
+                                </div>
+                                <button type="button" onclick="descargarFormatoLote()" class="inline-flex items-center gap-2 rounded-xl bg-[#00594E] px-4 py-2 text-xs font-bold text-white hover:brightness-110 transition">
+                                    <span class="material-symbols-outlined text-sm">download</span> Descargar formato (Excel)
+                                </button>
+                            </div>
+
+                            <div class="rounded-2xl border border-slate-100 bg-slate-50/50 p-4 space-y-3">
+                                <p class="text-xs font-black uppercase text-slate-500">2. Subir el formato diligenciado</p>
+                                <input type="file" id="lote-archivo" accept=".xlsx" class="block w-full text-xs text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-[#EAF2EF] file:px-3 file:py-2 file:text-xs file:font-bold file:text-[#00594E]" />
+                                <div class="grid gap-2 sm:grid-cols-2">
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Fecha del traslado (para todo el lote)</label>
+                                        <input type="date" id="lote-fecha" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" />
+                                    </div>
+                                    <div>
+                                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Descripción</label>
+                                        <input type="text" id="lote-descripcion" maxlength="300" placeholder="Ej: Rotación anual de asistentes 2026" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" />
+                                    </div>
+                                </div>
+                                <button type="button" onclick="revisarLote()" class="inline-flex items-center gap-2 rounded-xl border border-[#00594E]/40 bg-white px-4 py-2 text-xs font-bold text-[#00594E] hover:bg-[#EAF2EF] transition">
+                                    <span class="material-symbols-outlined text-sm">fact_check</span> Revisar archivo
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="lote-revision" class="hidden space-y-3"></div>
+
+                        <div>
+                            <h3 class="text-sm font-black text-slate-800 mb-2">Lotes registrados</h3>
+                            <div id="lotes-admin-lista" class="grid gap-3">
+                                <div class="py-6 text-center text-slate-500 text-xs">Cargando lotes...</div>
+                            </div>
+                        </div>
+                    </div>
+                    </div>
+
+                    <div class="panel-card rounded-3xl p-6 lg:sticky lg:top-4">
                         <div class="flex items-end justify-between gap-4 mb-4">
                             <div>
                                 <h3 class="text-lg font-bold text-slate-800">Histórico de traslados</h3>
@@ -1153,7 +1161,7 @@
                             </div>
                             <span id="traslados-admin-contador" class="text-[10px] font-bold uppercase rounded-full px-3 py-1.5 bg-[#EAF2EF] text-[#00594E]">Cargando...</span>
                         </div>
-                        <div id="traslados-admin-lista" class="grid gap-3">
+                        <div id="traslados-admin-lista" class="grid gap-3 max-h-[72vh] overflow-y-auto pr-1 content-start">
                             <div class="py-10 text-center text-slate-500 text-xs">Cargando traslados...</div>
                         </div>
                     </div>

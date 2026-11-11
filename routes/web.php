@@ -936,6 +936,7 @@ Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard
 // --- CRUD DE USUARIOS, CARGOS Y DEPENDENCIAS (S9) ---
 Route::post('/admin/usuarios', [UsuarioController::class, 'store'])->name('admin.usuarios.store');
 Route::post('/admin/funcionarios/{id}/disable', [UsuarioController::class, 'disable'])->name('admin.funcionarios.disable');
+Route::post('/admin/funcionarios/{id}/enable', [UsuarioController::class, 'enable'])->name('admin.funcionarios.enable');
 Route::post('/admin/vinculaciones/{id}/vacancia', [UsuarioController::class, 'vacancia'])->name('admin.vinculaciones.vacancia');
 Route::post('/admin/vinculaciones/{id}/jefe', [UsuarioController::class, 'actualizarJefeSuperior'])->name('admin.vinculaciones.jefe');
 Route::post('/admin/cargos', [UsuarioController::class, 'storeCargo'])->name('admin.cargos.store');
