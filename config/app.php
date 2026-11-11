@@ -66,7 +66,9 @@ return [
     |
     */
 
-    'timezone' => env('APP_TIMEZONE', 'America/Bogota'),
+    // Las fechas de la institución (hoy, plazos, traslados) son las de Colombia: se fija la zona
+    // para que un APP_TIMEZONE=UTC en el servidor no adelante la fecha a partir de las 7 p. m.
+    'timezone' => 'America/Bogota',
 
     /*
     |--------------------------------------------------------------------------

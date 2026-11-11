@@ -3400,7 +3400,7 @@ Route::get('/evaluaciones/{id}/compromisos', function (int $id) {
             ->where('id_funcionario', $auth['id_funcionario'] ?? null)
             ->exists();
 
-        abort_unless($puedeVer, 403);
+        abort_unless($puedeVer, 403, mensajeSinAccesoEvaluacion($evaluacion ?? null));
     }
 
     $compromisos = DB::table('compromiso')
@@ -3481,7 +3481,7 @@ Route::post('/evaluaciones/{id}/ejes', function (Request $request, int $id) {
         ->where('id_funcionario', $auth['id_funcionario'] ?? null)
         ->exists();
 
-    abort_unless($puedeEditar, 403);
+    abort_unless($puedeEditar, 403, mensajeSinAccesoEvaluacion($evaluacion ?? null));
 
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
     abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación pendiente.');
@@ -3516,7 +3516,7 @@ Route::get('/evaluaciones/{id}/observaciones', function (int $id) {
             ->where('id_funcionario', $auth['id_funcionario'] ?? null)
             ->exists();
 
-        abort_unless($puedeVer, 403);
+        abort_unless($puedeVer, 403, mensajeSinAccesoEvaluacion($evaluacion ?? null));
     }
 
     return response()->json([
@@ -3540,7 +3540,7 @@ Route::post('/evaluaciones/{id}/observaciones', function (Request $request, int 
         ->where('id_funcionario', $auth['id_funcionario'] ?? null)
         ->exists();
 
-    abort_unless($puedeEditar, 403);
+    abort_unless($puedeEditar, 403, mensajeSinAccesoEvaluacion($evaluacion ?? null));
 
     $data = $request->validate([
         'texto' => ['required', 'string', 'max:2000'],
@@ -3779,7 +3779,7 @@ Route::post('/evaluaciones/{id}/compromisos', function (Request $request, int $i
         ->where('id_vinculacion', $evaluacion->id_vinc_evaluador)
         ->where('id_funcionario', $authCompromiso['id_funcionario'] ?? null)
         ->exists();
-    abort_unless($puedeEditarCompromiso, 403);
+    abort_unless($puedeEditarCompromiso, 403, mensajeSinAccesoEvaluacion($evaluacion ?? null));
 
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
     abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación pendiente.');
@@ -3851,7 +3851,7 @@ Route::delete('/compromisos/{id}', function (int $id) {
         ->where('id_vinculacion', $evaluacion->id_vinc_evaluador)
         ->where('id_funcionario', $authCompromiso['id_funcionario'] ?? null)
         ->exists();
-    abort_unless($puedeEditarCompromiso, 403);
+    abort_unless($puedeEditarCompromiso, 403, mensajeSinAccesoEvaluacion($evaluacion ?? null));
 
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
     abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación pendiente.');
@@ -3900,7 +3900,7 @@ Route::put('/compromisos/{id}', function (Request $request, int $id) {
         ->where('id_vinculacion', $evaluacion->id_vinc_evaluador)
         ->where('id_funcionario', $authCompromiso['id_funcionario'] ?? null)
         ->exists();
-    abort_unless($puedeEditarCompromiso, 403);
+    abort_unless($puedeEditarCompromiso, 403, mensajeSinAccesoEvaluacion($evaluacion ?? null));
 
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
     abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación pendiente.');
@@ -4839,7 +4839,7 @@ Route::get('/evaluaciones/{id}/calculo', function (int $id) {
             ->whereIn('id_vinculacion', [$evaluacion->id_vinc_evaluado, $evaluacion->id_vinc_evaluador])
             ->where('id_funcionario', $auth['id_funcionario'] ?? null)
             ->exists();
-        abort_unless($puedeVer, 403);
+        abort_unless($puedeVer, 403, mensajeSinAccesoEvaluacion($evaluacion ?? null));
     }
 
     // El evaluado ve su nota cuando el evaluador la confirma, no el cálculo parcial.
@@ -4875,7 +4875,7 @@ Route::post('/evaluaciones/{id}/calificar-compromisos', function (Request $reque
         ->where('id_vinculacion', $evaluacion->id_vinc_evaluador)
         ->where('id_funcionario', $auth['id_funcionario'] ?? null)
         ->exists();
-    abort_unless($puedeEditar, 403);
+    abort_unless($puedeEditar, 403, mensajeSinAccesoEvaluacion($evaluacion ?? null));
     abort_if($mensajePlazo = mensajePlazoCalificacionVencido($evaluacion), 422, $mensajePlazo);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
     abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación pendiente.');
@@ -4950,7 +4950,7 @@ Route::post('/evaluaciones/{id}/calificar-competencias', function (Request $requ
         ->where('id_vinculacion', $evaluacion->id_vinc_evaluador)
         ->where('id_funcionario', $auth['id_funcionario'] ?? null)
         ->exists();
-    abort_unless($puedeEditar, 403);
+    abort_unless($puedeEditar, 403, mensajeSinAccesoEvaluacion($evaluacion ?? null));
     abort_if($mensajePlazo = mensajePlazoCalificacionVencido($evaluacion), 422, $mensajePlazo);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
     abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación pendiente.');
@@ -5025,7 +5025,7 @@ Route::post('/evaluaciones/{id}/calcular-final', function (Request $request, int
             ->where('id_vinculacion', $evaluacion->id_vinc_evaluador)
             ->where('id_funcionario', $auth['id_funcionario'] ?? null)
             ->exists();
-        abort_unless($puedeEditar, 403);
+        abort_unless($puedeEditar, 403, mensajeSinAccesoEvaluacion($evaluacion ?? null));
     }
 
     // Solo el admin puede forzar el cálculo pasando por encima de estas dos validaciones
@@ -5107,7 +5107,7 @@ Route::get('/evaluaciones/{id}/competencias', function (int $id) {
             ->whereIn('id_vinculacion', [$evaluacion->id_vinc_evaluado, $evaluacion->id_vinc_evaluador])
             ->where('id_funcionario', $auth['id_funcionario'] ?? null)
             ->exists();
-        abort_unless($puedeVer, 403);
+        abort_unless($puedeVer, 403, mensajeSinAccesoEvaluacion($evaluacion ?? null));
     }
 
     $competencias = DB::table('competencia_evaluada as ce')
@@ -5205,7 +5205,7 @@ Route::post('/evaluaciones/{id}/calificar-ejes', function (Request $request, int
         ->where('id_vinculacion', $evaluacion->id_vinc_evaluador)
         ->where('id_funcionario', $auth['id_funcionario'] ?? null)
         ->exists();
-    abort_unless($puedeEditar, 403);
+    abort_unless($puedeEditar, 403, mensajeSinAccesoEvaluacion($evaluacion ?? null));
     abort_if($mensajePlazo = mensajePlazoCalificacionVencido($evaluacion), 422, $mensajePlazo);
     abort_if($evaluacion->es_traslado, 422, 'Esta evaluación quedó bloqueada por traslado y solo se puede consultar.');
     abort_if(evaluacionBloqueadaPorImpedimento($evaluacion->id_evaluacion), 422, 'Esta evaluación está bloqueada por un impedimento o recusación pendiente.');
@@ -5378,6 +5378,44 @@ if (!function_exists('getEvaluacionConSistema')) {
     }
 }
 
+if (!function_exists('mensajeSinAccesoEvaluacion')) {
+/**
+ * Explica por qué alguien ya no puede ver o editar una evaluación: si se la
+ * reasignaron por un impedimento o recusación resuelta, o por un cambio de
+ * evaluador, lo dice; si no, un mensaje general. Evita un 403 sin explicación.
+ */
+function mensajeSinAccesoEvaluacion($evaluacion = null): string {
+    $general = 'No tienes acceso a esta evaluación.';
+    if (! is_object($evaluacion) || ! Schema::hasTable('evaluacion_evento')) {
+        return $general;
+    }
+
+    $idFuncionario = session('usuario_autenticado.id_funcionario');
+    $misVinculaciones = $idFuncionario
+        ? DB::table('vinculacion')->where('id_funcionario', $idFuncionario)->pluck('id_vinculacion')->map(fn ($v) => (string) $v)->all()
+        : [];
+    if (! $misVinculaciones) {
+        return $general;
+    }
+
+    $marcas = implode(',', array_fill(0, count($misVinculaciones), '?'));
+    $eventos = fn (string $tipo) => DB::table('evaluacion_evento')
+        ->where('id_evaluacion', $evaluacion->id_evaluacion)
+        ->where('tipo_evento', $tipo)
+        ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(datos, '$.id_vinc_evaluador_anterior')) IN ({$marcas})", $misVinculaciones)
+        ->exists();
+
+    if ($eventos('IMPEDIMENTO_RESUELTO')) {
+        return 'Esta evaluación fue reasignada por Talento Humano a otro evaluador por un impedimento o recusación resuelta; ya no está a tu cargo.';
+    }
+    if ($eventos('CAMBIO_EVALUADOR')) {
+        return 'Esta evaluación pasó a otro evaluador (traslado, delegación o ajuste de Talento Humano); ya no está a tu cargo.';
+    }
+
+    return $general;
+}
+}
+
 /**
  * S6 — Plan de mejoramiento CONDICIONADO (1er semestre).
  *
@@ -5522,7 +5560,7 @@ Route::get('/evaluaciones/{id}/recursos', function (int $id) {
             ->where('id_funcionario', $auth['id_funcionario'] ?? null)
             ->exists();
 
-        abort_unless($puedeVer, 403);
+        abort_unless($puedeVer, 403, mensajeSinAccesoEvaluacion($evaluacion ?? null));
     }
 
     $docNotificacion = getDocumentoNotificacion($id, 'SEMESTRAL');
@@ -6033,7 +6071,7 @@ Route::get('/evaluaciones/{id}/plan-mejoramiento', function (int $id) {
             ->where('id_funcionario', $auth['id_funcionario'] ?? null)
             ->exists();
 
-        abort_unless($puedeVer, 403);
+        abort_unless($puedeVer, 403, mensajeSinAccesoEvaluacion($evaluacion ?? null));
     }
 
     $plan = DB::table('plan_mejoramiento')->where('id_evaluacion', $id)->first();
@@ -6075,7 +6113,7 @@ Route::post('/evaluaciones/{id}/plan-mejoramiento', function (Request $request, 
         ->where('id_funcionario', $auth['id_funcionario'] ?? null)
         ->exists();
 
-    abort_unless($puedeEditar, 403);
+    abort_unless($puedeEditar, 403, mensajeSinAccesoEvaluacion($evaluacion ?? null));
 
     $data = $request->validate([
         'descripcion_temas' => ['required', 'string', 'max:5000'],

@@ -210,6 +210,43 @@ class ImpedimentoRecusacionTest extends TestCase
         $this->assertSame($this->idVincEvaluador, (int) DB::table('evaluacion')->where('id_evaluacion', $this->idEvaluacion)->value('id_vinc_evaluador'));
     }
 
+    public function test_el_evaluador_que_cedio_la_evaluacion_recibe_una_explicacion_y_no_un_403_mudo(): void
+    {
+        $idFuncionarioInicial = (int) DB::table('vinculacion')->where('id_vinculacion', $this->idVincEvaluador)->value('id_funcionario');
+        $this->resolver(['estado' => 'APROBADO', 'id_vinc_nuevo_evaluador' => $this->idVincNuevoEvaluador])->assertOk();
+
+        session(['usuario_autenticado' => [
+            'id_usuario' => $this->idUsuario, 'id_funcionario' => $idFuncionarioInicial, 'rol_activo' => 'evaluador', 'roles' => ['evaluador'],
+        ]]);
+
+        $this->getJson("/evaluaciones/{$this->idEvaluacion}/compromisos")
+            ->assertForbidden()
+            ->assertJsonPath('message', 'Esta evaluación fue reasignada por Talento Humano a otro evaluador por un impedimento o recusación resuelta; ya no está a tu cargo.');
+    }
+
+    public function test_quien_nunca_tuvo_la_evaluacion_recibe_el_mensaje_general(): void
+    {
+        $ajeno = $this->crearFuncionario('T' . random_int(10000, 99999) . 'Z');
+        $this->crearVinculacion($ajeno, true);
+        session(['usuario_autenticado' => ['id_usuario' => $this->idUsuario, 'id_funcionario' => $ajeno, 'rol_activo' => 'evaluador', 'roles' => ['evaluador']]]);
+
+        $this->getJson("/evaluaciones/{$this->idEvaluacion}/compromisos")->assertForbidden()->assertJsonPath('message', 'No tienes acceso a esta evaluación.');
+    }
+
+    public function test_un_cambio_de_evaluador_por_traslado_o_delegacion_tambien_se_explica(): void
+    {
+        $idFuncionarioInicial = (int) DB::table('vinculacion')->where('id_vinculacion', $this->idVincEvaluador)->value('id_funcionario');
+        DB::table('evaluacion')->where('id_evaluacion', $this->idEvaluacion)->update(['id_vinc_evaluador' => $this->idVincNuevoEvaluador]);
+        DB::table('evaluacion_evento')->insert([
+            'id_evaluacion' => $this->idEvaluacion, 'tipo_evento' => 'CAMBIO_EVALUADOR', 'created_at' => now(),
+            'datos' => json_encode(['origen' => 'TRASLADO', 'id_vinc_evaluador_anterior' => $this->idVincEvaluador, 'id_vinc_evaluador_nuevo' => $this->idVincNuevoEvaluador]),
+        ]);
+        session(['usuario_autenticado' => ['id_usuario' => $this->idUsuario, 'id_funcionario' => $idFuncionarioInicial, 'rol_activo' => 'evaluador', 'roles' => ['evaluador']]]);
+
+        $this->getJson("/evaluaciones/{$this->idEvaluacion}/compromisos")->assertForbidden()
+            ->assertJsonPath('message', 'Esta evaluación pasó a otro evaluador (traslado, delegación o ajuste de Talento Humano); ya no está a tu cargo.');
+    }
+
     public function test_el_tablero_excluye_del_selector_a_los_evaluadores_incompatibles(): void
     {
         $idVincEvaluado = (int) DB::table('evaluacion')->where('id_evaluacion', $this->idEvaluacion)->value('id_vinc_evaluado');

@@ -1136,7 +1136,7 @@
                                         <input type="text" id="lote-descripcion" maxlength="300" placeholder="Ej: Rotación anual de asistentes 2026" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" />
                                     </div>
                                 </div>
-                                <button type="button" onclick="revisarLote()" class="inline-flex items-center gap-2 rounded-xl border border-[#00594E]/40 bg-white px-4 py-2 text-xs font-bold text-[#00594E] hover:bg-[#EAF2EF] transition">
+                                <button type="button" id="btn-revisar-lote" onclick="revisarLote()" class="inline-flex items-center gap-2 rounded-xl border border-[#00594E]/40 bg-white px-4 py-2 text-xs font-bold text-[#00594E] hover:bg-[#EAF2EF] transition">
                                     <span class="material-symbols-outlined text-sm">fact_check</span> Revisar archivo
                                 </button>
                             </div>
@@ -1265,7 +1265,7 @@
                         </form>
                     </div>
 
-                    <div class="panel-card rounded-3xl p-6">
+                    <div class="panel-card rounded-3xl p-6 lg:sticky lg:top-4">
                         <div class="flex items-end justify-between gap-4 mb-4">
                             <div>
                                 <h3 class="text-lg font-bold text-slate-800">Histórico de delegaciones</h3>
@@ -1273,7 +1273,7 @@
                             </div>
                             <span id="delegaciones-admin-contador" class="text-[10px] font-bold uppercase rounded-full px-3 py-1.5 bg-[#EAF2EF] text-[#00594E]">Cargando...</span>
                         </div>
-                        <div id="delegaciones-admin-lista" class="grid gap-3">
+                        <div id="delegaciones-admin-lista" class="grid gap-3 max-h-[72vh] overflow-y-auto pr-1 content-start">
                             <div class="py-10 text-center text-slate-500 text-xs">Cargando delegaciones...</div>
                         </div>
                     </div>
@@ -1785,6 +1785,9 @@
             if (!table) return;
 
             let csv = [];
+            // Todas las celdas van entre comillas dobles y con las comillas internas duplicadas: los nombres con
+            // comas o comillas no parten la fila al abrir el archivo en Excel.
+            const esc = valor => '"' + String(valor ?? '').replace(/"/g, '""') + '"';
             const rows = table.querySelectorAll("tr");
             
             for (let i = 0; i < rows.length; i++) {
@@ -1795,17 +1798,15 @@
                 const cols = rows[i].querySelectorAll("td, th");
                 for (let j = 0; j < cols.length; j++) {
                     if (cols[j].hasAttribute('data-csv-header-docs')) {
-                        row.push('"Doc. Semestre 1"');
-                        row.push('"Doc. Semestre 2"');
-                        row.push('"Doc. Anual"');
+                        row.push(esc('Doc. Semestre 1'));
+                        row.push(esc('Doc. Semestre 2'));
+                        row.push(esc('Doc. Anual'));
                     } else if (cols[j].hasAttribute('data-csv-sem1')) {
-                        row.push('"' + (cols[j].getAttribute('data-csv-sem1') || '-') + '"');
-                        row.push('"' + (cols[j].getAttribute('data-csv-sem2') || '-') + '"');
-                        row.push('"' + (cols[j].getAttribute('data-csv-anual') || '-') + '"');
+                        row.push(esc(cols[j].getAttribute('data-csv-sem1') || '-'));
+                        row.push(esc(cols[j].getAttribute('data-csv-sem2') || '-'));
+                        row.push(esc(cols[j].getAttribute('data-csv-anual') || '-'));
                     } else {
-                        let data = cols[j].innerText.replace(/(\r\n|\n|\r)/gm, " | ").trim();
-                        data = data.replace(/"/g, '""');
-                        row.push('"' + data + '"');
+                        row.push(esc(cols[j].innerText.replace(/(\r\n|\n|\r)/gm, " | ").trim()));
                     }
                 }
                 // Use semicolon for Excel in Latin America / Spain
@@ -1819,11 +1820,12 @@
             
             const a = document.createElement("a");
             a.href = url;
-            const dateStr = new Date().toISOString().split('T')[0];
+            const dateStr = window.fechaLocalISO();
             a.download = "Matriz_Calificaciones_" + dateStr + ".csv";
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
+            window.avisar('Matriz descargada con ' + (csv.length - 1) + ' registros.', 'exito');
         }
 
         function guardarConfigEncuesta(e) {

@@ -515,6 +515,13 @@ class DelegacionTramosTest extends TestCase
         $this->assertNotNull($personas[$this->evaluado1]['evaluador_actual']);
     }
 
+    public function test_el_historico_de_delegaciones_tiene_su_propia_barra_de_desplazamiento(): void
+    {
+        $this->get('/dashboard')->assertOk()
+            ->assertSee('id="delegaciones-admin-lista" class="grid gap-3 max-h-[72vh] overflow-y-auto', false)
+            ->assertSee('id="delegaciones-admin-contador"', false);
+    }
+
     public function test_los_selectores_largos_de_la_delegacion_tienen_buscador(): void
     {
         $this->get('/dashboard')->assertOk()

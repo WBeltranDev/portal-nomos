@@ -25,7 +25,14 @@ export function fetchJson(url, options = {}) {
     if (getCsrfToken() && !headers['X-CSRF-TOKEN']) {
         headers['X-CSRF-TOKEN'] = getCsrfToken();
     }
-    return fetch(url, { ...options, headers });
+    return fetch(url, { ...options, headers }).then(res => {
+        // Un 403 con explicación (p. ej. la evaluación fue reasignada) se muestra siempre al usuario,
+        // aunque quien llamó no maneje el error. El aviso evita repetir el mismo texto.
+        if (res.status === 403) {
+            res.clone().json().then(datos => { if (datos?.message) avisar(datos.message, 'error'); }).catch(() => {});
+        }
+        return res;
+    });
 }
 
 export function parseErrorMessage(payload, fallback) {
@@ -561,6 +568,15 @@ export function avisar(mensaje, tipo = 'info') {
     };
     const [clases, icono, colorIcono] = estilos[tipo] || estilos.info;
 
+    // Sin duplicados seguidos y como máximo 2 avisos a la vez: una pila larga taparía los botones de la pantalla.
+    const texto = String(mensaje ?? '');
+    const ahora = Date.now();
+    if (avisar.ultimo && avisar.ultimo.texto === texto && ahora - avisar.ultimo.hora < 2000) return;
+    avisar.ultimo = { texto, hora: ahora };
+    while (contenedor.children.length >= 2) {
+        contenedor.firstElementChild.remove();
+    }
+
     const aviso = document.createElement('div');
     aviso.className = `flex items-start gap-2 rounded-2xl border p-3 text-sm shadow-lg ${clases}`;
     aviso.innerHTML = `
@@ -575,3 +591,11 @@ export function avisar(mensaje, tipo = 'info') {
 
 window.confirmarAccion = confirmarAccion;
 window.avisar = avisar;
+
+/** Fecha local (la del navegador, en Colombia) como AAAA-MM-DD. toISOString() usa UTC y adelanta el día a partir de las 7 p. m. */
+export function fechaLocalISO(fecha = new Date()) {
+    const mes = String(fecha.getMonth() + 1).padStart(2, '0');
+    const dia = String(fecha.getDate()).padStart(2, '0');
+    return `${fecha.getFullYear()}-${mes}-${dia}`;
+}
+window.fechaLocalISO = fechaLocalISO;

@@ -1,7 +1,7 @@
 /**
  * Admin Dashboard JS Module
  */
-import { escapeHtml, fetchJson, parseErrorMessage, navegarMenu, renderEnlacesRecurso, abrirModalDecisionRecurso, habilitarBuscadorSelect, habilitarBuscadoresSelect, avisar, confirmarAccion } from './common.js';
+import { escapeHtml, fetchJson, parseErrorMessage, navegarMenu, renderEnlacesRecurso, abrirModalDecisionRecurso, habilitarBuscadorSelect, habilitarBuscadoresSelect, avisar, confirmarAccion, fechaLocalISO } from './common.js';
 
 export function filtrarEmpleados() {
     const texto = (document.getElementById('buscador-empleados')?.value || '').trim().toLowerCase();
@@ -563,7 +563,7 @@ function pintarTraslados() {
                     </div>
                     ${t.estado === 'PROGRAMADO' && t.id_delegacion ? `<p class="rounded-xl border border-amber-100 bg-amber-50/60 p-2.5 text-[11px] font-semibold text-amber-800">${t.tipo === 'PAUSA' ? 'Cierre del tramo del titular' : t.tipo === 'REANUDACION' ? 'Regreso del titular' : 'Cambio de evaluador'} de la delegación #${t.id_delegacion}: se confirma desde Delegaciones.</p>` : ''}
                     ${t.estado === 'PROGRAMADO' && t.id_lote ? `<p class="rounded-xl border border-amber-100 bg-amber-50/60 p-2.5 text-[11px] font-semibold text-amber-800">Hace parte del lote #${t.id_lote} de traslados en bloque: se confirma desde Traslados en bloque.</p>` : ''}
-                    ${t.id_lote && t.estado !== 'PROGRAMADO' ? `<p class="text-[10px] font-bold uppercase text-[#00594E]">Traslado en bloque · lote #${t.id_lote}</p>` : ''}
+                    ${t.id_lote ? `<p><span class="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2.5 py-1 text-[10px] font-bold uppercase text-sky-800"><span class="material-symbols-outlined text-[13px]">sync_alt</span>Parte del Lote de Rotación #${t.id_lote}</span></p>` : ''}
                     ${t.estado === 'PROGRAMADO' && !t.id_delegacion && !t.id_lote ? accionesTrasladoProgramado(t) : ''}
                     <div class="grid grid-cols-2 gap-2 rounded-xl border border-slate-100 bg-slate-50/50 p-3">
                         <div>
@@ -622,14 +622,32 @@ export function revisarLote() {
     datos.append('archivo', archivo);
     const fechaLote = document.getElementById('lote-fecha')?.value;
     if (fechaLote) datos.append('fecha_traslado', fechaLote);
+
+    // Indicador de avance: la revisión puede tardar con muchas filas.
+    const boton = document.getElementById('btn-revisar-lote');
+    const textoBoton = boton?.innerHTML;
+    if (boton) {
+        boton.disabled = true;
+        boton.classList.add('opacity-70', 'cursor-wait');
+        boton.innerHTML = '<span class="material-symbols-outlined text-sm animate-spin">progress_activity</span> Analizando el archivo…';
+    }
+
     fetchJson('/admin/traslados/lote/analizar', { method: 'POST', body: datos })
         .then(async res => {
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo revisar el archivo.'));
             revisionLote = data;
             pintarRevisionLote(data);
+            avisar(`Revisión terminada: ${data.resumen.total} fila(s), ${data.resumen.con_error} con error.`, data.resumen.con_error ? 'error' : 'exito');
         })
-        .catch(error => avisar(error.message, 'error'));
+        .catch(error => avisar(error.message, 'error'))
+        .finally(() => {
+            if (boton) {
+                boton.disabled = false;
+                boton.classList.remove('opacity-70', 'cursor-wait');
+                boton.innerHTML = textoBoton;
+            }
+        });
 }
 
 function pintarRevisionLote(data) {
@@ -1088,7 +1106,7 @@ export function finalizarDelegacion(id) {
     }
 
     cargarEvaluadoresDelegacion().then(() => {
-        const fechaRegreso = d.fecha_fin ? new Date(new Date(`${d.fecha_fin}T00:00:00`).getTime() + 86400000).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+        const fechaRegreso = d.fecha_fin ? fechaLocalISO(new Date(new Date(`${d.fecha_fin}T00:00:00`).getTime() + 86400000)) : fechaLocalISO();
         panel.innerHTML = `
             <p class="text-[11px] font-semibold text-slate-700">${d.titular_activo ? 'Por defecto el trabajo vuelve al titular; puedes elegir a otra persona.' : '<span class="text-rose-700">El titular ya no está activo: elige quién asume sus evaluaciones.</span>'}</p>
             <div>
@@ -1342,10 +1360,22 @@ export function renderNotificacionesDelegaciones(items) {
     container.innerHTML = html;
 }
 
-export function cargarDelegacionesAdmin() {
+// Histórico: las 10 delegaciones más recientes, con "Mostrar más" y barra de desplazamiento propia.
+const DELEGACIONES_POR_PAGINA = 10;
+let delegacionesVisibles = DELEGACIONES_POR_PAGINA;
+
+export function mostrarMasDelegaciones() {
     const lista = document.getElementById('delegaciones-admin-lista');
+    const posicion = lista ? lista.scrollTop : 0;
+    delegacionesVisibles += DELEGACIONES_POR_PAGINA;
+    pintarDelegaciones();
+    if (lista) lista.scrollTop = posicion;
+}
+window.mostrarMasDelegaciones = mostrarMasDelegaciones;
+
+export function cargarDelegacionesAdmin() {
     const contador = document.getElementById('delegaciones-admin-contador');
-    if (!lista) return;
+    if (!document.getElementById('delegaciones-admin-lista')) return;
     fetchJson('/admin/delegaciones')
         .then(res => res.json())
         .then(delegaciones => {
@@ -1355,18 +1385,39 @@ export function cargarDelegacionesAdmin() {
                 return { ...d, dias_restantes: dias };
             });
 
+            // La caché guarda todas (los paneles de edición y ajuste las consultan); solo el dibujo se limita.
             delegacionesCache = items;
 
             // Renderizar notificaciones de retorno arriba
             renderNotificacionesDelegaciones(items);
+            pintarDelegaciones();
+        })
+        .catch(() => {
+            if (contador) contador.innerText = 'Error';
+        });
+}
 
-            if (contador) contador.innerText = `${items.length} delegacion${items.length === 1 ? '' : 'es'}`;
-            if (!items.length) {
-                lista.innerHTML = '<div class="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-xs text-slate-500 text-center">No hay delegaciones registradas.</div>';
-                return;
-            }
+function pintarDelegaciones() {
+    const lista = document.getElementById('delegaciones-admin-lista');
+    const contador = document.getElementById('delegaciones-admin-contador');
+    if (!lista) return;
+    const items = delegacionesCache;
+    const visibles = items.slice(0, delegacionesVisibles);
+    const restantes = items.length - visibles.length;
+    if (contador) {
+        contador.innerText = restantes > 0
+            ? `Mostrando ${visibles.length} de ${items.length}`
+            : `${items.length} delegacion${items.length === 1 ? '' : 'es'}`;
+    }
+    if (!items.length) {
+        lista.innerHTML = '<div class="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-xs text-slate-500 text-center">No hay delegaciones registradas.</div>';
+        return;
+    }
+    const botonMas = restantes > 0
+        ? `<button type="button" onclick="mostrarMasDelegaciones()" class="w-full rounded-xl border border-[#00594E]/30 bg-white py-2.5 text-xs font-bold text-[#00594E] hover:bg-[#EAF2EF] transition">Mostrar más (${restantes} restante${restantes === 1 ? '' : 's'})</button>`
+        : '';
 
-            lista.innerHTML = items.map(d => {
+    lista.innerHTML = visibles.map(d => {
                 const es1Dia = d.estado === 'ACTIVA' && d.dias_restantes === 1;
                 const esHoy = d.estado === 'ACTIVA' && d.dias_restantes === 0;
                 const esVencida = d.estado === 'ACTIVA' && d.dias_restantes !== null && d.dias_restantes < 0;
@@ -1463,11 +1514,7 @@ export function cargarDelegacionesAdmin() {
                         ` : ''}
                     </div>
                 `;
-            }).join('');
-        })
-        .catch(() => {
-            if (contador) contador.innerText = 'Error';
-        });
+            }).join('') + botonMas;
 }
 
 // --- S14: CATÁLOGO DE PLAZAS (modelo de puestos, fases A-B) ---
