@@ -29,6 +29,7 @@ class TrasladoLote
         'plaza_actual' => 'PLAZA ACTUAL',
         'plaza_destino' => 'PLAZA DESTINO (CODIGO)',
         'evaluador' => 'CEDULA NUEVO EVALUADOR (OPCIONAL)',
+        'fecha' => 'FECHA TRASLADO (OPCIONAL)',
         'observacion' => 'OBSERVACION',
     ];
 
@@ -60,7 +61,8 @@ class TrasladoLote
             [$subtitulo, 'Qué hay que hacer'],
             [$parrafo, '1. En la hoja ROTACION, escriba en PLAZA DESTINO el código de la plaza a la que pasa cada persona (los códigos están en la hoja PLAZAS). Las filas con PLAZA DESTINO vacía se ignoran.'],
             [$parrafo, '2. CEDULA NUEVO EVALUADOR es opcional: si la deja vacía, el evaluador será quien ocupe la plaza superior de la plaza destino (columna EVALUADOR POR DEFECTO de la hoja PLAZAS). Escríbala solo si debe ser otra persona.'],
-            [$parrafo, '3. Guarde el archivo como .xlsx sin cambiar los nombres de las hojas ni de los encabezados y cárguelo en Administración → Traslados → Traslados en bloque. La plataforma muestra una revisión fila por fila antes de programar nada.'],
+            [$parrafo, '3. FECHA TRASLADO es opcional: si la deja vacía se usa la fecha que se indique al cargar el archivo; escríbala (AAAA-MM-DD o DD/MM/AAAA) solo si esa persona se traslada otro día. Debe ser hoy o posterior.'],
+            [$parrafo, '4. Guarde el archivo como .xlsx sin cambiar los nombres de las hojas ni de los encabezados y cárguelo en Administración → Traslados → Traslados en bloque. La plataforma muestra una revisión fila por fila antes de programar nada.'],
             [$parrafo, ''],
             [$subtitulo, 'Reglas importantes'],
             [$parrafo, '• Es una rotación: una plaza destino puede estar hoy ocupada, siempre que su ocupante también salga en este mismo archivo. Una plaza no puede recibir a dos personas.'],
@@ -73,7 +75,7 @@ class TrasladoLote
 
         $writer->addNewSheetAndMakeItCurrent()->setName('ROTACION');
         $hoja = $writer->getCurrentSheet();
-        foreach ([18, 34, 40, 18, 24, 24, 40] as $i => $ancho) {
+        foreach ([18, 34, 40, 18, 24, 24, 22, 40] as $i => $ancho) {
             $hoja->setColumnWidth($ancho, $i + 1);
         }
         $writer->addRow(Row::fromValuesWithStyle(array_values(self::COLUMNAS), $encabezado));
@@ -87,11 +89,12 @@ class TrasladoLote
                 Cell::fromValue('', $resaltado),
                 Cell::fromValue('', $resaltado),
                 Cell::fromValue('', $resaltado),
+                Cell::fromValue('', $texto),
             ]));
         }
         if (! $personas) {
             for ($i = 0; $i < 3; $i++) {
-                $writer->addRow(Row::fromValuesWithStyle(['', '', '', '', '', '', ''], $resaltado));
+                $writer->addRow(Row::fromValuesWithStyle(['', '', '', '', '', '', '', ''], $resaltado));
             }
         }
 
@@ -161,7 +164,7 @@ class TrasladoLote
      *
      * @return array{filas: array<int, array>, resumen: array}
      */
-    public function analizar(string $ruta): array
+    public function analizar(string $ruta, ?string $fechaPorDefecto = null): array
     {
         $hojas = (new LectorXlsx())->leer($ruta);
         $filasExcel = $this->filasDeRotacion($hojas);
@@ -270,8 +273,20 @@ class TrasladoLote
                 $errores[] = 'La persona no puede ser su propio evaluador.';
             }
 
+            // Fecha propia de la persona (opcional); sin ella se usa la del lote.
+            $fechaPropia = null;
+            if ($f['fecha'] !== null && trim((string) $f['fecha']) !== '') {
+                $fechaPropia = $this->fechaFila($f['fecha']);
+                if (! $fechaPropia) {
+                    $errores[] = "La fecha de traslado «{$f['fecha']}» no es válida: usa AAAA-MM-DD o DD/MM/AAAA.";
+                } elseif ($fechaPropia < now()->toDateString()) {
+                    $errores[] = 'La fecha de traslado no puede ser anterior a hoy.';
+                }
+            }
+
             $filas[] = [
                 'fila' => $f['fila'],
+                'fecha' => $fechaPropia,
                 'cedula' => $cedula,
                 'id_vinc_funcionario' => $persona ? (int) $persona->id_vinculacion : null,
                 'nombre' => $persona->nombre ?? null,
@@ -289,9 +304,69 @@ class TrasladoLote
             ];
         }
 
-        $conError = count(array_filter($filas, fn ($x) => $x['errores']));
+        // Revisión completa: con las filas ya válidas se ejecuta la misma validación que hará el traslado
+        // real (periodo, fechas, evaluador, plaza) dentro de una transacción que se revierte: no escribe nada.
+        $filas = $this->simular($filas, $fechaPorDefecto, $salen);
 
-        return ['filas' => $filas, 'resumen' => ['total' => count($filas), 'con_error' => $conError, 'listas' => count($filas) - $conError]];
+        $conError = count(array_filter($filas, fn ($x) => $x['errores']));
+        $sinFecha = count(array_filter($filas, fn ($x) => ! $x['fecha']));
+
+        return ['filas' => $filas, 'resumen' => [
+            'total' => count($filas), 'con_error' => $conError, 'listas' => count($filas) - $conError,
+            'sin_fecha_propia' => $sinFecha, 'simulado' => (bool) ($fechaPorDefecto || $sinFecha === 0),
+        ]];
+    }
+
+    /**
+     * Ejecuta programarTraslado para cada fila sin errores y revierte todo. Así la revisión detecta lo que
+     * el programar real rechazaría (por ejemplo, datos del periodo o del evaluador distintos en otro entorno).
+     */
+    private function simular(array $filas, ?string $fechaPorDefecto, array $salen): array
+    {
+        DB::beginTransaction();
+        try {
+            foreach ($filas as $i => $f) {
+                $fecha = $f['fecha'] ?? $fechaPorDefecto;
+                if ($f['errores'] || ! $fecha || ! $f['id_vinc_funcionario'] || ! $f['id_vinc_evaluador_nuevo'] || ! $f['id_puesto_destino']) {
+                    continue;
+                }
+
+                $resultado = programarTraslado([
+                    'id_vinc_funcionario' => $f['id_vinc_funcionario'],
+                    'id_vinc_evaluador_nuevo' => $f['id_vinc_evaluador_nuevo'],
+                    'fecha_traslado' => $fecha,
+                    'area_nuevo' => $f['dependencia_destino'],
+                    'cargo_nuevo' => $f['cargo_destino'],
+                    'id_puesto_destino' => $f['id_puesto_destino'],
+                ], null, null, true, 'CAMBIO', ['sin_origen_ok' => true, 'permitir_mismo_evaluador' => true, 'ocupantes_que_salen' => $salen]);
+
+                if (isset($resultado['error'])) {
+                    $filas[$i]['errores'][] = $resultado['error'];
+                }
+            }
+        } finally {
+            DB::rollBack();
+        }
+
+        return $filas;
+    }
+
+    /** Fecha Y-m-d desde un valor de celda (serie de Excel, AAAA-MM-DD o DD/MM/AAAA); null si no es fecha. */
+    private function fechaFila(mixed $valor): ?string
+    {
+        if (is_numeric($valor)) {
+            return LectorXlsx::fechaExcel($valor);
+        }
+
+        $texto = trim((string) $valor);
+        foreach (['Y-m-d', 'd/m/Y', 'd-m-Y'] as $formato) {
+            $fecha = \DateTimeImmutable::createFromFormat('!' . $formato, $texto);
+            if ($fecha && $fecha->format($formato) === $texto) {
+                return $fecha->format('Y-m-d');
+            }
+        }
+
+        return null;
     }
 
     /** Filas con PLAZA DESTINO de la hoja ROTACION (o la primera hoja con ese encabezado). */
@@ -326,6 +401,7 @@ class TrasladoLote
                 $resultado[] = [
                     'fila' => (int) $numero, 'cedula' => $valor('cedula'), 'plaza_destino' => $valor('plaza_destino'),
                     'evaluador' => $valor('evaluador'), 'observacion' => $valor('observacion'),
+                    'fecha' => isset($columnas['fecha']) ? ($celdas[$columnas['fecha']] ?? null) : null,
                 ];
             }
             if ($columnas !== null) {
@@ -351,7 +427,7 @@ class TrasladoLote
      * Programa el lote completo: todos los traslados o ninguno. Retorna
      * ['id_lote' => n] o ['errores' => [fila => mensaje]].
      */
-    public function programar(array $filas, string $fecha, ?string $descripcion, ?string $archivo): array
+    public function programar(array $filas, ?string $fecha, ?string $descripcion, ?string $archivo): array
     {
         $errores = [];
         $idLote = null;
@@ -360,7 +436,7 @@ class TrasladoLote
             DB::transaction(function () use ($filas, $fecha, $descripcion, $archivo, &$errores, &$idLote) {
                 $idLote = DB::table('traslado_lote')->insertGetId([
                     'descripcion' => $descripcion ? mb_substr($descripcion, 0, 300) : null,
-                    'fecha_traslado' => $fecha,
+                    'fecha_traslado' => $fecha ?? collect($filas)->pluck('fecha')->filter()->min(),
                     'estado' => 'PROGRAMADO',
                     'total' => count($filas),
                     'archivo' => $archivo ? mb_substr($archivo, 0, 255) : null,
@@ -373,7 +449,7 @@ class TrasladoLote
                     $resultado = programarTraslado([
                         'id_vinc_funcionario' => $f['id_vinc_funcionario'],
                         'id_vinc_evaluador_nuevo' => $f['id_vinc_evaluador_nuevo'],
-                        'fecha_traslado' => $fecha,
+                        'fecha_traslado' => $f['fecha'] ?? $fecha,
                         'area_nuevo' => $f['dependencia_destino'],
                         'cargo_nuevo' => $f['cargo_destino'],
                         'id_puesto_destino' => $f['id_puesto_destino'],
@@ -426,7 +502,7 @@ class TrasladoLote
                 ->where('t.id_lote', $l->id_lote)
                 ->orderBy('t.id_traslado')
                 ->get([
-                    't.id_traslado', 't.estado', 't.area_origen', 't.area_nuevo', 't.dias_laborados', 't.id_evaluacion_origen', 'evo.estado as origen_estado',
+                    't.id_traslado', 't.estado', 't.fecha_traslado', 't.area_origen', 't.area_nuevo', 't.dias_laborados', 't.id_evaluacion_origen', 'evo.estado as origen_estado',
                     'po.codigo_plaza as plaza_origen', 'pd.codigo_plaza as plaza_destino',
                     DB::raw("TRIM(CONCAT(ff.nombres, ' ', ff.apellidos)) as funcionario"),
                     DB::raw("TRIM(CONCAT(COALESCE(fn.nombres, ''), ' ', COALESCE(fn.apellidos, ''))) as evaluador_nuevo"),

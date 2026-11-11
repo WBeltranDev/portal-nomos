@@ -120,9 +120,10 @@ class TrasladoLoteTest extends TestCase
         $w->getCurrentSheet()->setName('INSTRUCCIONES');
         $w->addRow(Row::fromValues(['Instrucciones']));
         $w->addNewSheetAndMakeItCurrent()->setName('ROTACION');
-        $w->addRow(Row::fromValues(['No IDENTIFICACION', 'NOMBRE FUNCIONARIO', 'DEPENDENCIA ACTUAL', 'PLAZA ACTUAL', 'PLAZA DESTINO (CODIGO)', 'CEDULA NUEVO EVALUADOR (OPCIONAL)', 'OBSERVACION']));
-        foreach ($filas as [$cedula, $destino, $evaluador]) {
-            $w->addRow(Row::fromValues([(int) $cedula, '', '', '', $destino, $evaluador !== null ? (int) $evaluador : '', '']));
+        $w->addRow(Row::fromValues(['No IDENTIFICACION', 'NOMBRE FUNCIONARIO', 'DEPENDENCIA ACTUAL', 'PLAZA ACTUAL', 'PLAZA DESTINO (CODIGO)', 'CEDULA NUEVO EVALUADOR (OPCIONAL)', 'FECHA TRASLADO (OPCIONAL)', 'OBSERVACION']));
+        foreach ($filas as $fila) {
+            [$cedula, $destino, $evaluador] = $fila;
+            $w->addRow(Row::fromValues([(int) $cedula, '', '', '', $destino, $evaluador !== null ? (int) $evaluador : '', $fila[3] ?? '', '']));
         }
         $w->close();
 
@@ -140,12 +141,12 @@ class TrasladoLoteTest extends TestCase
         return $this->post('/admin/traslados/lote/analizar', ['archivo' => $this->excel($filas)], ['Accept' => 'application/json']);
     }
 
-    private function programar(array $filas, ?string $fecha = null)
+    private function programar(array $filas, ?string $fecha = null, bool $sinFechaDeLote = false)
     {
         $token = $this->analizar($filas)->assertOk()->json('token');
 
         return $this->postJson('/admin/traslados/lote/programar', [
-            'token' => $token, 'archivo' => 'rotacion.xlsx', 'fecha_traslado' => $fecha ?? Carbon::today()->toDateString(), 'descripcion' => 'Rotación anual',
+            'token' => $token, 'archivo' => 'rotacion.xlsx', 'fecha_traslado' => $sinFechaDeLote ? null : ($fecha ?? Carbon::today()->toDateString()), 'descripcion' => 'Rotación anual',
         ]);
     }
 
@@ -170,6 +171,7 @@ class TrasladoLoteTest extends TestCase
         $hojas = (new LectorXlsx())->leer($ruta);
         $this->assertSame(['INSTRUCCIONES', 'ROTACION', 'PLAZAS'], array_keys($hojas));
         $this->assertSame('PLAZA DESTINO (CODIGO)', $hojas['ROTACION'][1][5]);
+        $this->assertSame('FECHA TRASLADO (OPCIONAL)', $hojas['ROTACION'][1][7]);
         $cedulas = collect($hojas['ROTACION'])->skip(1)->map(fn ($f) => (string) (int) $f[1])->all();
         $this->assertContains($this->cedula('XA'), $cedulas);
         $plazas = collect($hojas['PLAZAS'])->skip(1)->keyBy(fn ($f) => $f[1]);
@@ -180,7 +182,7 @@ class TrasladoLoteTest extends TestCase
     {
         $analisis = $this->analizar($this->cicloCompleto())->assertOk()->json();
 
-        $this->assertSame(['total' => 3, 'con_error' => 0, 'listas' => 3], $analisis['resumen']);
+        $this->assertSame([3, 0, 3], [$analisis['resumen']['total'], $analisis['resumen']['con_error'], $analisis['resumen']['listas']]);
         $filaA = collect($analisis['filas'])->firstWhere('cedula', $this->cedula('XA'));
         $this->assertSame($this->jefe['B'], $filaA['id_vinc_evaluador_nuevo'], 'XA pasa a la oficina B: su evaluador es el jefe de B.');
         $this->assertSame('plaza superior', $filaA['origen_evaluador']);
@@ -350,13 +352,113 @@ class TrasladoLoteTest extends TestCase
         ])->assertSessionHasErrors(['traslados' => 'La plaza destino ya tiene un ocupante vigente: elige una plaza vacante.']);
     }
 
+    public function test_cada_persona_puede_tener_su_propia_fecha_dentro_del_lote(): void
+    {
+        $propia = Carbon::today()->addDays(5)->toDateString();
+        $filas = $this->cicloCompleto();
+        $filas[0][3] = $propia;                                   // XA con fecha propia
+        $filas[1][3] = Carbon::today()->addDays(7)->format('d/m/Y'); // XB con fecha en formato DD/MM/AAAA
+
+        $analisis = $this->analizar($filas)->assertOk()->json();
+        $this->assertSame($propia, collect($analisis['filas'])->firstWhere('cedula', $this->cedula('XA'))['fecha']);
+        $this->assertSame(Carbon::today()->addDays(7)->toDateString(), collect($analisis['filas'])->firstWhere('cedula', $this->cedula('XB'))['fecha']);
+        $this->assertNull(collect($analisis['filas'])->firstWhere('cedula', $this->cedula('XC'))['fecha']);
+
+        $idLote = $this->programar($filas)->assertOk()->json('id_lote');
+        $fechas = DB::table('traslado')->where('id_lote', $idLote)->pluck('fecha_traslado', 'id_vinc_funcionario');
+        $this->assertSame($propia, $fechas[$this->aux['A']]);
+        $this->assertSame(Carbon::today()->addDays(7)->toDateString(), $fechas[$this->aux['B']]);
+        $this->assertSame(Carbon::today()->toDateString(), $fechas[$this->aux['C']], 'Sin fecha propia usa la del lote.');
+    }
+
+    public function test_si_todas_las_filas_traen_fecha_no_hace_falta_la_del_lote(): void
+    {
+        $filas = $this->cicloCompleto();
+        foreach ($filas as $i => $fila) {
+            $filas[$i][3] = Carbon::today()->addDays(2 + $i)->toDateString();
+        }
+
+        $idLote = $this->programar($filas, null, true)->assertOk()->json('id_lote');
+        $this->assertSame(Carbon::today()->addDays(2)->toDateString(), DB::table('traslado_lote')->where('id_lote', $idLote)->value('fecha_traslado'), 'La fecha del lote es la más próxima.');
+
+        // Con filas sin fecha propia y sin fecha de lote se pide la fecha.
+        $this->programar($this->cicloCompleto(), null, true)->assertStatus(422)
+            ->assertJsonPath('message', 'Indica la fecha del traslado: hay filas sin fecha propia en el archivo.');
+    }
+
+    public function test_una_fecha_invalida_o_pasada_es_un_error_de_la_fila(): void
+    {
+        $filas = $this->cicloCompleto();
+        $filas[0][3] = 'mañana';
+        $filas[1][3] = Carbon::yesterday()->toDateString();
+
+        $analisis = $this->analizar($filas)->assertOk()->json();
+
+        $this->assertStringContainsString('no es válida', implode(' ', $analisis['filas'][0]['errores']));
+        $this->assertStringContainsString('anterior a hoy', implode(' ', $analisis['filas'][1]['errores']));
+        $this->assertSame([], $analisis['filas'][2]['errores']);
+    }
+
+    public function test_la_fecha_propia_se_conserva_al_confirmar_el_lote(): void
+    {
+        $filas = $this->cicloCompleto();
+        $filas[0][3] = Carbon::today()->addDays(4)->toDateString();
+        $idLote = $this->programar($filas)->assertOk()->json('id_lote');
+
+        $this->postJson("/admin/traslados/lote/{$idLote}/confirmar")->assertOk();
+
+        $ocupacion = DB::table('puesto_ocupacion')->where('id_vinculacion', $this->aux['A'])->where('id_puesto', $this->plazaAux['B'])->first();
+        $this->assertSame(Carbon::today()->addDays(4)->toDateString(), $ocupacion->vigente_desde);
+        $this->assertSame(Carbon::today()->toDateString(), DB::table('puesto_ocupacion')->where('id_vinculacion', $this->aux['B'])->where('id_puesto', $this->plazaAux['C'])->value('vigente_desde'));
+    }
+
+    public function test_la_revision_con_fecha_valida_lo_mismo_que_rechazaria_el_traslado_real_y_no_escribe_nada(): void
+    {
+        // XA ya tiene un traslado confirmado posterior en el periodo: una fecha anterior la rechazaría el traslado real.
+        DB::table('traslado')->insert([
+            'id_vinc_funcionario' => $this->aux['A'], 'estado' => 'CONFIRMADO', 'tipo' => 'CAMBIO', 'id_periodo' => $this->idPeriodo,
+            'id_vinc_evaluador_origen' => $this->jefe['A'], 'id_vinc_evaluador_nuevo' => $this->jefe['A'], 'fecha_traslado' => Carbon::today()->addDays(10)->toDateString(),
+        ]);
+        $antes = DB::table('traslado')->count();
+
+        // Sin fecha, la revisión no puede simular el traslado y lo advierte.
+        $sinFecha = $this->analizar($this->cicloCompleto())->assertOk()->json();
+        $this->assertFalse($sinFecha['resumen']['simulado']);
+        $this->assertSame(0, $sinFecha['resumen']['con_error']);
+
+        // Con fecha, la revisión ejecuta la validación real y detecta el problema de esa persona.
+        $archivo = $this->excel($this->cicloCompleto());
+        $conFecha = $this->post('/admin/traslados/lote/analizar', ['archivo' => $archivo, 'fecha_traslado' => Carbon::today()->addDays(2)->toDateString()], ['Accept' => 'application/json'])->assertOk()->json();
+
+        $filaA = collect($conFecha['filas'])->firstWhere('cedula', $this->cedula('XA'));
+        $this->assertStringContainsString('anterior a su último traslado', implode(' ', $filaA['errores']));
+        $this->assertTrue($conFecha['resumen']['simulado']);
+        $this->assertSame(1, $conFecha['resumen']['con_error']);
+
+        // La simulación no dejó nada escrito.
+        $this->assertSame($antes, DB::table('traslado')->count());
+        $this->assertSame(0, DB::table('traslado_lote')->count());
+    }
+
+    public function test_programar_no_permite_un_lote_que_la_revision_completa_rechaza(): void
+    {
+        DB::table('traslado')->insert([
+            'id_vinc_funcionario' => $this->aux['A'], 'estado' => 'CONFIRMADO', 'tipo' => 'CAMBIO', 'id_periodo' => $this->idPeriodo,
+            'id_vinc_evaluador_origen' => $this->jefe['A'], 'id_vinc_evaluador_nuevo' => $this->jefe['A'], 'fecha_traslado' => Carbon::today()->addDays(10)->toDateString(),
+        ]);
+
+        $this->programar($this->cicloCompleto(), Carbon::today()->addDays(2)->toDateString())
+            ->assertStatus(422)->assertJsonPath('message', 'El archivo tiene filas con errores: corrígelas y vuelve a subirlo.');
+        $this->assertSame(0, DB::table('traslado_lote')->count());
+    }
+
     public function test_la_pantalla_de_traslados_ofrece_el_formato_y_el_lote(): void
     {
         $this->get('/dashboard')->assertOk()
             ->assertSee('Traslados en bloque (rotación)')
             ->assertSee('Descargar formato (Excel)')
             ->assertSee('id="lote-archivo"', false)
-            ->assertSee('id="lotes-admin-lista"', false)
+            ->assertSee('id="lotes-admin-lista" class="grid gap-3 max-h-[60vh] overflow-y-auto', false)
             // El histórico tiene su propia barra de desplazamiento.
             ->assertSee('id="traslados-admin-lista" class="grid gap-3 max-h-[72vh] overflow-y-auto', false);
 

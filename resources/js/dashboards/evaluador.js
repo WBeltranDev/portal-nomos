@@ -195,6 +195,7 @@ export function cambiarTabEvaluador(tab) {
 const evaluacionRecordada = volvioDeUnaAccion() ? seleccionRecordada(CLAVE_EVALUACION) : null;
 
 export function abrirConcertacionEvaluador(card, ev) {
+    pendientesCalificacion = null;
     selectedEvaluacionId = ev.id_evaluacion;
     recordarSeleccion(CLAVE_EVALUACION, ev.id_evaluacion);
     selectedEstadoEvaluacion = ev.estado;
@@ -589,7 +590,7 @@ export function cargarCompromisosEvaluador(ev, ejes = {}) {
                         </div>`)
                     : '';
                 return `
-                <div class="rounded-2xl border border-slate-200 bg-white p-4 space-y-3 shadow-sm transition hover:border-[#00594E]/40">
+                <div class="compromiso-fila rounded-2xl border border-slate-200 bg-white p-4 space-y-3 shadow-sm transition hover:border-[#00594E]/40">
                     <div class="flex items-center justify-between gap-3 cursor-pointer select-none" onclick="toggleCompromisoColapsadoEvaluador(${c.id_compromiso})">
                         <div class="min-w-0 flex items-center gap-2">
                             <span id="icon-chevron-evaluador-${c.id_compromiso}" class="material-symbols-outlined text-[#00594E] text-base transition-transform duration-200">expand_more</span>
@@ -1201,7 +1202,7 @@ export function cargarCompetenciasEvaluador(ev) {
                 const existente = guardadas[c.id_competencia] || {};
                 const valor = existente.calificacion_definitiva ?? '';
                 return `
-                    <div class="rounded-xl border border-slate-100 bg-slate-50/50 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div data-competencia="${escapeHtml(c.nombre)}" class="rounded-xl border border-slate-100 bg-slate-50/50 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <div class="min-w-0">
                             <p class="text-xs font-bold text-slate-800">${escapeHtml(c.nombre)}</p>
                             ${c.afirmacion ? `<p class="text-[10px] text-slate-400 mt-0.5">${escapeHtml(c.afirmacion)}</p>` : ''}
@@ -1297,7 +1298,7 @@ export function cargarEjesEvaluador(ev) {
                 const nota = notas[eje];
                 const valor = nota === undefined ? '' : nota;
                 return `
-                    <div class="rounded-xl border border-slate-100 bg-slate-50/50 p-3 space-y-2">
+                    <div data-eje-fila="${eje}" class="rounded-xl border border-slate-100 bg-slate-50/50 p-3 space-y-2">
                         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                             <div>
                                 <p class="text-xs font-bold text-slate-800">${etiquetas[eje] || eje}</p>
@@ -1430,6 +1431,97 @@ function mostrarAvisoSinEvidenciasConfirmadas() {
     avisar('La evidencia fue rechazada. La evaluación volvió a la fase de subir evidencias: el evaluado debe corregirla y volver a confirmar la entrega para habilitar la calificación.');
 }
 
+// --- Lo que falta por calificar: se resalta en rojo, con insignias en las pestañas ---
+let pendientesCalificacion = null;
+let observadorPendientes = null;
+const ROJO_FILA = ['border-red-400', 'bg-red-50', 'ring-1', 'ring-red-300'];
+const ROJO_CAMPO = ['border-red-500', 'ring-2', 'ring-red-200'];
+
+function marcarPendiente(fila, campo) {
+    fila?.classList.add(...ROJO_FILA);
+    fila?.setAttribute('data-pendiente', '1');
+    campo?.classList.add(...ROJO_CAMPO);
+    campo?.setAttribute('data-pendiente', '1');
+}
+
+function limpiarPendiente(elemento) {
+    const fila = elemento.closest('[data-competencia], [data-eje-fila], .compromiso-fila');
+    elemento.classList.remove(...ROJO_CAMPO);
+    elemento.removeAttribute('data-pendiente');
+    if (fila) {
+        fila.classList.remove(...ROJO_FILA);
+        fila.removeAttribute('data-pendiente');
+    }
+}
+
+function ponerInsignia(tab, cantidad) {
+    const boton = document.getElementById(`tabbtn-evaluador-${tab}`);
+    if (!boton) return;
+    boton.querySelector('.badge-pendiente')?.remove();
+    if (cantidad > 0) {
+        const insignia = document.createElement('span');
+        insignia.className = 'badge-pendiente ml-1.5 inline-flex min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white';
+        insignia.title = `${cantidad} por calificar`;
+        insignia.textContent = String(cantidad);
+        boton.appendChild(insignia);
+    }
+}
+
+/** Aplica (o limpia) el resaltado según el último reporte de pendientes del servidor. */
+function aplicarPendientes() {
+    document.querySelectorAll('[data-pendiente="1"]').forEach(el => {
+        el.classList.remove(...ROJO_FILA, ...ROJO_CAMPO);
+        el.removeAttribute('data-pendiente');
+    });
+    const p = pendientesCalificacion;
+    if (!p) {
+        ['compromisos', 'competencias', 'ejes'].forEach(t => ponerInsignia(t, 0));
+        return;
+    }
+
+    if (p.compromisos_sin_calificar) {
+        document.querySelectorAll('.compromiso-calificacion-input').forEach(input => {
+            if (input.value === '') marcarPendiente(input.closest('.compromiso-fila') || input.parentElement?.parentElement, input);
+        });
+    }
+    const nombres = new Set([...(p.competencias_comunes_faltantes || []), ...(p.competencias_nivel_faltantes || [])]);
+    document.querySelectorAll('[data-competencia]').forEach(fila => {
+        if (nombres.has(fila.dataset.competencia)) marcarPendiente(fila, fila.querySelector('.competencia-calificacion-input'));
+    });
+    (p.ejes_faltantes || []).forEach(eje => {
+        const fila = document.querySelector(`[data-eje-fila="${eje}"]`);
+        marcarPendiente(fila, fila?.querySelector('.eje-calificacion-input'));
+    });
+
+    ponerInsignia('compromisos', p.compromisos_sin_calificar || 0);
+    ponerInsignia('competencias', nombres.size);
+    ponerInsignia('ejes', (p.ejes_faltantes || []).length);
+}
+
+function mostrarPendientes(pendientes) {
+    pendientesCalificacion = pendientes;
+    aplicarPendientes();
+
+    // Las pestañas se dibujan al abrirlas: se reaplica el resaltado cada vez que cambian.
+    const panel = document.getElementById('panel-concertacion-evaluador');
+    if (panel && !observadorPendientes) {
+        observadorPendientes = new MutationObserver(() => { if (pendientesCalificacion) aplicarPendientes(); });
+        observadorPendientes.observe(panel, { childList: true, subtree: true });
+        // Al corregir un campo, se le quita el rojo y se actualiza la cuenta de su pestaña.
+        panel.addEventListener('input', evento => {
+            if (evento.target?.getAttribute?.('data-pendiente') !== '1') return;
+            limpiarPendiente(evento.target);
+            const pestana = evento.target.closest('[id^="tab-evaluador-"]')?.id.replace('tab-evaluador-', '');
+            if (pestana) ponerInsignia(pestana, document.querySelectorAll(`#tab-evaluador-${pestana} input[data-pendiente="1"]`).length);
+        });
+    }
+
+    // Lleva al evaluador a la primera pestaña con algo pendiente.
+    const nivel = [...(pendientes.competencias_comunes_faltantes || []), ...(pendientes.competencias_nivel_faltantes || [])].length;
+    const destino = pendientes.compromisos_sin_calificar ? 'compromisos' : (nivel ? 'competencias' : ((pendientes.ejes_faltantes || []).length ? 'ejes' : null));
+    if (destino) cambiarTabEvaluador(destino);
+}
+
 export async function calcularNotaFinal() {
     if (!selectedEvaluacionId) return;
     if (!await confirmarAccion('¿Confirmas calcular la nota final? La evaluación quedará calificada y las notas se congelarán.')) return;
@@ -1441,7 +1533,12 @@ export async function calcularNotaFinal() {
     })
         .then(async res => {
             const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo calcular la nota final.'));
+            if (!res.ok) {
+                if (data.pendientes) mostrarPendientes(data.pendientes);
+                throw new Error(parseErrorMessage(data, 'No se pudo calcular la nota final.'));
+            }
+            pendientesCalificacion = null;
+            aplicarPendientes();
             showInlineMessage(msgId, `${data.message || 'Nota final calculada.'} Se notificó al evaluado para que revise y descargue el documento de calificación; podrá radicar un recurso debidamente sustentado cuando corresponda.`);
             if (selectedEvaluacionData) {
                 selectedEvaluacionData = { ...selectedEvaluacionData, estado: 'CALIFICADA', fase_actual: 5 };

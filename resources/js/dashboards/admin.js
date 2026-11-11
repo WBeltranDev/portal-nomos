@@ -620,6 +620,8 @@ export function revisarLote() {
 
     const datos = new FormData();
     datos.append('archivo', archivo);
+    const fechaLote = document.getElementById('lote-fecha')?.value;
+    if (fechaLote) datos.append('fecha_traslado', fechaLote);
     fetchJson('/admin/traslados/lote/analizar', { method: 'POST', body: datos })
         .then(async res => {
             const data = await res.json().catch(() => ({}));
@@ -640,6 +642,7 @@ function pintarRevisionLote(data) {
             <td class="px-3 py-2"><b class="text-slate-800">${escapeHtml(f.nombre || f.cedula || '—')}</b><br><span class="text-slate-400">${escapeHtml(f.dependencia_actual || '')}${f.plaza_actual ? ' · ' + escapeHtml(f.plaza_actual) : ''}</span></td>
             <td class="px-3 py-2">${escapeHtml(f.plaza_destino || '')}<br><span class="text-slate-400">${escapeHtml(f.dependencia_destino || '')}</span></td>
             <td class="px-3 py-2">${escapeHtml(f.evaluador || '—')}${f.origen_evaluador ? `<br><span class="text-slate-400">${escapeHtml(f.origen_evaluador)}</span>` : ''}</td>
+            <td class="px-3 py-2 whitespace-nowrap">${f.fecha ? escapeHtml(f.fecha) + '<br><span class="text-slate-400">propia</span>' : (document.getElementById('lote-fecha')?.value ? escapeHtml(document.getElementById('lote-fecha').value) + '<br><span class="text-slate-400">del lote</span>' : '<span class="text-amber-700">sin fecha</span>')}</td>
             <td class="px-3 py-2">${f.errores.length ? f.errores.map(e => `<span class="block text-red-700">${escapeHtml(e)}</span>`).join('') : '<span class="font-bold text-emerald-700">Lista</span>'}</td>
         </tr>`).join('');
 
@@ -649,9 +652,10 @@ function pintarRevisionLote(data) {
             <button type="button" onclick="programarLote()" ${r.con_error ? 'disabled aria-disabled="true"' : ''} class="rounded-xl bg-[#00594E] px-4 py-2 text-xs font-bold text-white transition ${r.con_error ? 'opacity-50 cursor-not-allowed' : 'hover:brightness-110'}">Programar lote</button>
         </div>
         ${r.con_error ? '<p class="text-xs text-red-700">Corrige las filas con error en el Excel y vuelve a subirlo: no se programa nada mientras haya errores.</p>' : ''}
+        ${r.simulado ? '<p class="text-[11px] text-slate-500">Revisión completa: cada fila pasó la misma validación que hará el traslado real (periodo, fechas, evaluador y plaza). Nada se guardó.</p>' : '<p class="text-[11px] text-amber-800">Indica la fecha del traslado y vuelve a revisar: así la revisión valida también el periodo y las fechas con los datos de este entorno.</p>'}
         <div class="overflow-x-auto rounded-2xl border border-slate-200">
             <table class="w-full text-left text-xs">
-                <thead class="bg-slate-50 text-[10px] uppercase text-slate-500"><tr><th class="px-3 py-2">Fila</th><th class="px-3 py-2">Persona</th><th class="px-3 py-2">Plaza destino</th><th class="px-3 py-2">Nuevo evaluador</th><th class="px-3 py-2">Estado</th></tr></thead>
+                <thead class="bg-slate-50 text-[10px] uppercase text-slate-500"><tr><th class="px-3 py-2">Fila</th><th class="px-3 py-2">Persona</th><th class="px-3 py-2">Plaza destino</th><th class="px-3 py-2">Nuevo evaluador</th><th class="px-3 py-2">Fecha</th><th class="px-3 py-2">Estado</th></tr></thead>
                 <tbody>${filas}</tbody>
             </table>
         </div>`;
@@ -661,14 +665,14 @@ function pintarRevisionLote(data) {
 export async function programarLote() {
     if (!revisionLote) return;
     const fecha = document.getElementById('lote-fecha')?.value;
-    if (!fecha) return avisar('Indica la fecha del traslado para todo el lote.', 'error');
-    if (!await confirmarAccion(`¿Programar el lote de ${revisionLote.resumen.total} traslado(s) con fecha ${fecha}?\n\nNo se mueve a nadie hasta que confirmes el lote.`)) return;
+    if (!fecha && revisionLote.resumen.sin_fecha_propia > 0) return avisar('Indica la fecha del traslado: hay filas sin fecha propia en el archivo.', 'error');
+    if (!await confirmarAccion(`¿Programar el lote de ${revisionLote.resumen.total} traslado(s)${fecha ? ` con fecha ${fecha} (salvo las filas con fecha propia)` : ' con las fechas del archivo'}?\n\nNo se mueve a nadie hasta que confirmes el lote.`)) return;
 
     fetchJson('/admin/traslados/lote/programar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            token: revisionLote.token, archivo: revisionLote.archivo, fecha_traslado: fecha,
+            token: revisionLote.token, archivo: revisionLote.archivo, fecha_traslado: fecha || null,
             descripcion: document.getElementById('lote-descripcion')?.value || null,
         }),
     })
@@ -689,50 +693,78 @@ export async function programarLote() {
         .catch(error => avisar(error.message, 'error'));
 }
 
+// Lotes: los 5 más recientes, con "Mostrar más" y barra de desplazamiento propia.
+const LOTES_POR_PAGINA = 5;
+let lotesCache = [];
+let lotesVisibles = LOTES_POR_PAGINA;
+
+export function mostrarMasLotes() {
+    const lista = document.getElementById('lotes-admin-lista');
+    const posicion = lista ? lista.scrollTop : 0;
+    lotesVisibles += LOTES_POR_PAGINA;
+    pintarLotes();
+    if (lista) lista.scrollTop = posicion;
+}
+window.mostrarMasLotes = mostrarMasLotes;
+
 export function cargarLotesAdmin() {
     const lista = document.getElementById('lotes-admin-lista');
     if (!lista) return;
     fetchJson('/admin/traslados/lotes')
         .then(res => res.json())
         .then(lotes => {
-            if (!Array.isArray(lotes) || !lotes.length) {
-                lista.innerHTML = '<div class="rounded-xl border border-dashed border-slate-200 bg-white p-6 text-xs text-slate-500 text-center">Aún no hay lotes de traslados en bloque.</div>';
-                return;
-            }
-            const color = { PROGRAMADO: 'bg-amber-50 text-amber-700', CONFIRMADO: 'bg-emerald-50 text-emerald-700', CANCELADO: 'bg-slate-100 text-slate-500' };
-            lista.innerHTML = lotes.map(l => {
-                const todosListos = l.pendientes > 0 && l.listos === l.pendientes;
-                return `
-                <div class="rounded-2xl border border-slate-100 bg-white p-4 space-y-3">
-                    <div class="flex flex-wrap items-start justify-between gap-3">
-                        <div class="min-w-0">
-                            <p class="text-sm font-black text-slate-800">Lote #${l.id_lote}${l.descripcion ? ` · ${escapeHtml(l.descripcion)}` : ''}</p>
-                            <p class="text-[10px] text-slate-400">${l.total} traslado(s) · fecha ${escapeHtml(l.fecha_traslado)}${l.creado_por ? ` · creado por ${escapeHtml(l.creado_por)}` : ''}${l.archivo ? ` · ${escapeHtml(l.archivo)}` : ''}</p>
-                        </div>
-                        <span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 ${color[l.estado] || ''}">${escapeHtml(l.estado)}</span>
-                    </div>
-                    ${l.estado === 'PROGRAMADO' ? `
-                    <p class="text-[11px] font-semibold ${todosListos ? 'text-emerald-700' : 'text-amber-800'}">${todosListos ? 'Todos los tramos están listos: puedes confirmar el lote.' : `${l.listos} de ${l.pendientes} listos. El lote se confirma cuando todos lo estén.`}</p>
-                    <div class="flex gap-2">
-                        <button type="button" onclick="confirmarLote(${l.id_lote})" ${todosListos ? '' : 'disabled aria-disabled="true"'} class="rounded-xl bg-[#00594E] px-4 py-2 text-xs font-bold text-white transition ${todosListos ? 'hover:brightness-110' : 'opacity-50 cursor-not-allowed'}">Confirmar lote</button>
-                        <button type="button" onclick="cancelarLote(${l.id_lote})" class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 transition">Cancelar lote</button>
-                    </div>` : ''}
-                    <div class="overflow-x-auto rounded-xl border border-slate-100">
-                        <table class="w-full text-left text-[11px]">
-                            <thead class="bg-slate-50 text-[9px] uppercase text-slate-500"><tr><th class="px-3 py-2">Persona</th><th class="px-3 py-2">Plaza</th><th class="px-3 py-2">Nuevo evaluador</th><th class="px-3 py-2">Estado</th></tr></thead>
-                            <tbody>${l.traslados.map(t => `
-                                <tr class="border-t border-slate-100">
-                                    <td class="px-3 py-2 font-semibold text-slate-800">${escapeHtml(t.funcionario)}</td>
-                                    <td class="px-3 py-2">${escapeHtml(t.plaza_origen || '—')} → ${escapeHtml(t.plaza_destino || '—')}<br><span class="text-slate-400">${escapeHtml(t.area_origen || '')} → ${escapeHtml(t.area_nuevo || '')}</span></td>
-                                    <td class="px-3 py-2">${escapeHtml(t.evaluador_nuevo || '—')}</td>
-                                    <td class="px-3 py-2">${t.estado === 'PROGRAMADO' ? (t.bloqueo ? `<span class="font-semibold text-amber-800">${escapeHtml(t.bloqueo)}</span>` : '<span class="font-semibold text-emerald-700">Listo</span>') : escapeHtml(t.estado)}</td>
-                                </tr>`).join('')}</tbody>
-                        </table>
-                    </div>
-                </div>`;
-            }).join('');
+            lotesCache = Array.isArray(lotes) ? lotes : [];
+            pintarLotes();
         })
         .catch(() => { lista.innerHTML = '<div class="py-6 text-center text-xs text-red-500">No se pudieron cargar los lotes.</div>'; });
+}
+
+function pintarLotes() {
+    const lista = document.getElementById('lotes-admin-lista');
+    if (!lista) return;
+    const lotes = lotesCache;
+    if (!lotes.length) {
+        lista.innerHTML = '<div class="rounded-xl border border-dashed border-slate-200 bg-white p-6 text-xs text-slate-500 text-center">Aún no hay lotes de traslados en bloque.</div>';
+        return;
+    }
+    const visibles = lotes.slice(0, lotesVisibles);
+    const restantes = lotes.length - visibles.length;
+    const botonMas = restantes > 0
+        ? `<button type="button" onclick="mostrarMasLotes()" class="w-full rounded-xl border border-[#00594E]/30 bg-white py-2.5 text-xs font-bold text-[#00594E] hover:bg-[#EAF2EF] transition">Mostrar más (${restantes} restante${restantes === 1 ? '' : 's'})</button>`
+        : '';
+    const color = { PROGRAMADO: 'bg-amber-50 text-amber-700', CONFIRMADO: 'bg-emerald-50 text-emerald-700', CANCELADO: 'bg-slate-100 text-slate-500' };
+    lista.innerHTML = visibles.map(l => {
+        const todosListos = l.pendientes > 0 && l.listos === l.pendientes;
+        return `
+        <div class="rounded-2xl border border-slate-100 bg-white p-4 space-y-3">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <div class="min-w-0">
+                    <p class="text-sm font-black text-slate-800">Lote #${l.id_lote}${l.descripcion ? ` · ${escapeHtml(l.descripcion)}` : ''}</p>
+                    <p class="text-[10px] text-slate-400">${l.total} traslado(s) · fecha ${escapeHtml(l.fecha_traslado)}${l.creado_por ? ` · creado por ${escapeHtml(l.creado_por)}` : ''}${l.archivo ? ` · ${escapeHtml(l.archivo)}` : ''}</p>
+                </div>
+                <span class="text-[10px] font-bold uppercase rounded-full px-2.5 py-1 ${color[l.estado] || ''}">${escapeHtml(l.estado)}</span>
+            </div>
+            ${l.estado === 'PROGRAMADO' ? `
+            <p class="text-[11px] font-semibold ${todosListos ? 'text-emerald-700' : 'text-amber-800'}">${todosListos ? 'Todos los tramos están listos: puedes confirmar el lote.' : `${l.listos} de ${l.pendientes} listos. El lote se confirma cuando todos lo estén.`}</p>
+            <div class="flex gap-2">
+                <button type="button" onclick="confirmarLote(${l.id_lote})" ${todosListos ? '' : 'disabled aria-disabled="true"'} class="rounded-xl bg-[#00594E] px-4 py-2 text-xs font-bold text-white transition ${todosListos ? 'hover:brightness-110' : 'opacity-50 cursor-not-allowed'}">Confirmar lote</button>
+                <button type="button" onclick="cancelarLote(${l.id_lote})" class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 transition">Cancelar lote</button>
+            </div>` : ''}
+            <div class="overflow-x-auto rounded-xl border border-slate-100">
+                <table class="w-full text-left text-[11px]">
+                    <thead class="bg-slate-50 text-[9px] uppercase text-slate-500"><tr><th class="px-3 py-2">Persona</th><th class="px-3 py-2">Plaza</th><th class="px-3 py-2">Nuevo evaluador</th><th class="px-3 py-2">Fecha</th><th class="px-3 py-2">Estado</th></tr></thead>
+                    <tbody>${l.traslados.map(t => `
+                        <tr class="border-t border-slate-100">
+                            <td class="px-3 py-2 font-semibold text-slate-800">${escapeHtml(t.funcionario)}</td>
+                            <td class="px-3 py-2">${escapeHtml(t.plaza_origen || '—')} → ${escapeHtml(t.plaza_destino || '—')}<br><span class="text-slate-400">${escapeHtml(t.area_origen || '')} → ${escapeHtml(t.area_nuevo || '')}</span></td>
+                            <td class="px-3 py-2">${escapeHtml(t.evaluador_nuevo || '—')}</td>
+                            <td class="px-3 py-2 whitespace-nowrap">${escapeHtml(t.fecha_traslado || '')}</td>
+                            <td class="px-3 py-2">${t.estado === 'PROGRAMADO' ? (t.bloqueo ? `<span class="font-semibold text-amber-800">${escapeHtml(t.bloqueo)}</span>` : '<span class="font-semibold text-emerald-700">Listo</span>') : escapeHtml(t.estado)}</td>
+                        </tr>`).join('')}</tbody>
+                </table>
+            </div>
+        </div>`;
+    }).join('') + botonMas;
 }
 
 function resolverLote(id, accion, mensaje) {

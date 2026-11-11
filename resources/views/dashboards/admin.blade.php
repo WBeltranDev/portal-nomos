@@ -1128,8 +1128,8 @@
                                 <input type="file" id="lote-archivo" accept=".xlsx" class="block w-full text-xs text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-[#EAF2EF] file:px-3 file:py-2 file:text-xs file:font-bold file:text-[#00594E]" />
                                 <div class="grid gap-2 sm:grid-cols-2">
                                     <div>
-                                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Fecha del traslado (para todo el lote)</label>
-                                        <input type="date" id="lote-fecha" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" />
+                                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Fecha del traslado (las filas con fecha propia la conservan)</label>
+                                        <input type="date" id="lote-fecha" onchange="if (document.getElementById('lote-archivo')?.files?.length && document.getElementById('lote-revision') && !document.getElementById('lote-revision').classList.contains('hidden')) revisarLote()" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" />
                                     </div>
                                     <div>
                                         <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Descripción</label>
@@ -1146,7 +1146,7 @@
 
                         <div>
                             <h3 class="text-sm font-black text-slate-800 mb-2">Lotes registrados</h3>
-                            <div id="lotes-admin-lista" class="grid gap-3">
+                            <div id="lotes-admin-lista" class="grid gap-3 max-h-[60vh] overflow-y-auto pr-1 content-start">
                                 <div class="py-6 text-center text-slate-500 text-xs">Cargando lotes...</div>
                             </div>
                         </div>

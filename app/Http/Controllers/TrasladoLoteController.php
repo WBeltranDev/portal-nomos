@@ -40,7 +40,7 @@ class TrasladoLoteController extends Controller
     public function analizar(Request $request, TrasladoLote $lote)
     {
         $this->soloAdmin();
-        $request->validate(['archivo' => ['required', 'file', 'max:10240', 'extensions:xlsx']], [
+        $request->validate(['archivo' => ['required', 'file', 'max:10240', 'extensions:xlsx'], 'fecha_traslado' => ['nullable', 'date']], [
             'archivo.extensions' => 'El archivo debe ser un Excel .xlsx.',
         ]);
 
@@ -53,7 +53,7 @@ class TrasladoLoteController extends Controller
         copy($archivo->getRealPath(), $ruta);
 
         try {
-            $analisis = $lote->analizar($ruta);
+            $analisis = $lote->analizar($ruta, $request->input('fecha_traslado') ?: null);
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
@@ -68,7 +68,7 @@ class TrasladoLoteController extends Controller
         $data = $request->validate([
             'token' => ['required', 'string'],
             'archivo' => ['nullable', 'string', 'max:255'],
-            'fecha_traslado' => ['required', 'date', 'after_or_equal:today'],
+            'fecha_traslado' => ['nullable', 'date', 'after_or_equal:today'],
             'descripcion' => ['nullable', 'string', 'max:300'],
         ], [
             'fecha_traslado.after_or_equal' => 'La fecha del traslado no puede ser anterior a la fecha actual.',
@@ -78,15 +78,18 @@ class TrasladoLoteController extends Controller
         abort_unless(is_file($ruta), 404, 'El archivo de la revisión ya no está; vuelve a subirlo.');
 
         try {
-            $analisis = $lote->analizar($ruta);
+            $analisis = $lote->analizar($ruta, $data['fecha_traslado'] ?? null);
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
+        }
+        if (empty($data['fecha_traslado']) && collect($analisis['filas'])->contains(fn ($f) => ! $f['fecha'])) {
+            return response()->json(['message' => 'Indica la fecha del traslado: hay filas sin fecha propia en el archivo.'], 422);
         }
         if ($analisis['resumen']['con_error'] > 0) {
             return response()->json(['message' => 'El archivo tiene filas con errores: corrígelas y vuelve a subirlo.', 'filas' => $analisis['filas']], 422);
         }
 
-        $resultado = $lote->programar($analisis['filas'], $data['fecha_traslado'], $data['descripcion'] ?? null, $data['archivo'] ?? null);
+        $resultado = $lote->programar($analisis['filas'], $data['fecha_traslado'] ?? null, $data['descripcion'] ?? null, $data['archivo'] ?? null);
         if (isset($resultado['errores'])) {
             return response()->json(['message' => 'No se programó el lote: ' . count($resultado['errores']) . ' fila(s) no pasaron la validación del traslado.', 'errores' => $resultado['errores']], 422);
         }
