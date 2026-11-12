@@ -954,6 +954,11 @@ Route::post('/admin/plazas/carga/analizar', [CargaPlantaController::class, 'anal
 Route::get('/admin/traslados/lote/plantilla', [\App\Http\Controllers\TrasladoLoteController::class, 'plantilla'])->name('admin.traslados.lote.plantilla');
 Route::post('/admin/traslados/lote/analizar', [\App\Http\Controllers\TrasladoLoteController::class, 'analizar'])->name('admin.traslados.lote.analizar');
 Route::post('/admin/traslados/lote/programar', [\App\Http\Controllers\TrasladoLoteController::class, 'programar'])->name('admin.traslados.lote.programar');
+Route::get('/admin/notas-importadas/plantilla', [\App\Http\Controllers\NotasImportadasController::class, 'plantilla'])->name('admin.notas-importadas.plantilla');
+Route::post('/admin/notas-importadas/analizar', [\App\Http\Controllers\NotasImportadasController::class, 'analizar'])->name('admin.notas-importadas.analizar');
+Route::post('/admin/notas-importadas/aplicar', [\App\Http\Controllers\NotasImportadasController::class, 'aplicar'])->name('admin.notas-importadas.aplicar');
+Route::get('/admin/notas-importadas/lotes', [\App\Http\Controllers\NotasImportadasController::class, 'index'])->name('admin.notas-importadas.lotes');
+Route::post('/admin/notas-importadas/lote/{id}/revertir', [\App\Http\Controllers\NotasImportadasController::class, 'revertir'])->name('admin.notas-importadas.revertir');
 Route::get('/admin/traslados/lotes', [\App\Http\Controllers\TrasladoLoteController::class, 'index'])->name('admin.traslados.lotes');
 Route::post('/admin/traslados/lote/{id}/confirmar', [\App\Http\Controllers\TrasladoLoteController::class, 'confirmar'])->name('admin.traslados.lote.confirmar');
 Route::post('/admin/traslados/lote/{id}/cancelar', [\App\Http\Controllers\TrasladoLoteController::class, 'cancelar'])->name('admin.traslados.lote.cancelar');
@@ -2580,7 +2585,7 @@ Route::post('/admin/delegaciones', function (Request $request) {
         'id_vinc_delegado' => ['required', 'integer', 'exists:vinculacion,id_vinculacion'],
         'area' => ['nullable', 'string', 'max:255'],
         'motivo' => ['nullable', 'string', 'max:500'],
-        'acto_administrativo' => ['nullable', 'string', 'max:255'],
+        'acto_administrativo' => ['required', 'string', 'max:500'],
         'acto_administrativo_numero' => ['nullable', 'string', 'max:100'],
         'acto_administrativo_fecha' => ['nullable', 'date'],
         'acto_administrativo_url' => ['nullable', 'string', 'max:1000'],
@@ -2603,7 +2608,7 @@ Route::post('/admin/delegaciones', function (Request $request) {
         if (! $ocupante) {
             $ocupante = ultimoOcupanteDeVacante($idPuestoDelegante);
             if (! $ocupante) {
-                return back()->withErrors(['delegaciones' => 'El cargo está vacante y nunca tuvo un ocupante: no tiene personas a cargo ni trabajo que delegar.']);
+                return registrarDelegacionDePlazaSinOcupante($data, $idPuestoDelegante);
             }
             $sinTitular = true;
         }
@@ -2685,6 +2690,47 @@ Route::post('/admin/delegaciones', function (Request $request) {
 
     return back()->with('success_delegacion', 'Delegación activada correctamente.');
 })->name('admin.delegaciones.store');
+
+if (!function_exists('registrarDelegacionDePlazaSinOcupante')) {
+/**
+ * Delegación de un cargo que nunca tuvo ocupante (p. ej. una jefatura sin
+ * proveer): no hay titular ni personas que traspasar. El delegado queda como
+ * responsable de la plaza durante la vigencia; no se mueve ninguna evaluación.
+ */
+function registrarDelegacionDePlazaSinOcupante(array $data, int $idPuesto) {
+    $delegado = DB::table('vinculacion')->where('id_vinculacion', $data['id_vinc_delegado'])->where('activa', 1)->first();
+    if (! $delegado) {
+        return back()->withErrors(['delegaciones' => 'El delegado debe estar vinculado y activo.']);
+    }
+    $fechaFin = ! empty($data['fecha_fin']) ? $data['fecha_fin'] : null;
+    if (delegacionActivaTraslapada(0, $data['fecha_inicio'], $fechaFin, 0, $idPuesto)) {
+        return back()->withErrors(['delegaciones' => 'El cargo ya tiene una delegación activa que se traslapa con estas fechas.']);
+    }
+
+    DB::table('delegacion')->insert([
+        'id_vinc_delegante' => null,
+        'id_vinc_delegado' => $delegado->id_vinculacion,
+        'motivo' => trim($data['motivo'] ?? '') ?: null,
+        'area' => trim($data['area'] ?? '') ?: ($delegado->area ?? null),
+        'acto_administrativo' => trim($data['acto_administrativo'] ?? '') ?: null,
+        'acto_administrativo_numero' => trim($data['acto_administrativo_numero'] ?? '') ?: null,
+        'acto_administrativo_fecha' => $data['acto_administrativo_fecha'] ?? null,
+        'acto_administrativo_url' => trim($data['acto_administrativo_url'] ?? '') ?: null,
+        'fecha_inicio' => $data['fecha_inicio'],
+        'fecha_fin' => $fechaFin,
+        'estado' => 'ACTIVA',
+        'es_larga' => 0,
+        'sin_titular' => 1,
+        'delegado_cambia_evaluador' => 0,
+        'id_puesto' => $idPuesto,
+        'id_usuario_registra' => session('usuario_autenticado.id_usuario') ?? null,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    return back()->with('success_delegacion', 'Delegación del cargo vacante registrada. El cargo nunca tuvo ocupante, así que no se movió ninguna evaluación.');
+}
+}
 
 if (!function_exists('registrarDelegacionDeVacante')) {
 /**
@@ -2875,7 +2921,7 @@ Route::match(['put', 'post'], '/admin/delegaciones/{id}', function (Request $req
         'fecha_inicio' => ['sometimes', 'nullable', 'date'],
         'fecha_fin' => ['nullable', 'date'],
         'motivo' => ['nullable', 'string', 'max:500'],
-        'acto_administrativo' => ['nullable', 'string', 'max:255'],
+        'acto_administrativo' => ['sometimes', 'required', 'string', 'max:500'],
         'acto_administrativo_numero' => ['nullable', 'string', 'max:100'],
         'acto_administrativo_fecha' => ['nullable', 'date'],
         'acto_administrativo_url' => ['nullable', 'string', 'max:1000'],
@@ -2908,7 +2954,7 @@ Route::match(['put', 'post'], '/admin/delegaciones/{id}', function (Request $req
         return back()->withErrors(['delegaciones' => $errorVigencia]);
     }
 
-    if (in_array($delegacion->estado, ['PROGRAMADA', 'ACTIVA', 'POR_FINALIZAR'], true) && delegacionActivaTraslapada($delegacion->id_vinc_delegante, $fechaInicio, $fechaFin, $id)) {
+    if (in_array($delegacion->estado, ['PROGRAMADA', 'ACTIVA', 'POR_FINALIZAR'], true) && delegacionActivaTraslapada((int) $delegacion->id_vinc_delegante, $fechaInicio, $fechaFin, $id, $delegacion->id_vinc_delegante ? null : (int) $delegacion->id_puesto)) {
         if ($request->wantsJson() || $request->ajax()) {
             return response()->json(['message' => 'La nueva vigencia se traslapa con otra delegación activa del mismo titular.'], 422);
         }
@@ -2957,6 +3003,13 @@ Route::post('/admin/delegaciones/{id}/finalizar', function (Request $request, in
         'id_vinc_evaluador_regreso' => ['nullable', 'integer', 'exists:vinculacion,id_vinculacion'],
         'fecha_regreso' => ['nullable', 'date'],
     ]);
+
+    // Cargo que nunca tuvo ocupante: no hay trabajo que devolver, solo se cierra.
+    if (empty($delegacion->id_vinc_delegante)) {
+        DB::table('delegacion')->where('id_delegacion', $id)->update(['estado' => 'FINALIZADA', 'updated_at' => now()]);
+
+        return response()->json(['success' => true, 'message' => 'Delegación finalizada. El cargo no tenía personas a cargo que reasignar.']);
+    }
 
     $idSucesor = resolverSucesorDelegacion($delegacion, isset($data['id_vinc_sucesor']) ? (int) $data['id_vinc_sucesor'] : null);
     if (is_string($idSucesor)) {
@@ -3233,6 +3286,14 @@ Route::get('/admin/delegaciones', function () {
 
             // S14: datos para decidir el fin y seguir los tramos por calificar.
             $r->titular_activo = DB::table('vinculacion')->where('id_vinculacion', $r->id_vinc_delegante)->where('activa', 1)->exists();
+            if (empty($r->id_vinc_delegante) && ! empty($r->id_puesto)) {
+                $plaza = DB::table('puesto as p')->join('cargo as c', 'c.id_cargo', '=', 'p.id_cargo')->join('dependencia as dp', 'dp.id_dependencia', '=', 'p.id_dependencia')
+                    ->where('p.id_puesto', $r->id_puesto)->first(['p.codigo_plaza', 'c.nombre as cargo', 'dp.nombre as dependencia']);
+                $r->delegante_nombres = 'Cargo vacante';
+                $r->delegante_apellidos = $plaza ? '(' . $plaza->codigo_plaza . ', sin ocupante previo)' : '(sin ocupante previo)';
+                $r->delegante_cargo = $plaza->cargo ?? null;
+                $r->delegante_area = $plaza->dependencia ?? null;
+            }
             $r->superior_nombre = !empty($r->id_vinc_superior_delegado) ? nombreFuncionarioVinc((int) $r->id_vinc_superior_delegado) : null;
             $r->sucesor_nombre = !empty($r->id_vinc_sucesor) ? nombreFuncionarioVinc((int) $r->id_vinc_sucesor) : null;
             $r->tramos_pendientes = in_array($r->estado, ['PROGRAMADA', 'POR_FINALIZAR'], true)
@@ -4637,6 +4698,24 @@ if (!function_exists('obtenerNotaSemestreConsolidada')) {
             ];
         }
 
+        // Contingencia: nota final cargada desde Excel; solo cuenta si el flujo normal no la calificó.
+        if (Schema::hasTable('nota_semestre_importada')) {
+            $importada = DB::table('nota_semestre_importada')
+                ->where(['id_vinculacion' => $idVincEvaluado, 'anio' => $anio, 'semestre' => $semestreNumero, 'sistema' => $sistema])
+                ->first(['nota', 'fecha_calificacion', 'id_lote']);
+            if ($importada) {
+                return [
+                    'tipo' => 'IMPORTADA',
+                    'id_evaluacion' => null,
+                    'nota' => (float) $importada->nota,
+                    'dias_laborados' => null,
+                    'parciales' => [],
+                    'id_lote' => (int) $importada->id_lote,
+                    'fecha_calificacion' => $importada->fecha_calificacion,
+                ];
+            }
+        }
+
         return null;
     }
 }
@@ -5147,6 +5226,7 @@ Route::get('/catalogo/competencias', function (Request $request) {
 
     $comun = DB::table('competencia_catalogo')
         ->where('sistema', $sistema)
+        ->where('activo', 1)
         ->where('tipo', 'COMUN')
         ->orderBy('orden')
         ->get(['id_competencia', 'nombre', 'afirmacion']);
@@ -5154,6 +5234,7 @@ Route::get('/catalogo/competencias', function (Request $request) {
     if ($nivel) {
         $nivelRows = DB::table('competencia_catalogo')
             ->where('sistema', $sistema)
+            ->where('activo', 1)
             ->where('tipo', 'NIVEL_JERARQUICO')
             ->where('nivel_jerarquico', $nivel)
             ->orderBy('orden')
@@ -5170,6 +5251,7 @@ Route::get('/catalogo/competencias', function (Request $request) {
 
     $nivelGrouped = DB::table('competencia_catalogo')
         ->where('sistema', $sistema)
+        ->where('activo', 1)
         ->where('tipo', 'NIVEL_JERARQUICO')
         ->orderBy('nivel_jerarquico')
         ->orderBy('orden')
@@ -6258,6 +6340,51 @@ Route::get('/planes-mejoramiento', function () {
 // Solo el evaluado puede descargar su propio informe.
 // ============================================================================
 
+if (!function_exists('textoDelegacionDeEvaluacion')) {
+    /**
+     * Trazabilidad para el informe: si quien calificó lo hizo por una delegación
+     * de funciones, el texto con su resolución ("Delegado funciones de X, mediante
+     * Resolución ..."). Null si calificó el evaluador en propiedad.
+     */
+    function textoDelegacionDeEvaluacion(int $idEvaluacion): ?string
+    {
+        $ev = DB::table('evaluacion as ev')->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
+            ->where('ev.id_evaluacion', $idEvaluacion)
+            ->first(['ev.id_vinc_evaluado', 'ev.id_vinc_evaluador', 'ev.id_vinc_suplente', 'p.fecha_inicio', 'p.fecha_fin']);
+        if (! $ev) {
+            return null;
+        }
+
+        $candidatas = DB::table('delegacion')
+            ->where('id_vinc_delegado', $ev->id_vinc_evaluador)
+            ->whereIn('estado', ['ACTIVA', 'POR_FINALIZAR', 'FINALIZADA'])
+            ->whereNotNull('acto_administrativo')
+            ->whereDate('fecha_inicio', '<=', $ev->fecha_fin)
+            ->where(fn ($q) => $q->whereNull('fecha_fin')->orWhereDate('fecha_fin', '>=', $ev->fecha_inicio))
+            ->orderByDesc('id_delegacion')
+            ->get();
+
+        foreach ($candidatas as $d) {
+            $detalle = $d->detalle_transferencia ? (json_decode($d->detalle_transferencia, true)['evaluados_transferidos'] ?? []) : [];
+            $liga = ($ev->id_vinc_suplente && (int) $ev->id_vinc_suplente === (int) $d->id_vinc_delegante)
+                || in_array((int) $ev->id_vinc_evaluado, array_map('intval', $detalle), true)
+                || DB::table('traslado')->where('id_delegacion', $d->id_delegacion)->where('id_vinc_funcionario', $ev->id_vinc_evaluado)->exists();
+            if (! $liga) {
+                continue;
+            }
+
+            $cargo = $d->id_puesto
+                ? DB::table('puesto as p')->join('cargo as c', 'c.id_cargo', '=', 'p.id_cargo')->where('p.id_puesto', $d->id_puesto)->value('c.nombre')
+                : null;
+            $cargo ??= $d->id_vinc_delegante ? DB::table('vinculacion')->where('id_vinculacion', $d->id_vinc_delegante)->value('cargo') : null;
+
+            return 'Delegado funciones de ' . ($cargo ?: 'cargo no registrado') . ', mediante ' . trim($d->acto_administrativo);
+        }
+
+        return null;
+    }
+}
+
 if (!function_exists('prepararInformeSemestral')) {
     function prepararInformeSemestral(int $idEvaluacion): array
     {
@@ -6369,6 +6496,7 @@ if (!function_exists('prepararInformeSemestral')) {
 
         return [
             'tipo_nombre' => $evaluacion->tipo_evaluacion,
+            'delegacion_texto' => textoDelegacionDeEvaluacion($idEvaluacion),
             'notificacion_firmada' => $notificacion !== null,
             'fecha_notificacion' => $notificacion->fecha_firma ?? null,
             'documento_notificacion' => $documentoFirmado?->url,
@@ -6476,10 +6604,14 @@ if (!function_exists('prepararInformeAnual')) {
 
         return [
             'sistema' => $sistema,
+            'delegaciones_texto' => collect([$idEvaluacion, $sem1Data['id_evaluacion'] ?? null, $sem2Data['id_evaluacion'] ?? null])
+                ->filter()->unique()->map(fn ($id) => textoDelegacionDeEvaluacion((int) $id))->filter()->unique()->values()->all(),
             'notificaciones' => $notificaciones,
             'periodo' => $periodo,
             'evaluador' => $evaluador,
             'evaluado' => $evaluado,
+            'importada_a' => ($sem1Data['tipo'] ?? null) === 'IMPORTADA',
+            'importada_b' => ($sem2Data['tipo'] ?? null) === 'IMPORTADA',
             'tiene_semestre_a' => ($sem1Data !== null && $sem1Data['nota'] !== null),
             'tiene_semestre_b' => ($sem2Data !== null && $sem2Data['nota'] !== null),
             'id_evaluacion_semestre_a' => $sem1Data['id_evaluacion'] ?? null,

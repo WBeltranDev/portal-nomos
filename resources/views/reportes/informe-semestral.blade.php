@@ -123,6 +123,11 @@
         <td class="info-cell"><b>Código / Grado</b></td>
         <td class="info-cell">{{ $info['evaluador']->codigo_cargo }} - Grado {{ $info['evaluador']->grado_cargo }}</td>
     </tr>
+    @if(!empty($info['delegacion_texto']))
+    <tr>
+        <td class="info-cell" colspan="4"><b>Delegación de funciones:</b> {{ $info['delegacion_texto'] }}</td>
+    </tr>
+    @endif
 </table>
 
 {{-- ============ COMPETENCIAS ============ --}}

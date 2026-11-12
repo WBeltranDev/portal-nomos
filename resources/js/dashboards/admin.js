@@ -2213,3 +2213,143 @@ if (document.readyState === 'loading') {
 } else {
     iniciarBuscadoresAdmin();
 }
+
+// --- Notas por contingencia (carga masiva de notas finales) ---
+let revisionNotas = null;
+
+function periodoNotas() {
+    return { anio: document.getElementById('notas-anio')?.value || '', semestre: document.getElementById('notas-semestre')?.value || '1' };
+}
+
+export function descargarFormatoNotas() {
+    const { anio, semestre } = periodoNotas();
+    if (!anio) return avisar('Indica el año.', 'error');
+    window.location.href = `/admin/notas-importadas/plantilla?anio=${encodeURIComponent(anio)}&semestre=${encodeURIComponent(semestre)}`;
+}
+
+export function revisarNotas() {
+    const archivo = document.getElementById('notas-archivo')?.files?.[0];
+    if (!archivo) return avisar('Selecciona el archivo Excel del formato diligenciado.', 'error');
+    const { anio, semestre } = periodoNotas();
+
+    const datos = new FormData();
+    datos.append('archivo', archivo);
+    datos.append('anio', anio);
+    datos.append('semestre', semestre);
+
+    const boton = document.getElementById('btn-revisar-notas');
+    const textoBoton = boton?.innerHTML;
+    if (boton) {
+        boton.disabled = true;
+        boton.classList.add('opacity-70', 'cursor-wait');
+        boton.innerHTML = '<span class="material-symbols-outlined text-sm animate-spin">progress_activity</span> Analizando…';
+    }
+
+    fetchJson('/admin/notas-importadas/analizar', { method: 'POST', body: datos })
+        .then(async res => {
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo revisar el archivo.'));
+            revisionNotas = data;
+            pintarRevisionNotas(data);
+        })
+        .catch(error => avisar(error.message, 'error'))
+        .finally(() => {
+            if (boton) {
+                boton.disabled = false;
+                boton.classList.remove('opacity-70', 'cursor-wait');
+                boton.innerHTML = textoBoton;
+            }
+        });
+}
+
+function pintarRevisionNotas(data) {
+    const caja = document.getElementById('notas-revision');
+    if (!caja) return;
+    const r = data.resumen;
+    const filas = data.filas.map(f => `
+        <tr class="border-t border-slate-100 ${f.estado === 'ERROR' ? 'bg-red-50/60' : f.estado === 'OMITIDA' ? 'bg-amber-50/60' : ''}">
+            <td class="px-3 py-2 text-slate-400">${f.fila}</td>
+            <td class="px-3 py-2"><b class="text-slate-800">${escapeHtml(f.nombre || f.cedula || '—')}</b><br><span class="text-slate-400">${escapeHtml(f.cedula || '')}${f.cargo ? ' · ' + escapeHtml(f.cargo) : ''}</span></td>
+            <td class="px-3 py-2">${escapeHtml(f.sistema === 'ACUERDO_GESTION' ? 'AG' : f.sistema === 'RENDIMIENTO_LABORAL' ? 'RL' : '—')}</td>
+            <td class="px-3 py-2 font-bold">${f.nota !== null ? Number(f.nota).toFixed(1) : '—'}</td>
+            <td class="px-3 py-2">${f.estado === 'LISTA' ? '<span class="font-bold text-emerald-700">Lista</span>' : `<span class="${f.estado === 'ERROR' ? 'text-red-700' : 'text-amber-800'}">${escapeHtml(f.mensaje || '')}</span>`}</td>
+        </tr>`).join('');
+
+    caja.innerHTML = `
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <p class="text-sm font-black text-slate-800">Revisión de «${escapeHtml(data.archivo || 'archivo')}»: ${r.total} fila(s) con nota, <span class="text-emerald-700">${r.listas} lista(s)</span>${r.omitidas ? `, <span class="text-amber-800">${r.omitidas} omitida(s)</span>` : ''}${r.con_error ? `, <span class="text-red-700">${r.con_error} con error</span>` : ''}${r.sin_nota ? `, ${r.sin_nota} sin nota (ignoradas)` : ''}</p>
+            <button type="button" onclick="aplicarNotas()" ${r.con_error || !r.listas ? 'disabled aria-disabled="true"' : ''} class="rounded-xl bg-[#00594E] px-4 py-2 text-xs font-bold text-white transition ${r.con_error || !r.listas ? 'opacity-50 cursor-not-allowed' : 'hover:brightness-110'}">Guardar ${r.listas} nota(s)</button>
+        </div>
+        ${r.con_error ? '<p class="text-xs text-red-700">Corrige las filas con error en el Excel y vuelve a subirlo: no se guarda nada mientras haya errores.</p>' : ''}
+        <div class="overflow-x-auto max-h-[50vh] overflow-y-auto rounded-2xl border border-slate-200">
+            <table class="w-full text-left text-xs">
+                <thead class="bg-slate-50 text-[10px] uppercase text-slate-500 sticky top-0"><tr><th class="px-3 py-2">Fila</th><th class="px-3 py-2">Persona</th><th class="px-3 py-2">Sistema</th><th class="px-3 py-2">Nota</th><th class="px-3 py-2">Estado</th></tr></thead>
+                <tbody>${filas}</tbody>
+            </table>
+        </div>`;
+    caja.classList.remove('hidden');
+}
+
+export async function aplicarNotas() {
+    if (!revisionNotas) return;
+    const { anio, semestre } = periodoNotas();
+    if (!await confirmarAccion(`¿Guardar ${revisionNotas.resumen.listas} nota(s) del semestre ${semestre === '1' ? 'A' : 'B'} de ${anio}?\n\nEntran al consolidado anual. Puedes revertir el lote después.`)) return;
+
+    fetchJson('/admin/notas-importadas/aplicar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: revisionNotas.token, archivo: revisionNotas.archivo, anio, semestre, descripcion: document.getElementById('notas-descripcion')?.value || null }),
+    })
+        .then(async res => {
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo guardar el lote.'));
+            avisar(data.message, 'exito');
+            revisionNotas = null;
+            document.getElementById('notas-revision')?.classList.add('hidden');
+            document.getElementById('notas-archivo').value = '';
+            cargarLotesNotas();
+        })
+        .catch(error => avisar(error.message, 'error'));
+}
+
+export function cargarLotesNotas() {
+    const lista = document.getElementById('notas-lotes');
+    if (!lista) return;
+    fetchJson('/admin/notas-importadas/lotes')
+        .then(res => res.json())
+        .then(lotes => {
+            if (!lotes.length) {
+                lista.innerHTML = '<div class="py-6 text-center text-slate-500 text-xs">Todavía no hay lotes cargados.</div>';
+                return;
+            }
+            lista.innerHTML = lotes.map(l => `
+                <div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3 text-xs">
+                    <div>
+                        <p class="font-black text-slate-800">Lote #${l.id_lote} · ${l.anio} semestre ${l.semestre === 1 ? 'A' : 'B'} · ${l.total} nota(s)</p>
+                        <p class="text-slate-500">${escapeHtml(l.descripcion || l.archivo || '')} · ${escapeHtml(String(l.created_at || '').slice(0, 16))}${l.registrado_por ? ' · ' + escapeHtml(l.registrado_por) : ''}</p>
+                    </div>
+                    ${l.estado === 'APLICADO'
+                        ? `<button type="button" onclick="revertirLoteNotas(${l.id_lote})" class="rounded-lg border border-red-200 px-3 py-1.5 font-bold text-red-700 hover:bg-red-50">Revertir</button>`
+                        : '<span class="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-bold uppercase text-slate-500">Revertido</span>'}
+                </div>`).join('');
+        })
+        .catch(() => { lista.innerHTML = '<div class="py-6 text-center text-red-600 text-xs">No se pudieron cargar los lotes.</div>'; });
+}
+
+export async function revertirLoteNotas(id) {
+    if (!await confirmarAccion(`¿Revertir el lote #${id}?\n\nSus notas dejarán de contar en la matriz y en el consolidado anual.`)) return;
+    fetchJson(`/admin/notas-importadas/lote/${id}/revertir`, { method: 'POST' })
+        .then(async res => {
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(parseErrorMessage(data, 'No se pudo revertir.'));
+            avisar(data.message, 'exito');
+            cargarLotesNotas();
+        })
+        .catch(error => avisar(error.message, 'error'));
+}
+
+window.descargarFormatoNotas = descargarFormatoNotas;
+window.revisarNotas = revisarNotas;
+window.aplicarNotas = aplicarNotas;
+window.cargarLotesNotas = cargarLotesNotas;
+window.revertirLoteNotas = revertirLoteNotas;

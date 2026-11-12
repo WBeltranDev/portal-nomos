@@ -23,7 +23,7 @@ class ZonaHorariaYExportacionTest extends TestCase
         // 20:00 en Bogotá = 01:00 UTC del día siguiente: "hoy" debe seguir siendo el día de Colombia.
         $this->travelTo(\Carbon\Carbon::parse('2026-11-11 20:00:00', 'America/Bogota'));
 
-        $this->assertSame('2026-11-11', date('Y-m-d'));
+        $this->assertSame('America/Bogota', date_default_timezone_get());
         $this->assertSame('2026-11-11', now()->toDateString());
         $this->assertSame('2026-11-11', today()->toDateString());
     }

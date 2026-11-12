@@ -212,6 +212,7 @@ class SincronizadorPlazasTest extends TestCase
         $this->comoAdmin();
 
         $this->post('/admin/delegaciones', [
+            'acto_administrativo' => 'Resolución Rectoral No. 001 de 2026',
             'id_puesto_delegante' => $this->plaza['P1'],
             'id_vinc_delegado' => $this->v['delegado'],
             'fecha_inicio' => now()->toDateString(),
@@ -231,6 +232,7 @@ class SincronizadorPlazasTest extends TestCase
         $this->comoAdmin();
 
         $this->post('/admin/delegaciones', [
+            'acto_administrativo' => 'Resolución Rectoral No. 001 de 2026',
             'id_vinc_delegante' => $this->v['jefe'],
             'id_vinc_delegado' => $this->v['delegado'],
             'fecha_inicio' => now()->toDateString(),
@@ -261,6 +263,7 @@ class SincronizadorPlazasTest extends TestCase
     private function delegarVacante(array $extra = [])
     {
         return $this->post('/admin/delegaciones', $extra + [
+            'acto_administrativo' => 'Resolución Rectoral No. 001 de 2026',
             'id_puesto_delegante' => $this->plaza['P1'],
             'id_vinc_delegado' => $this->v['delegado'],
             'fecha_inicio' => now()->toDateString(),
@@ -268,7 +271,7 @@ class SincronizadorPlazasTest extends TestCase
         ]);
     }
 
-    public function test_un_cargo_vacante_sin_ocupante_previo_no_se_delega(): void
+    public function test_un_cargo_vacante_sin_ocupante_previo_se_delega_sin_mover_evaluaciones(): void
     {
         $this->comoAdmin();
         $vacante = DB::table('puesto')->insertGetId([
@@ -277,8 +280,37 @@ class SincronizadorPlazasTest extends TestCase
             'estado' => 'VALIDADA', 'requiere_revision' => 0, 'created_at' => now(), 'updated_at' => now(),
         ]);
 
-        $this->post('/admin/delegaciones', ['id_puesto_delegante' => $vacante, 'id_vinc_delegado' => $this->v['delegado'], 'fecha_inicio' => now()->toDateString()])
-            ->assertSessionHasErrors(['delegaciones' => 'El cargo está vacante y nunca tuvo un ocupante: no tiene personas a cargo ni trabajo que delegar.']);
+        $this->post('/admin/delegaciones', ['acto_administrativo' => 'Resolución Rectoral No. 001 de 2026', 'id_puesto_delegante' => $vacante, 'id_vinc_delegado' => $this->v['delegado'], 'fecha_inicio' => now()->toDateString()])
+            ->assertSessionHasNoErrors();
+
+        $d = DB::table('delegacion')->where('id_puesto', $vacante)->first();
+        $this->assertNotNull($d);
+        $this->assertNull($d->id_vinc_delegante);
+        $this->assertSame('ACTIVA', $d->estado);
+        $this->assertSame($this->v['delegado'], (int) $d->id_vinc_delegado);
+
+        // Se traslapa con la anterior: la plaza no admite dos delegaciones a la vez.
+        $this->post('/admin/delegaciones', ['acto_administrativo' => 'Resolución Rectoral No. 001 de 2026', 'id_puesto_delegante' => $vacante, 'id_vinc_delegado' => $this->v['delegado'], 'fecha_inicio' => now()->toDateString()])
+            ->assertSessionHasErrors('delegaciones');
+
+        // Se cierra sin sucesor ni evaluaciones que devolver.
+        $this->postJson("/admin/delegaciones/{$d->id_delegacion}/finalizar")->assertOk();
+        $this->assertSame('FINALIZADA', DB::table('delegacion')->where('id_delegacion', $d->id_delegacion)->value('estado'));
+    }
+
+    public function test_la_delegacion_exige_resolucion_y_el_informe_la_imprime(): void
+    {
+        $this->comoAdmin();
+        $idEval = $this->evaluacion('e1');
+        $this->retirarJefe();
+
+        $this->post('/admin/delegaciones', ['id_puesto_delegante' => $this->plaza['P1'], 'id_vinc_delegado' => $this->v['delegado'], 'fecha_inicio' => now()->toDateString()])
+            ->assertSessionHasErrors('acto_administrativo');
+
+        $this->delegarVacante(['acto_administrativo' => 'Resolución Rectoral No. 0450 de fecha 15 de octubre de 2026'])->assertSessionHasNoErrors();
+        $texto = textoDelegacionDeEvaluacion($idEval);
+        $this->assertStringStartsWith('Delegado funciones de ', (string) $texto);
+        $this->assertStringContainsString('mediante Resolución Rectoral No. 0450 de fecha 15 de octubre de 2026', (string) $texto);
     }
 
     public function test_el_cargo_vacante_se_delega_sin_tramos_aunque_sea_indefinida(): void

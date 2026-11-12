@@ -150,6 +150,7 @@ class DelegacionTramosTest extends TestCase
     private function registrar(int $diasVigencia, ?int $superior = null, ?bool $delegadoCambia = null)
     {
         return $this->post('/admin/delegaciones', array_filter([
+            'acto_administrativo' => 'Resolución Rectoral No. 001 de 2026',
             'id_vinc_delegante' => $this->titular,
             'id_vinc_delegado' => $this->delegado,
             'fecha_inicio' => Carbon::today()->toDateString(),
@@ -386,6 +387,7 @@ class DelegacionTramosTest extends TestCase
 
         $this->registrar(90)->assertSessionHasNoErrors();
         $this->post('/admin/delegaciones', [
+            'acto_administrativo' => 'Resolución Rectoral No. 001 de 2026',
             'id_vinc_delegante' => $otroTitular, 'id_vinc_delegado' => $this->delegado,
             'fecha_inicio' => Carbon::today()->toDateString(), 'fecha_fin' => Carbon::today()->addDays(89)->toDateString(),
             'delegado_cambia_evaluador' => 0,

@@ -94,6 +94,11 @@
         <td class="info-cell"><b>Nivel</b></td>
         <td class="info-cell">{{ $info['evaluador']->nivel_jerarquico }}</td>
     </tr>
+    @foreach(($info['delegaciones_texto'] ?? []) as $txt)
+    <tr>
+        <td class="info-cell" colspan="4"><b>Delegación de funciones:</b> {{ $txt }}</td>
+    </tr>
+    @endforeach
 </table>
 
 {{-- ============ RESULTADO DE LA EVALUACIÓN ============ --}}
@@ -103,6 +108,9 @@
         <td class="info-cell" style="width:50%;"><b>Semestre A (Primer Semestre)</b></td>
         <td class="info-cell resaltado centro">{{ $info['tiene_semestre_a'] ? $formatoNota($info['nota_semestre_a']) : 'N/A' }}</td>
     </tr>
+    @if (!empty($info['importada_a']))
+        <tr><td colspan="2" class="nota"><b>Nota:</b> La calificación del Semestre A fue cargada por contingencia desde el registro de Talento Humano; los soportes reposan en físico.</td></tr>
+    @endif
     @if (!$info['tiene_semestre_a'] && $info['tiene_semestre_b'])
         <tr><td colspan="2" class="nota"><b>Nota:</b> El funcionario ingresó en el Semestre B; por normativa institucional, la calificación obtenida en el Semestre B rige como la calificación definitiva anual.</td></tr>
     @endif
@@ -110,6 +118,9 @@
         <td class="info-cell"><b>Semestre B (Segundo Semestre)</b></td>
         <td class="info-cell resaltado centro">{{ $info['tiene_semestre_b'] ? $formatoNota($info['nota_semestre_b']) : 'N/A' }}</td>
     </tr>
+    @if (!empty($info['importada_b']))
+        <tr><td colspan="2" class="nota"><b>Nota:</b> La calificación del Semestre B fue cargada por contingencia desde el registro de Talento Humano; los soportes reposan en físico.</td></tr>
+    @endif
     <tr>
         <td class="info-cell"><b>Categoría Final</b></td>
         <td class="info-cell resaltado centro">{{ $catLabel }}</td>

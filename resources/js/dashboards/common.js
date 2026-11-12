@@ -296,6 +296,9 @@ export function navegarMenu(button, seccion) {
     if (targetSeccion === 'delegaciones' && typeof window.cargarDelegacionesAdmin === 'function') {
         window.cargarDelegacionesAdmin();
     }
+    if (targetSeccion === 'notas-importadas' && typeof window.cargarLotesNotas === 'function') {
+        window.cargarLotesNotas();
+    }
     if (targetSeccion === 'plazas' && typeof window.cargarPlazasAdmin === 'function') {
         window.cargarPlazasAdmin();
     }

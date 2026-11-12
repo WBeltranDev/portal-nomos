@@ -31,7 +31,7 @@ class LimpiezaPruebas
     public const A_CONSERVAR = [
         'usuario', 'funcionario', 'vinculacion', 'cargo', 'dependencia', 'puesto', 'puesto_ocupacion',
         'evaluador_asignacion', 'competencia_catalogo', 'ponderacion', 'configuracion_sistema',
-        'modelo_puestos_cambio', 'carga_planta', 'carga_planta_pendiente', 'migrations',
+        'modelo_puestos_cambio', 'carga_planta', 'carga_planta_pendiente', 'nota_importada_lote', 'nota_semestre_importada', 'migrations',
         'cache', 'cache_locks', 'sessions', 'jobs', 'job_batches', 'failed_jobs', 'password_reset_tokens',
     ];
 

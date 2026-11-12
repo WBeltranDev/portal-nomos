@@ -54,8 +54,8 @@
                 </div>
                 <div class="grid gap-3 sm:grid-cols-2">
                     <div>
-                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Tipo / Referencia</label>
-                        <input type="text" id="edit-acto-administrativo" name="acto_administrativo" maxlength="255" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white outline-none focus:border-[#00594E]" placeholder="Ej: Resolución Rectoral" />
+                        <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Resolución (obligatoria)</label>
+                        <input type="text" id="edit-acto-administrativo" name="acto_administrativo" maxlength="500" required class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white outline-none focus:border-[#00594E]" placeholder="Ej: Resolución Rectoral No. 0450 de fecha 15 de octubre de 2026" />
                     </div>
                     <div>
                         <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Número de acto</label>

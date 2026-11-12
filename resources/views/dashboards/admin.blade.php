@@ -1186,7 +1186,7 @@
                                 <select name="id_puesto_delegante" data-buscable="Buscar cargo, dependencia o persona…" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" required>
                                     <option value="">Selecciona el cargo que delega</option>
                                     @foreach($plazasDelegables as $pz)
-                                        <option value="{{ $pz->id_puesto }}">{{ $pz->cargo }} - {{ $pz->dependencia }} ({{ $pz->codigo_plaza }}) · {{ ($pz->vacante ?? false) ? 'VACANTE, último ocupante: ' : 'Ocupa: ' }}{{ $pz->nombres }} {{ $pz->apellidos }}</option>
+                                        <option value="{{ $pz->id_puesto }}">{{ $pz->cargo }} - {{ $pz->dependencia }} ({{ $pz->codigo_plaza }}) · {{ ($pz->nunca_ocupado ?? false) ? 'VACANTE, nunca ocupado' : ((($pz->vacante ?? false) ? 'VACANTE, último ocupante: ' : 'Ocupa: ') . $pz->nombres . ' ' . $pz->apellidos) }}</option>
                                     @endforeach
                                 </select>
                                 <p class="text-[9px] text-slate-400 mt-0.5">La delegación es del cargo: si cambia quien lo ocupa, la delegación sigue al cargo. En un cargo vacante no hay tramo que calificar: las personas a cargo pasan directamente al delegado.</p>
@@ -1257,6 +1257,11 @@
                                 </select>
                             </div>
                             <div>
+                                <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Resolución que motiva la delegación (obligatoria)</label>
+                                <input type="text" name="acto_administrativo" maxlength="500" required class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Ej. Resolución Rectoral No. 0450 de fecha 15 de octubre de 2026" />
+                                <p class="text-[9px] text-slate-400 mt-0.5">Se imprime en los informes de calificación así: «Delegado funciones de [cargo], mediante [resolución]».</p>
+                            </div>
+                            <div>
                                 <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Motivo</label>
                                 <input type="text" name="motivo" maxlength="500" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white outline-none focus:border-[#00594E]" placeholder="Ej. Vacaciones, comisión de servicios, licencia" />
                             </div>
@@ -1276,6 +1281,52 @@
                         <div id="delegaciones-admin-lista" class="grid gap-3 max-h-[72vh] overflow-y-auto pr-1 content-start">
                             <div class="py-10 text-center text-slate-500 text-xs">Cargando delegaciones...</div>
                         </div>
+                    </div>
+                </div>
+            </section>
+            <!-- SECTION: NOTAS POR CONTINGENCIA (carga masiva de notas finales desde Excel) -->
+            <section id="section-notas-importadas" class="section-content hidden space-y-6">
+                <div class="panel-card rounded-3xl p-6">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="material-symbols-outlined text-[#00594E]">upload_file</span>
+                        <h2 class="text-2xl sm:text-3xl font-black text-slate-900">Notas por contingencia</h2>
+                    </div>
+                    <p class="text-sm text-slate-500 mb-4">Carga masiva de la <b>nota final</b> de un semestre desde Excel (los soportes reposan en físico). La nota entra a la matriz y al consolidado anual junto con la del otro semestre. Si la persona ya tiene el semestre calificado en la plataforma, prevalece esa nota.</p>
+
+                    <div class="grid gap-3 sm:grid-cols-[120px_200px_1fr_auto] items-end">
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Año</label>
+                            <input type="number" id="notas-anio" value="{{ now()->year }}" min="2000" max="2100" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" />
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Semestre</label>
+                            <select id="notas-semestre" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white">
+                                <option value="1" selected>A (primer semestre)</option>
+                                <option value="2">B (segundo semestre)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Descripción del lote (opcional)</label>
+                            <input type="text" id="notas-descripcion" maxlength="300" class="w-full text-xs rounded-xl border border-slate-200 p-2.5 bg-white" placeholder="Ej. Notas 2026-A, contingencia" />
+                        </div>
+                        <button type="button" onclick="descargarFormatoNotas()" class="rounded-xl border border-[#00594E] px-4 py-2.5 text-xs font-bold text-[#00594E] hover:bg-[#EAF2EF] transition">Descargar formato</button>
+                    </div>
+
+                    <div class="mt-4 grid gap-3 sm:grid-cols-[1fr_auto] items-end">
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Archivo Excel diligenciado (.xlsx)</label>
+                            <input type="file" id="notas-archivo" accept=".xlsx" class="w-full text-xs rounded-xl border border-slate-200 p-2 bg-white" />
+                        </div>
+                        <button type="button" id="btn-revisar-notas" onclick="revisarNotas()" class="rounded-xl bg-[#B5A160] px-4 py-2.5 text-xs font-bold text-white hover:brightness-110 transition">Revisar archivo</button>
+                    </div>
+                    <div id="notas-revision" class="hidden mt-4 space-y-3"></div>
+                </div>
+
+                <div class="panel-card rounded-3xl p-6">
+                    <h3 class="text-lg font-bold text-slate-800 mb-1">Lotes cargados</h3>
+                    <p class="text-xs text-slate-500 mb-3">Revertir un lote quita sus notas del consolidado.</p>
+                    <div id="notas-lotes" class="grid gap-2 max-h-[50vh] overflow-y-auto pr-1 content-start">
+                        <div class="py-6 text-center text-slate-500 text-xs">Cargando lotes...</div>
                     </div>
                 </div>
             </section>

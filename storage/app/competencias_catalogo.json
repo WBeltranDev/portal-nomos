@@ -9,36 +9,23 @@
             {"nombre": "Adaptación al cambio",            "afirmacion": "Enfrenta con flexibilidad las situaciones nuevas asumiendo un manejo positivo y constructivo de los cambios."}
         ],
         "NIVEL_JERARQUICO": {
-            "DIRECTIVO": [
-                {"nombre": "Liderazgo",                       "afirmacion": "Genera condiciones que motiven a sus colaboradores, favoreciendo el desarrollo de las personas y de la entidad."},
-                {"nombre": "Planeación",                      "afirmacion": "Determina eficazmente las metas y prioridades institucionales, identificando las acciones, los responsables, los plazos y los recursos requeridos para alcanzarlas."},
-                {"nombre": "Toma de decisiones",              "afirmacion": "Elige con oportunidad, entre múltiples alternativas, los proyectos a realizar, estableciendo responsabilidades precisas con base en las prioridades de la entidad."},
-                {"nombre": "Dirección y Desarrollo de personal","afirmacion": "Favorece el aprendizaje y desarrollo de sus colaboradores, articulando las potencialidades y necesidades individuales con las de la organización."},
-                {"nombre": "Conocimiento del entorno",        "afirmacion": "Está al tanto de las circunstancias y las relaciones de poder que influyen en el entorno organizacional."}
-            ],
-            "ASESOR": [
-                {"nombre": "Experticia profesional",          "afirmacion": "Aplica el conocimiento profesional en la resolución de problemas y transfiere su conocimiento experto a otros."},
-                {"nombre": "Conocimiento del entorno",        "afirmacion": "Está al tanto de las circunstancias y las relaciones de poder que influyen en el entorno organizacional."},
-                {"nombre": "Construcción de relaciones",      "afirmacion": "Establece y mantiene relaciones cordiales y recíprocas con redes o grupos de personas internas y externas a la organización."},
-                {"nombre": "Iniciativa",                      "afirmacion": "Propone e implementa mejoras para aumentar la calidad y mejorar la efectividad de su trabajo."}
-            ],
+            "DIRECTIVO": [],
+            "ASESOR": [],
             "PROFESIONAL": [
-                {"nombre": "Apoyo Técnico Profesional",       "afirmacion": "Pone a disposición de la Universidad sus saberes profesionales específicos y sus experiencias previas, gestionando la actualización de sus saberes expertos."},
-                {"nombre": "Comunicación Efectiva",           "afirmacion": "Establece comunicación efectiva y positiva con superiores jerárquicos, pares y ciudadanos, tanto en la expresión escrita, como verbal y gestual."},
-                {"nombre": "Gestión de Procedimientos",       "afirmacion": "Desarrolla las tareas a cargo en el marco de los procedimientos vigentes y propone e introduce acciones para acelerar la mejora continua y la productividad."},
-                {"nombre": "Instrumentación de Decisiones",   "afirmacion": "Decide sobre las cuestiones en las que es responsable con criterios de economía, eficacia, eficiencia y transparencia de la decisión."}
+                {"nombre": "Apoyo Técnico Profesional", "afirmacion": "Pone a disposición de la Universidad sus saberes profesionales específicos y sus experiencias previas, gestionando la actualización de sus saberes expertos. Emite conceptos u orientaciones claras, precisas, pertinentes y ajustadas a los lineamientos normativos e institucionales."},
+                {"nombre": "Comunicación Efectiva", "afirmacion": "Establece comunicación efectiva y positiva con superiores jerárquicos, pares y ciudadanos, tanto en la expresión escrita, como verbal y gestual."},
+                {"nombre": "Gestión de Procedimientos", "afirmacion": "Desarrolla las tareas a cargo en el marco de los procedimientos vigentes y propone e introduce acciones para acelerar la mejora continua y la productividad"},
+                {"nombre": "Instrumentación de Decisiones", "afirmacion": "Decide sobre las cuestiones en las que es responsable con criterios de economía, eficacia, eficiencia y transparencia de la decisión"}
             ],
             "TECNICO": [
-                {"nombre": "Experticia técnica",              "afirmacion": "Entiende y aplica los conocimientos técnicos del área de desempeño y los relaciona con la práctica."},
-                {"nombre": "Trabajo en equipo y colaboración","afirmacion": "Trabaja con otros de forma integrada y armónica para la consecución de metas institucionales comunes."},
-                {"nombre": "Creatividad e innovación",        "afirmacion": "Presenta ideas y métodos novedosos y concretarlos en acciones."}
+                {"nombre": "Confiabilidad Técnica", "afirmacion": "Cuenta con los conocimientos técnicos requeridos y aplicarlos a situaciones concretas de trabajo, con altos estándares de calidad"},
+                {"nombre": "Gestión del cambio", "afirmacion": "Se adapta a las políticas institucionales y genera información acorde con los procesos"},
+                {"nombre": "Responsabilidad", "afirmacion": "Conoce la magnitud de sus acciones y la forma de afrontarlas"}
             ],
             "ASISTENCIAL": [
-                {"nombre": "Manejo de la información",        "afirmacion": "Maneja con respeto las informaciones personales e institucionales de que dispone."},
-                {"nombre": "Adaptación al entorno",           "afirmacion": "Aprende de la experiencia de otros y aplica ese aprendizaje en la resolución de situaciones o problemas habituales."},
-                {"nombre": "Disciplina",                      "afirmacion": "Se ajusta a las políticas institucionales y a las normas vigentes."},
-                {"nombre": "Relaciones interpersonales",      "afirmacion": "Establece y mantiene relaciones de trabajo amables y cordiales con sus compañeros."},
-                {"nombre": "Colaboración",                    "afirmacion": "Coopera con los demás con el fin de alcanzar los objetivos institucionales."}
+                {"nombre": "Manejo de la información", "afirmacion": "Maneja con responsabilidad la información personal e institucional de que dispone\nNo hace pública la información laboral o de las personas que pueda afectar la organización o las personas"},
+                {"nombre": "Relaciones interpersonales", "afirmacion": "Establece y mantiene relaciones de trabajo positivas, basadas en la comunicación abierta y fluida y en el respeto por los demás"},
+                {"nombre": "Colaboración", "afirmacion": "Coopera con los demás con el fin de alcanzar los objetivos institucionales"}
             ]
         }
     },
@@ -53,37 +40,34 @@
         ],
         "NIVEL_JERARQUICO": {
             "DIRECTIVO": [
-                {"nombre": "Visión estratégica",              "afirmacion": "Visualiza el impacto de las tendencias del entorno en el trabajo de su equipo y de la Universidad."},
-                {"nombre": "Liderazgo efectivo",              "afirmacion": "Genera condiciones que motiven a sus colaboradores, favoreciendo el desarrollo de las personas y de la entidad."},
-                {"nombre": "Planeación institucional",        "afirmacion": "Determina eficazmente las metas y prioridades institucionales, identificando las acciones, los responsables, los plazos y los recursos requeridos para alcanzarlas."},
-                {"nombre": "Toma de decisiones",              "afirmacion": "Elige con oportunidad, entre múltiples alternativas, los proyectos a realizar, estableciendo responsabilidades precisas con base en las prioridades de la entidad."},
-                {"nombre": "Dirección y desarrollo personal", "afirmacion": "Identifica, ubica y desarrolla el talento humano a su cargo, orientando la identificación de necesidades de formación y capacitación."}
+                {"nombre": "Visión estratégica", "afirmacion": "Articula objetivos, recursos y metas de forma tal que los resultados generen valor. Adopta alternativas si el contexto presenta obstrucciones a la ejecución de la planeación, involucrando al equipo, aliados y superiores para el logro de los objetivos. Vincula a los actores con incidencia potencial en los resultados del área a su cargo, para articular acciones o anticipar negociaciones necesarias."},
+                {"nombre": "Liderazgo efectivo", "afirmacion": "Gerencia equipos y crear un entorno laboral positivo y de compromiso para el logro de los resultados. Traduce la visión y logra que cada miembro del equipo se comprometa y aporte en un entorno participativo y de toma de decisiones. Forma equipos y les delega responsabilidades y tareas en función de las competencias, el potencial y los intereses de los miembros del equipo."},
+                {"nombre": "Planeación", "afirmacion": "Determina eficazmente las metas y prioridades institucionales, identificando las acciones, los responsables, los plazos y los recursos requeridos para alcanzarlas.  Prevé situaciones y escenarios futuros. Hace seguimiento a la planeación institucional, con base en los indicadores y metas planeadas, verificando que se realicen los ajustes y retroalimentando el proceso."},
+                {"nombre": "Toma de decisiones", "afirmacion": "Elegir entre dos o más alternativas para solucionar un problema o atender una situación, comprometiéndose con acciones concretas y consecuentes con la decisión. Toma en cuenta la opinión técnica de los miembros de su equipo al analizar las alternativas existentes para tomar una decisión y desarrollarla."},
+                {"nombre": "Gestión del desarrollo de las personas", "afirmacion": "Forjar un clima laboral en el que los intereses de los equipos y de las personas se armonicen con los objetivos y resultados de la organización, generando oportunidades de aprendizaje y desarrollo, además de incentivos para reforzar el alto rendimiento. Identifica las competencias de los miembros del equipo, las evalúa y las impulsa activamente para su desarrollo y aplicación a las tareas asignadas."},
+                {"nombre": "Pensamiento sistémico", "afirmacion": "Comprende y afronta la realidad y sus conexiones para abordar el funcionamiento integral y articulado de la organización e incidir en los resultados esperados Integra varias áreas de conocimiento para interpretar las interacciones del entorno. Comprende y gestiona las interrelaciones entre las causas y los efectos dentro de los diferentes procesos en los que participa."},
+                {"nombre": "Resolución de conflictos", "afirmacion": "Capacidad para identificar situaciones que generen conflicto, prevenirlas o afrontarlas ofreciendo alternativas de solución y evitando las consecuencias negativas"}
             ],
             "ASESOR": [
-                {"nombre": "Experticia profesional",          "afirmacion": "Aplica el conocimiento profesional en la resolución de problemas y transfiere su conocimiento experto a otros."},
-                {"nombre": "Conocimiento del entorno",        "afirmacion": "Está al tanto de las circunstancias y las relaciones de poder que influyen en el entorno organizacional."},
-                {"nombre": "Construcción de relaciones",      "afirmacion": "Establece y mantiene relaciones cordiales y recíprocas con redes o grupos de personas internas y externas a la organización."},
-                {"nombre": "Iniciativa",                      "afirmacion": "Propone e implementa mejoras para aumentar la calidad y mejorar la efectividad de su trabajo."}
+                {"nombre": "Confiabilidad técnica", "afirmacion": "Cuenta con los conocimientos técnicos requeridos y los aplica a situaciones concretas de trabajo, con altos estándares de calidad.\nEmite conceptos técnicos u orientaciones claros, precisos, pertinentes y ajustados a los lineamientos normativos y organizacionales.\nGenera conocimientos técnicos de interés para la entidad, los cuales son aprehendidos y utilizados en el actuar de la organización."},
+                {"nombre": "Creatividad e innovación", "afirmacion": "Apoya la generación de nuevas ideas y conceptos para el mejoramiento de la entidad.\nPrevé situaciones y alternativas de solución que orienten la toma de decisiones de la alta dirección.\nReconoce y hace viables las oportunidades y las comparte con sus jefes para contribuir al logro de objetivos y metas institucionales."},
+                {"nombre": "Iniciativa", "afirmacion": "Prevé situaciones y alternativas de solución que orientan la toma de decisiones de la alta dirección.\nEnfrenta los problemas y propone acciones concretas para solucionarlos.\nReconoce y hace viables las oportunidades."},
+                {"nombre": "Construcción de relaciones", "afirmacion": "Establece y mantiene relaciones cordiales y recíprocas con redes o grupos de personas internas y externas de la organización que faciliten la consecución de los objetivos institucionales. Utiliza contactos para conseguir objetivos. Comparte información para establecer lazos. Interactúa con otros de un modo efectivo y adecuado."},
+                {"nombre": "Conocimiento del entorno", "afirmacion": "Se informa permanentemente sobre políticas gubernamentales, problemas y demandas del entorno.\nComprende el entorno organizacional que enmarca las situaciones objeto de asesoría y lo toma como referente. \nIdentifica las fuerzas políticas que afectan la organización y las posibles alianzas y las tiene en cuenta al emitir sus conceptos técnicos.\nOrienta el desarrollo de estrategias que concilien las fuerzas políticas y las alianzas en pro de la organización."}
             ],
             "PROFESIONAL": [
-                {"nombre": "Aporte Técnico-Profesional",      "afirmacion": "Aporta soluciones alternativas en lo que refiere a sus saberes específicos. Informa su experiencia específica en el proceso de toma de decisiones que involucran aspectos de su especialidad."},
-                {"nombre": "Comunicación efectiva",           "afirmacion": "Establece comunicación efectiva y positiva con superiores jerárquicos, pares y ciudadanos, tanto en la expresión escrita, como verbal y gestual."},
-                {"nombre": "Gestión de procedimientos",       "afirmacion": "Desarrolla las tareas a cargo en el marco de los procedimientos vigentes y propone e introduce acciones para acelerar la mejora continua y la productividad."},
-                {"nombre": "Instrumentación de decisiones",   "afirmacion": "Discrimina con efectividad entre las decisiones que deben ser elevadas a un superior, socializadas al equipo de trabajo o pertenecen a la esfera individual de trabajo."},
-                {"nombre": "Dirección y desarrollo personal", "afirmacion": "Identifica, ubica y desarrolla el talento humano a su cargo. Orienta la identificación de necesidades de formación y capacitación y apoya la ejecución de las acciones propuestas para satisfacerlas."},
-                {"nombre": "Toma de decisiones",              "afirmacion": "Elige con oportunidad, entre las alternativas disponibles, los proyectos a realizar, estableciendo responsabilidades precisas con base en las prioridades de la entidad."}
+                {"nombre": "Aporte técnico - Profesional", "afirmacion": "Aporta soluciones alternativas en lo que refiere a sus saberes específicos.\nInforma su experiencia específica en el proceso de toma de decisiones que involucran aspectos de su especialidad.\nAnticipa problemas previsibles que advierte en su carácter de especialista. \nAsume la interdisciplinariedad aprendiendo puntos de vista diversos y alternativos al propio, para analizar y ponderar soluciones posibles."},
+                {"nombre": "Comunicación efectiva", "afirmacion": "Establece comunicación efectiva y positiva con superiores jerárquicos, pares y ciudadanos, tanto en la expresión escrita, como verbal y gestual.\nUtiliza canales de comunicación, en su diversa expresión, con claridad, precisión y tono agradable para el receptor.\nRedacta textos, informes, mensajes, cuadros o gráficas con claridad en la expresión para hacer efectiva y sencilla la comprensión."},
+                {"nombre": "Gestión de procedimientos", "afirmacion": "Desarrolla las tareas a cargo en el marco de los procedimientos vigentes y propone e introduci acciones para acelerar la mejora continua y la productividad.\nRevisa procedimientos e instrumentos para mejorar tiempos y resultados y para anticipar soluciones a problemas."},
+                {"nombre": "Instrumentación de decisiones", "afirmacion": "Discrimina con efectividad entre las decisiones que deben ser elevadas a un superior, socializadas al equipo de trabajo o pertenecen a la esfera individual de trabajo.\nAdopta decisiones sobre ellas con base en información válida y rigurosa.\nManeja criterios objetivos para analizar la materia a decidir con las personas involucradas."},
+                {"nombre": "Dirección y desarrollo personal", "afirmacion": "Identifica, ubica y desarrolla el talento humano a su cargo.\nOrienta la identificación de necesidades de formación y capacitación y apoya la ejecución de las acciones propuestas para satisfacerlas.\nHace uso de las habilidades y recursos del talento humano a su cargo, para alcanzar las metas y los estándares de productividad."},
+                {"nombre": "Toma de decisiones", "afirmacion": "Elige con oportunidad, entre las alternativas disponibles, los proyectos a realizar, estableciendo responsabilidades precisas con base en las prioridades de la entidad. Toma en cuenta la opinión técnica de los miembros de su equipo al analizar las alternativas existentes para tomar una decisión y desarrollarla.\nDecide en situaciones de alta complejidad e incertidumbre teniendo en consideración la consecución de logros y objetivos de la entidad."}
             ],
-            "TECNICO": [
-                {"nombre": "Experticia técnica",              "afirmacion": "Entiende y aplica los conocimientos técnicos del área de desempeño y los relaciona con la práctica."},
-                {"nombre": "Trabajo en equipo y colaboración","afirmacion": "Trabaja con otros de forma integrada y armónica para la consecución de metas institucionales comunes."},
-                {"nombre": "Creatividad e innovación",        "afirmacion": "Presenta ideas y métodos novedosos y los concretiza en acciones."}
-            ],
+            "TECNICO": [],
             "ASISTENCIAL": [
-                {"nombre": "Manejo de la información",        "afirmacion": "Maneja con respeto las informaciones personales e institucionales de que dispone."},
-                {"nombre": "Adaptación al entorno",           "afirmacion": "Aprende de la experiencia de otros y aplica ese aprendizaje en la resolución de situaciones o problemas habituales."},
-                {"nombre": "Disciplina",                      "afirmacion": "Se ajusta a las políticas institucionales y a las normas vigentes."},
-                {"nombre": "Relaciones interpersonales",      "afirmacion": "Establece y mantiene relaciones de trabajo amables y cordiales con sus compañeros."},
-                {"nombre": "Colaboración",                    "afirmacion": "Coopera con los demás con el fin de alcanzar los objetivos institucionales."}
+                {"nombre": "Manejo de información", "afirmacion": "Maneja con responsabilidad las informaciones personales e institucionales de que dispone.\nRecoge solo información imprescindible para el desarrollo de la tarea.\nOrganiza y custodia de forma adecuada la información a su cuidado, teniendo en cuenta las normas legales y de la organización.\nNo hace pública la información laboral o de las personas que pueda afectar la organización o las personas.\nTransmite información oportuna y objetiva."},
+                {"nombre": "Relaciones interpersonales", "afirmacion": "Escucha con interés y capta las necesidades de los demás.\nTransmite la información de forma fidedigna evitando situaciones que puedan generar deterioro en el ambiente laboral.\nToma la iniciativa en el contacto con usuarios para dar avisos, citas o respuestas, utilizando un lenguaje claro para los destinatarios, especialmente con las personas que integran minorías con mayor vulnerabilidad social o con diferencias funcionales."},
+                {"nombre": "Colaboración", "afirmacion": "Articula sus actuaciones con las de los demás.\nCumple los compromisos adquiridos.\nFacilita la labor de sus superiores y compañeros de trabajo."}
             ]
         }
     },

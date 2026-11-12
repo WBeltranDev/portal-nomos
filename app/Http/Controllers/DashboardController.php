@@ -366,14 +366,22 @@ class DashboardController extends Controller
                     ->get(['p.id_puesto', 'p.codigo_plaza', 'c.nombre as cargo', 'd.nombre as dependencia'])
                     ->map(function ($pz) {
                         $ultimo = ultimoOcupanteDeVacante((int) $pz->id_puesto);
-                        if (! $ultimo || ! DB::table('evaluador_asignacion')->where('id_vinc_evaluador', $ultimo)->exists()) {
+                        $pz->vacante = true;
+                        if (! $ultimo) {
+                            // Cargo que nunca tuvo ocupante: se puede delegar, sin trabajo que traspasar.
+                            $pz->nombres = 'nunca ocupado';
+                            $pz->apellidos = '';
+                            $pz->nunca_ocupado = true;
+
+                            return $pz;
+                        }
+                        if (! DB::table('evaluador_asignacion')->where('id_vinc_evaluador', $ultimo)->exists()) {
                             return null;
                         }
                         $persona = DB::table('vinculacion as v')->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
                             ->where('v.id_vinculacion', $ultimo)->first(['f.nombres', 'f.apellidos']);
                         $pz->nombres = $persona->nombres ?? '';
                         $pz->apellidos = $persona->apellidos ?? '';
-                        $pz->vacante = true;
 
                         return $pz;
                     })
