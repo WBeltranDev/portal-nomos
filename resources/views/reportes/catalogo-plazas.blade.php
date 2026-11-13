@@ -29,7 +29,6 @@
 <body>
 <table class="header" style="border:none;">
     <tr>
-        <td style="border:none; width:60px;"><img src="{{ $info['escudo'] }}" style="height: 42px;" alt="Escudo"></td>
         <td style="border:none;">
             <div class="header-titulo">SERAG — Sistema de Evaluación del Desempeño Laboral</div>
             <div class="header-sub">Universidad Internacional del Trópico Americano — Oficina de Talento Humano</div>

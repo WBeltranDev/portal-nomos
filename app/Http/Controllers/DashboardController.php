@@ -772,98 +772,13 @@ class DashboardController extends Controller
 
 
         // --- MATRIZ DE CALIFICACIONES (Solo Admin) ---
+        // Arranca en el año en curso; el filtro por año la recarga con /admin/matriz-calificaciones.
+        $anioMatriz = (int) date('Y');
+        $aniosMatriz = [];
         $matrizCalificaciones = [];
         if ($rolActivo === 'admin') {
-            $empleadosMatriz = DB::table('vinculacion as v')
-                ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
-                ->where('v.activa', 1)
-                ->select('v.id_vinculacion', 'v.id_funcionario', 'v.area', 'v.sistema_evaluacion', 'f.nombres', 'f.apellidos', 'f.numero_doc')
-                ->orderBy('f.apellidos')
-                ->get();
-            
-            $anioActual = (int) date('Y');
-            
-            // Evaluaciones del año actual y documentos firmados en lote
-            $evaluacionesAnio = DB::table('evaluacion as ev')
-                ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
-                ->where('p.anio', $anioActual)
-                ->where('ev.es_traslado', 0)
-                ->select('ev.id_evaluacion', 'ev.id_vinc_evaluado', 'p.semestre', 'ev.estado', 'ev.tipo_evaluacion')
-                ->get()
-                ->groupBy('id_vinc_evaluado');
-
-            $docsFirmados = Schema::hasTable('notificacion_documento')
-                ? DB::table('notificacion_documento')
-                    ->select('id_evaluacion', 'tipo_documento', 'url')
-                    ->get()
-                : collect();
-            
-            // Vinculaciones de cada persona: sus evaluaciones pueden estar en cualquiera (cambió de cargo o sistema).
-            $vinculacionesPorFuncionario = DB::table('vinculacion')
-                ->get(['id_vinculacion', 'id_funcionario', 'sistema_evaluacion', 'activa'])
-                ->groupBy('id_funcionario');
-
-            foreach ($empleadosMatriz as $emp) {
-                $idVinc = (int) $emp->id_vinculacion;
-                $propias = ($vinculacionesPorFuncionario->get($emp->id_funcionario) ?? collect())
-                    ->sortByDesc(fn ($v) => [(int) ($v->id_vinculacion === $idVinc), (int) $v->activa, (int) $v->id_vinculacion])
-                    ->map(fn ($v) => ['id' => (int) $v->id_vinculacion, 'sistema' => (string) $v->sistema_evaluacion])
-                    ->values()
-                    ->all();
-
-                $sem1Data = function_exists('notaSemestreParaMatriz') ? notaSemestreParaMatriz($propias, $anioActual, 1) : null;
-                $sem2Data = function_exists('notaSemestreParaMatriz') ? notaSemestreParaMatriz($propias, $anioActual, 2) : null;
-
-                $notaSem1 = $sem1Data['nota'] ?? null;
-                $notaSem2 = $sem2Data['nota'] ?? null;
-
-                // El anual solo promedia semestres con todos sus tramos calificados.
-                $defSem1 = $sem1Data && ! $sem1Data['provisional'] ? $notaSem1 : null;
-                $defSem2 = $sem2Data && ! $sem2Data['provisional'] ? $notaSem2 : null;
-                $notaAnual = null;
-                if ($defSem1 !== null && $defSem2 !== null) {
-                    $notaAnual = function_exists('redondearEscala') ? redondearEscala(($defSem1 + $defSem2) / 2) : round(($defSem1 + $defSem2) / 2, 1);
-                } elseif ($defSem1 === null && $defSem2 !== null) {
-                    $notaAnual = function_exists('redondearEscala') ? redondearEscala($defSem2) : round($defSem2, 1);
-                } elseif ($defSem1 !== null && $defSem2 === null) {
-                    $notaAnual = function_exists('redondearEscala') ? redondearEscala($defSem1) : round($defSem1, 1);
-                }
-
-                // Documentos firmados radicados para Semestre 1, Semestre 2 y Anual
-                $evalsEmp = $evaluacionesAnio->get($idVinc, collect());
-                
-                // Semestre 1 (solo el enlace subido y radicado en Talento Humano)
-                $idEval1 = $sem1Data['id_evaluacion'] ?? $evalsEmp->firstWhere('semestre', 1)?->id_evaluacion;
-                $docSem1 = $idEval1 ? $docsFirmados->first(fn($d) => (int)$d->id_evaluacion === (int)$idEval1 && ($d->tipo_documento ?? 'SEMESTRAL') === 'SEMESTRAL')?->url : null;
-
-                // Semestre 2 (solo el enlace subido y radicado en Talento Humano)
-                $idEval2 = $sem2Data['id_evaluacion'] ?? $evalsEmp->firstWhere('semestre', 2)?->id_evaluacion;
-                $docSem2 = $idEval2 ? $docsFirmados->first(fn($d) => (int)$d->id_evaluacion === (int)$idEval2 && ($d->tipo_documento ?? 'SEMESTRAL') === 'SEMESTRAL')?->url : null;
-
-                // Anual (documento radicado para el cierre anual o del semestre 2 que cierra el ciclo)
-                $idEvalAnual = $idEval2 ?? $idEval1;
-                $docAnual = $idEvalAnual ? $docsFirmados->first(fn($d) => (int)$d->id_evaluacion === (int)$idEvalAnual && ($d->tipo_documento ?? '') === 'ANUAL')?->url : null;
-                
-                $matrizCalificaciones[] = (object) [
-                    'nombres' => $emp->nombres,
-                    'apellidos' => $emp->apellidos,
-                    'documento' => $emp->numero_doc,
-                    'area' => $emp->area ?? 'N/A',
-                    'sistema' => $emp->sistema_evaluacion,
-                    'nota_semestre_1' => $notaSem1,
-                    'nota_semestre_2' => $notaSem2,
-                    'sem1_provisional' => $sem1Data['provisional'] ?? false,
-                    'sem2_provisional' => $sem2Data['provisional'] ?? false,
-                    'sem1_tramos' => $sem1Data && $sem1Data['provisional'] ? "{$sem1Data['tramos_calificados']}/{$sem1Data['tramos_total']}" : null,
-                    'sem2_tramos' => $sem2Data && $sem2Data['provisional'] ? "{$sem2Data['tramos_calificados']}/{$sem2Data['tramos_total']}" : null,
-                    'nota_anual' => $notaAnual,
-                    'id_evaluacion_sem1' => $idEval1,
-                    'id_evaluacion_sem2' => $idEval2,
-                    'doc_semestre_1' => $docSem1,
-                    'doc_semestre_2' => $docSem2,
-                    'doc_anual' => $docAnual,
-                ];
-            }
+            $aniosMatriz = self::aniosDeLaMatriz();
+            $matrizCalificaciones = self::construirMatrizCalificaciones($anioMatriz);
         }
 
         // --- NOTIFICACIONES ---
@@ -936,7 +851,7 @@ class DashboardController extends Controller
             'evaluadoresDelegacion', 'delegadosDisponibles', 'plazasDelegables', 'impedimentos',
             'cargosCatalogo', 'dependenciasCatalogo', 'funcionariosNoCalificados', 'evaluacionesExtratiempo', 'historialExtratiempo',
             'vinculacionesJerarquia', 'jefesDisponibles',
-            'notificaciones', 'notificacionesNoLeidas', 'matrizCalificaciones',
+            'notificaciones', 'notificacionesNoLeidas', 'matrizCalificaciones', 'aniosMatriz', 'anioMatriz',
             'encuestaCapacitacion'
         );
 
@@ -946,6 +861,108 @@ class DashboardController extends Controller
             'evaluador' => view('dashboards.evaluador', $viewData),
             default => view('dashboards.evaluado', $viewData),
         };
+    }
+
+    /** Años con periodos abiertos, del más reciente al más antiguo; siempre incluye el año en curso. */
+    public static function aniosDeLaMatriz(): array
+    {
+        return DB::table('periodo')->distinct()->pluck('anio')->map(fn ($a) => (int) $a)->push((int) date('Y'))->unique()->sortDesc()->values()->all();
+    }
+
+    /** Matriz de calificaciones de Talento Humano para un año. */
+    public static function construirMatrizCalificaciones(int $anioActual): array
+    {
+        $matrizCalificaciones = [];
+        $empleadosMatriz = DB::table('vinculacion as v')
+            ->join('funcionario as f', 'f.id_funcionario', '=', 'v.id_funcionario')
+            ->where('v.activa', 1)
+            ->select('v.id_vinculacion', 'v.id_funcionario', 'v.area', 'v.sistema_evaluacion', 'f.nombres', 'f.apellidos', 'f.numero_doc')
+            ->orderBy('f.apellidos')
+            ->get();
+        
+        // Evaluaciones del año actual y documentos firmados en lote
+        $evaluacionesAnio = DB::table('evaluacion as ev')
+            ->join('periodo as p', 'p.id_periodo', '=', 'ev.id_periodo')
+            ->where('p.anio', $anioActual)
+            ->where('ev.es_traslado', 0)
+            ->select('ev.id_evaluacion', 'ev.id_vinc_evaluado', 'p.semestre', 'ev.estado', 'ev.tipo_evaluacion')
+            ->get()
+            ->groupBy('id_vinc_evaluado');
+
+        $docsFirmados = Schema::hasTable('notificacion_documento')
+            ? DB::table('notificacion_documento')
+                ->select('id_evaluacion', 'tipo_documento', 'url')
+                ->get()
+            : collect();
+        
+        // Vinculaciones de cada persona: sus evaluaciones pueden estar en cualquiera (cambió de cargo o sistema).
+        $vinculacionesPorFuncionario = DB::table('vinculacion')
+            ->get(['id_vinculacion', 'id_funcionario', 'sistema_evaluacion', 'activa'])
+            ->groupBy('id_funcionario');
+
+        foreach ($empleadosMatriz as $emp) {
+            $idVinc = (int) $emp->id_vinculacion;
+            $propias = ($vinculacionesPorFuncionario->get($emp->id_funcionario) ?? collect())
+                ->sortByDesc(fn ($v) => [(int) ($v->id_vinculacion === $idVinc), (int) $v->activa, (int) $v->id_vinculacion])
+                ->map(fn ($v) => ['id' => (int) $v->id_vinculacion, 'sistema' => (string) $v->sistema_evaluacion])
+                ->values()
+                ->all();
+
+            $sem1Data = function_exists('notaSemestreParaMatriz') ? notaSemestreParaMatriz($propias, $anioActual, 1) : null;
+            $sem2Data = function_exists('notaSemestreParaMatriz') ? notaSemestreParaMatriz($propias, $anioActual, 2) : null;
+
+            $notaSem1 = $sem1Data['nota'] ?? null;
+            $notaSem2 = $sem2Data['nota'] ?? null;
+
+            // El anual solo promedia semestres con todos sus tramos calificados.
+            $defSem1 = $sem1Data && ! $sem1Data['provisional'] ? $notaSem1 : null;
+            $defSem2 = $sem2Data && ! $sem2Data['provisional'] ? $notaSem2 : null;
+            $notaAnual = null;
+            if ($defSem1 !== null && $defSem2 !== null) {
+                $notaAnual = function_exists('redondearEscala') ? redondearEscala(($defSem1 + $defSem2) / 2) : round(($defSem1 + $defSem2) / 2, 1);
+            } elseif ($defSem1 === null && $defSem2 !== null) {
+                $notaAnual = function_exists('redondearEscala') ? redondearEscala($defSem2) : round($defSem2, 1);
+            } elseif ($defSem1 !== null && $defSem2 === null) {
+                $notaAnual = function_exists('redondearEscala') ? redondearEscala($defSem1) : round($defSem1, 1);
+            }
+
+            // Documentos firmados radicados para Semestre 1, Semestre 2 y Anual
+            $evalsEmp = $evaluacionesAnio->get($idVinc, collect());
+            
+            // Semestre 1 (solo el enlace subido y radicado en Talento Humano)
+            $idEval1 = $sem1Data['id_evaluacion'] ?? $evalsEmp->firstWhere('semestre', 1)?->id_evaluacion;
+            $docSem1 = $idEval1 ? $docsFirmados->first(fn($d) => (int)$d->id_evaluacion === (int)$idEval1 && ($d->tipo_documento ?? 'SEMESTRAL') === 'SEMESTRAL')?->url : null;
+
+            // Semestre 2 (solo el enlace subido y radicado en Talento Humano)
+            $idEval2 = $sem2Data['id_evaluacion'] ?? $evalsEmp->firstWhere('semestre', 2)?->id_evaluacion;
+            $docSem2 = $idEval2 ? $docsFirmados->first(fn($d) => (int)$d->id_evaluacion === (int)$idEval2 && ($d->tipo_documento ?? 'SEMESTRAL') === 'SEMESTRAL')?->url : null;
+
+            // Anual (documento radicado para el cierre anual o del semestre 2 que cierra el ciclo)
+            $idEvalAnual = $idEval2 ?? $idEval1;
+            $docAnual = $idEvalAnual ? $docsFirmados->first(fn($d) => (int)$d->id_evaluacion === (int)$idEvalAnual && ($d->tipo_documento ?? '') === 'ANUAL')?->url : null;
+            
+            $matrizCalificaciones[] = (object) [
+                'nombres' => $emp->nombres,
+                'apellidos' => $emp->apellidos,
+                'documento' => $emp->numero_doc,
+                'area' => $emp->area ?? 'N/A',
+                'sistema' => $emp->sistema_evaluacion,
+                'nota_semestre_1' => $notaSem1,
+                'nota_semestre_2' => $notaSem2,
+                'sem1_provisional' => $sem1Data['provisional'] ?? false,
+                'sem2_provisional' => $sem2Data['provisional'] ?? false,
+                'sem1_tramos' => $sem1Data && $sem1Data['provisional'] ? "{$sem1Data['tramos_calificados']}/{$sem1Data['tramos_total']}" : null,
+                'sem2_tramos' => $sem2Data && $sem2Data['provisional'] ? "{$sem2Data['tramos_calificados']}/{$sem2Data['tramos_total']}" : null,
+                'nota_anual' => $notaAnual,
+                'id_evaluacion_sem1' => $idEval1,
+                'id_evaluacion_sem2' => $idEval2,
+                'doc_semestre_1' => $docSem1,
+                'doc_semestre_2' => $docSem2,
+                'doc_anual' => $docAnual,
+            ];
+        }
+
+        return $matrizCalificaciones;
     }
 
     /**

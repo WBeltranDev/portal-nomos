@@ -46,9 +46,7 @@
 {{-- ============ CABECERA INSTITUCIONAL ============ --}}
 <table class="header" style="border:none; margin-bottom:10px;">
     <tr style="border:none;">
-        <td style="border:none; width:16%; text-align:left;">
-            <img src="{{ $info['escudo'] }}" style="height: 46px;" alt="Escudo">
-        </td>
+        <td style="border:none; width:16%;"></td>
         <td style="border:none; text-align:center;">
             <div class="header-titulo">SERAG — Sistema de Evaluación del Desempeño Laboral</div>
             <div class="header-sub">Universidad Internacional del Trópico Americano — Oficina de Talento Humano</div>

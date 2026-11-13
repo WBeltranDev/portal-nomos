@@ -69,9 +69,7 @@
 {{-- ============ CABECERA INSTITUCIONAL ============ --}}
 <table class="header" style="border:none; margin-bottom:8px;">
     <tr style="border:none;">
-        <td style="border:none; width:16%; text-align:left;">
-            <img src="{{ $info['escudo'] }}" style="height: 46px;" alt="Escudo">
-        </td>
+        <td style="border:none; width:16%;"></td>
         <td style="border:none; text-align:center;">
             <div class="header-titulo">SERAG — Sistema de Evaluación del Desempeño Laboral</div>
             <div class="header-sub">Universidad Internacional del Trópico Americano — Oficina de Talento Humano</div>
@@ -158,12 +156,6 @@
             <td class="centro">{{ $n ? (is_null($n->calificacion_definitiva) ? '' : $n->calificacion_definitiva) : '' }}</td>
         </tr>
     @endfor
-    <tr>
-        <td colspan="7" style="background:#F1F5F9;">
-            <b>Participación en el fortalecimiento institucional:</b>
-            Participa de manera activa y oportuna en las actividades de capacitación, formación y demás acciones promovidas por la Oficina de Talento Humano y la División de Seguridad y Salud en el Trabajo (SG-SST).
-        </td>
-    </tr>
     <tr>
         <td colspan="3" class="negrita centro">Total</td>
         <td class="negrita centro" colspan="4">Nota promediada: <span class="resaltado">{{ $promComunes }}</span></td>

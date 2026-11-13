@@ -212,8 +212,8 @@
                                         </div>
                                         <div>
                                             <span class="text-[10px] font-bold uppercase tracking-wider text-[#00594E] bg-emerald-100/80 px-2.5 py-0.5 rounded-full">Encuesta Institucional</span>
-                                            <h4 class="text-sm font-bold text-slate-900 mt-1">¿Deseas participar en la encuesta de posibles capacitaciones?</h4>
-                                            <p class="text-xs text-slate-600 mt-0.5">Tu opinión nos ayuda a identificar las necesidades y programas de formación que la institución debe priorizar.</p>
+                                            <h4 class="text-sm font-bold text-slate-900 mt-1">¿Considera necesario incluir algún tema de capacitación que contribuya a mejorar su desempeño laboral?</h4>
+                                            <p class="text-xs text-slate-600 mt-0.5">Si así lo considera diligencie la siguiente encuesta.</p>
                                         </div>
                                     </div>
                                     <a id="btn-encuesta-capacitacion-evaluado" href="#" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 bg-[#00594E] hover:bg-[#004a41] text-white px-5 py-2.5 rounded-xl text-xs font-bold transition shadow-sm shrink-0">

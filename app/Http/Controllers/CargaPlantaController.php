@@ -172,7 +172,6 @@ class CargaPlantaController extends Controller
             'ocupadas' => $plazas->filter(fn ($p) => $p->ocupante !== '')->count(),
             'validadas' => $plazas->where('estado', 'VALIDADA')->count(),
             'fuente' => $ultimaCarga ? "{$ultimaCarga->archivo} (cargada el " . \Carbon\Carbon::parse($ultimaCarga->created_at)->format('d/m/Y') . ')' : 'Catálogo de la plataforma',
-            'escudo' => 'data:image/png;base64,' . base64_encode(file_get_contents(public_path('escudo-color.png'))),
             'logo' => 'data:image/png;base64,' . base64_encode(file_get_contents(public_path('logo.png'))),
         ];
         $nombre = 'Catalogo_Oficial_Plazas_' . now('America/Bogota')->format('Y-m-d');

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use Carbon\Carbon;
+use App\Http\Controllers\DashboardController;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
@@ -178,5 +179,32 @@ class MatrizCalificacionesTest extends TestCase
         ]);
 
         $this->get('/dashboard')->assertOk()->assertSee('Parcial 1/2', false);
+    }
+
+    public function test_el_filtro_por_anio_devuelve_las_filas_de_ese_anio(): void
+    {
+        $anioAnterior = $this->anio - 1;
+        $periodoViejo = DB::table('periodo')->insertGetId([
+            'id_usuario_apertura' => $this->idUsuario, 'sistema' => 'RENDIMIENTO_LABORAL', 'anio' => $anioAnterior, 'semestre' => 1,
+            'fecha_inicio' => "{$anioAnterior}-01-01", 'fecha_fin' => "{$anioAnterior}-06-30", 'estado' => 'CERRADO',
+        ]);
+        $idViejo = $this->evaluacion($periodoViejo, $this->vinc, 'SEMESTRE_1', 3.0);
+        $idActual = $this->evaluacion($this->periodoA, $this->vinc, 'SEMESTRE_1', 5.0);
+
+        $this->assertContains($anioAnterior, $this->get('/dashboard')->viewData('aniosMatriz'));
+
+        $viejo = collect(DashboardController::construirMatrizCalificaciones($anioAnterior))->firstWhere('documento', DB::table('funcionario')->where('id_funcionario', $this->idFuncionario)->value('numero_doc'));
+        $this->assertEquals($this->notaDe($idViejo), $viejo->nota_semestre_1);
+        $this->assertNotEquals($this->notaDe($idActual), $viejo->nota_semestre_1);
+
+        $this->get("/admin/matriz-calificaciones?anio={$anioAnterior}")->assertOk()->assertSee('MATRIZ', false);
+        $this->get('/admin/matriz-calificaciones?anio=abc')->assertStatus(422);
+    }
+
+    public function test_el_filtro_por_anio_es_solo_para_administradores(): void
+    {
+        session(['usuario_autenticado' => ['id_usuario' => $this->idUsuario, 'rol_activo' => 'evaluador', 'roles' => ['evaluador']]]);
+
+        $this->get("/admin/matriz-calificaciones?anio={$this->anio}")->assertForbidden();
     }
 }

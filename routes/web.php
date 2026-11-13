@@ -944,6 +944,15 @@ Route::post('/admin/cargos/{id}/toggle', [UsuarioController::class, 'toggleCargo
 Route::post('/admin/dependencias', [UsuarioController::class, 'storeDependencia'])->name('admin.dependencias.store');
 Route::post('/admin/dependencias/{id}/toggle', [UsuarioController::class, 'toggleDependencia'])->name('admin.dependencias.toggle');
 
+// Filas de la matriz de calificaciones de un año (filtro por año de la matriz).
+Route::get('/admin/matriz-calificaciones', function (Request $request) {
+    abort_unless(session('usuario_autenticado.rol_activo') === 'admin', 403);
+    $anio = (int) $request->query('anio');
+    abort_unless($anio >= 2000 && $anio <= 2100, 422, 'Año inválido.');
+
+    return view('partials.matriz-filas', ['filas' => \App\Http\Controllers\DashboardController::construirMatrizCalificaciones($anio)]);
+})->name('admin.matriz.filas');
+
 // --- Catálogo de plazas (S14, modelo de puestos fases A-B) ---
 Route::get('/admin/plazas', [PlazaController::class, 'index'])->name('admin.plazas.index');
 Route::get('/admin/plazas/vacantes', [PlazaController::class, 'vacantes'])->name('admin.plazas.vacantes');
@@ -6512,8 +6521,7 @@ if (!function_exists('prepararInformeSemestral')) {
             'requiere_plan' => (bool) ($calculo['requiere_plan_mejoramiento'] ?? false),
             'recursos' => $recursos,
             'capacitaciones' => '',
-            'escudo' => 'data:image/png;base64,' . base64_encode(file_get_contents(public_path('escudo-color.png'))),
-            'logo' => 'data:image/png;base64,' . base64_encode(file_get_contents(public_path('logo.png'))),
+            'logo' => 'data:image/png;base64,' . base64_encode(file_get_contents(public_path('logo-color.png'))),
         ];
     }
 }
@@ -6621,8 +6629,7 @@ if (!function_exists('prepararInformeAnual')) {
             'nota_anual' => $notaAnual,
             'categoria' => $categoria,
             'capacitaciones' => '',
-            'escudo' => 'data:image/png;base64,' . base64_encode(file_get_contents(public_path('escudo-color.png'))),
-            'logo' => 'data:image/png;base64,' . base64_encode(file_get_contents(public_path('logo.png'))),
+            'logo' => 'data:image/png;base64,' . base64_encode(file_get_contents(public_path('logo-color.png'))),
         ];
     }
 }
